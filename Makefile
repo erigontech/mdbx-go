@@ -19,10 +19,10 @@ all: deps check race bin
 test: mdbx/dist/libmdbx.a
 	go test -cover ./mdbx ./exp/mdbxpool
 
-race:
+race: mdbx/dist/libmdbx.a
 	go test -race ./mdbx ./exp/mdbxpool
 
-lint:
+lint: mdbx/dist/libmdbx.a
 	./build/bin/golangci-lint run --new-from-rev=$(MASTER_COMMIT) ./...
 
 lintci-deps:
