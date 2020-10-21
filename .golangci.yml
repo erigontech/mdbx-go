@@ -1,0 +1,58 @@
+# This file configures github.com/golangci/golangci-lint.
+
+run:
+  timeout: 10m
+  tests: true
+  # default is true. Enables skipping of directories:
+  #   vendor$, third_party$, testdata$, examples$, Godeps$, builtin$
+  skip-dirs-use-default: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - goconst
+    - gofmt
+    - golint
+    - interfacer
+    - govet
+    - structcheck
+    - stylecheck
+    - staticcheck
+#    - goerr113
+    - unconvert
+    - unparam
+    - scopelint
+    - nakedret
+    - prealloc
+    - gosimple
+    - gosec
+    - ineffassign
+    - depguard
+    - typecheck
+    - misspell
+    - maligned
+
+linters-settings:
+  gofmt:
+    simplify: true
+  goconst:
+    min-len: 3 # minimum length of string constant
+    min-occurrences: 6 # minimum number of occurrences
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - unused
+        - unparam
+    - linters:
+        - golint
+      text: "should be"
+    - linters:
+        - goerr113
+      text: "do not define dynamic errors"
+    - linters:
+        - stylecheck
+      text: "(should be|should have name of the form)"
