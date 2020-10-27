@@ -16,13 +16,13 @@ bin:
 
 all: deps check race bin
 
-test: mdbx/dist/libmdbx.a
+test: mdbx
 	go test -cover ./mdbx ./exp/mdbxpool
 
-race: mdbx/dist/libmdbx.a
+race: mdbx
 	go test -race ./mdbx ./exp/mdbxpool
 
-lint: mdbx/dist/libmdbx.a
+lint: mdbx
 	./build/bin/golangci-lint run --new-from-rev=$(MASTER_COMMIT) ./...
 
 lintci-deps:
@@ -37,6 +37,6 @@ check:
 
 clean:
 
-mdbx/dist/libmdbx.a:
+mdbx:
 	echo "Building mdbx"
-	cd mdbx/dist/ && make libmdbx.a && cat config.h
+	cd mdbx/dist/ && make clean && make mdbx && cat config.h
