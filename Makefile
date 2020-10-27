@@ -37,6 +37,7 @@ check:
 
 clean:
 	cd mdbx/dist/ && make clean
+
 mdbx:
 	echo "Building mdbx"
 	cd mdbx/dist/ && make clean && make mdbx && cat config.h
