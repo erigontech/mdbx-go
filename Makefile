@@ -36,7 +36,7 @@ check:
 	golint ./... | tee /dev/stderr | wc -l | xargs test 0 -eq
 
 clean:
-
+	cd mdbx/dist/ && make clean
 mdbx:
 	echo "Building mdbx"
 	cd mdbx/dist/ && make clean && make mdbx && cat config.h
