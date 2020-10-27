@@ -23,6 +23,11 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Add Msys64 to PATH # see https://github.com/actions/virtual-environments/issues/1613 and https://github.com/actions/virtual-environments/pull/1648
+        if: matrix.os == 'windows-latest'
+        run: echo "::add-path::/c/msys64/mingw64/bin:/c/msys64/usr/bin"
+        shell: bash
+
       - uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go }}
