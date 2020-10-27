@@ -7,6 +7,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Install dependencies
+        run: sudo apt update && sudo apt install libsnmp-dev
+
       - name: lint
         uses: golangci/golangci-lint-action@v1
         with:
