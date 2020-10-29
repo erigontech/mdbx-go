@@ -40,4 +40,4 @@ clean:
 
 mdbx-build:
 	echo "Building mdbx"
-	cd mdbx/dist/ && make clean && make mdbx && cat config.h
+	cd mdbx/dist/ && make mdbx && cat config.h
