@@ -14,7 +14,7 @@ import (
 	"unsafe"
 )
 
-// success is a value returned from the API to indicate a successful call.
+// success is a value returned from the LMDB API to indicate a successful call.
 // The functions in this API this behavior and its use is not required.
 const success = C.MDBX_SUCCESS
 
@@ -32,16 +32,13 @@ const (
 	Readonly   = C.MDBX_RDONLY     // Used in several functions to denote an object as readonly.
 	WriteMap   = C.MDBX_WRITEMAP   // Use a writable memory map.
 	NoMetaSync = C.MDBX_NOMETASYNC // Don't fsync metapage after commit.
-	//NoSync      = C.MDBX_NOSYNC     // Don't fsync after commit.
-	SafeNoSync    = C.MDBX_SAFE_NOSYNC
-	Durable       = C.MDBX_SYNC_DURABLE
-	UtterlyNoSync = C.MDBX_UTTERLY_NOSYNC
-	MapAsync      = C.MDBX_MAPASYNC // Flush asynchronously when using the WriteMap flag.
-	NoTLS         = C.MDBX_NOTLS    // Danger zone. When unset reader locktable slots are tied to their thread.
-	//NoLock      = C.MDBX_NOLOCK     // Danger zone. does not use any locks.
+	SafeNoSync = C.MDBX_SAFE_NOSYNC
+	Durable    = C.MDBX_SYNC_DURABLE
+	NoTLS      = C.MDBX_NOTLS // Danger zone. When unset reader locktable slots are tied to their thread.
+	//NoLock      = C.MDBX_NOLOCK     // Danger zone. LMDB does not use any locks.
 	NoReadahead = C.MDBX_NORDAHEAD // Disable readahead. Requires OS support.
-	NoMemInit   = C.MDBX_NOMEMINIT // Disable MDBX memory initialization.
-	Exclusive   = C.MDBX_EXCLUSIVE
+	NoMemInit   = C.MDBX_NOMEMINIT // Disable LMDB memory initialization.
+	Exclusive   = C.MDBX_EXCLUSIVE // Disable LMDB memory initialization.
 )
 
 const (
@@ -84,6 +81,25 @@ const (
 	DbgLegacyMultiOpen = C.MDBX_DBG_LEGACY_MULTIOPEN
 	DbgLegacyTxOverlap = C.MDBX_DBG_LEGACY_OVERLAP
 	DbgDoNotChange     = C.MDBX_DBG_DONTCHANGE
+)
+
+const (
+	OptMaxDB                        = C.MDBX_opt_max_db
+	OptMaxReaders                   = C.MDBX_opt_max_readers
+	OptSyncBytes                    = C.MDBX_opt_sync_bytes
+	OptSyncPeriod                   = C.MDBX_opt_sync_period
+	OptRpAugmentLimit               = C.MDBX_opt_rp_augment_limit
+	OptLooseLimit                   = C.MDBX_opt_loose_limit
+	OptDpReverseLimit               = C.MDBX_opt_dp_reserve_limit
+	OptTxnDpLimit                   = C.MDBX_opt_txn_dp_limit
+	OptTxnDpInitial                 = C.MDBX_opt_txn_dp_initial
+	OptSpillMaxDenominator          = C.MDBX_opt_spill_max_denominator
+	OptSpillMinDenominator          = C.MDBX_opt_spill_min_denominator
+	OptSpillParent4ChildDenominator = C.MDBX_opt_spill_parent4child_denominator
+)
+
+var (
+	LoggerDoNotChange = C.MDBX_LOGGER_DONTCHANGE
 )
 
 // DBI is a handle for a database in an Env.
@@ -142,7 +158,7 @@ var errNegSize = errors.New("negative size")
 //
 // See mdbx_env_get_fd.
 func (env *Env) FD() (uintptr, error) {
-	// fdInvalid is the value -1 as a uintptr, which is used by MDBX in the
+	// fdInvalid is the value -1 as a uintptr, which is used by LMDB in the
 	// case that env has not been opened yet.  the strange construction is done
 	// to avoid constant value overflow errors at compile time.
 	const fdInvalid = ^uintptr(0)
@@ -159,6 +175,10 @@ func (env *Env) FD() (uintptr, error) {
 		return 0, errNotOpen
 	}
 	return fd, nil
+}
+
+func (env *Env) StderrLogger() *C.MDBX_debug_func {
+	return C.mdbxgo_stderr_logger()
 }
 
 // ReaderList dumps the contents of the reader lock table as text.  Readers
@@ -387,8 +407,8 @@ func (env *Env) Flags() (uint, error) {
 	return uint(_flags), nil
 }
 
-func (env *Env) SetDebug(logLvl int, dbg int) error {
-	ret := C.mdbx_setup_debug(C.MDBX_log_level_t(logLvl), C.MDBX_debug_flags_t(dbg), C.MDBX_LOGGER_DONTCHANGE)
+func (env *Env) SetDebug(logLvl int, dbg int, logger *C.MDBX_debug_func) error {
+	ret := C.mdbx_setup_debug(C.MDBX_log_level_t(logLvl), C.MDBX_debug_flags_t(dbg), logger)
 	return operrno("mdbx_setup_debug", ret)
 }
 
@@ -435,6 +455,11 @@ func (env *Env) Path() (string, error) {
 //	ret := C.mdbx_env_set_mapsize(env._env, C.size_t(size))
 //	return operrno("mdbx_env_set_mapsize", ret)
 //}
+
+func (env *Env) SetOption(option uint, value uint64) error {
+	ret := C.mdbx_env_set_option(env._env, C.MDBX_option_t(option), C.uint64_t(value))
+	return operrno("mdbx_env_set_option", ret)
+}
 
 func (env *Env) SetGeometry(sizeLower int, sizeNow int, sizeUpper int, growthStep int, shrinkThreshold int, pageSize int) error {
 	ret := C.mdbx_env_set_geometry(env._env,

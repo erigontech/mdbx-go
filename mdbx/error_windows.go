@@ -17,7 +17,7 @@ func operrno(op string, ret C.int) error {
 	}
 
 	// translate C errors into corresponding syscall.Errno values so that
-	// IsErrnoSys functions correctly, a kludge unknowning inherited from MDBX.
+	// IsErrnoSys functions correctly, a kludge unknowning inherited from LMDB.
 	// the errno in the returned OpError cannot be passed to C.mdbx_strerror.
 	// see the implementation of C.mdbx_strerror for information about how the
 	// following table was generated.

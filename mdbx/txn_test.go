@@ -316,6 +316,10 @@ func TestTxn_PutReserve(t *testing.T) {
 			return err
 		}
 		val := "v"
+		err = txn.Put(db, []byte("k"), []byte(val), 0)
+		if err != nil {
+			return err
+		}
 		p, err := txn.PutReserve(db, []byte("k"), len(val), 0)
 		if err != nil {
 			return err
@@ -570,89 +574,6 @@ func TestTxn_Update(t *testing.T) {
 			return err
 		}
 		if string(v) != "myvalue" {
-			return fmt.Errorf("value: %q", v)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Errorf("view: %v", err)
-		return
-	}
-}
-
-func TestTxn_View_noSubTxn(t *testing.T) {
-	env := setup(t)
-	defer clean(env, t)
-
-	// view transactions cannot create subtransactions.  were it possible, they
-	// would provide no utility.
-	var executed bool
-	err := env.View(func(txn *Txn) (err error) {
-		return txn.Sub(func(txn *Txn) error {
-			executed = true
-			return nil
-		})
-	})
-	if err == nil {
-		t.Errorf("view: %v", err)
-	}
-	if executed {
-		t.Errorf("view executed: %v", err)
-	}
-}
-
-func TestTxn_Sub(t *testing.T) {
-	env := setup(t)
-	defer clean(env, t)
-
-	var errSubAbort = fmt.Errorf("aborted subtransaction")
-	var db DBI
-	err := env.Update(func(txn *Txn) (err error) {
-		db, err = txn.OpenRoot(Create)
-		if err != nil {
-			return err
-		}
-
-		// set the key in the root transaction
-		err = txn.Put(db, []byte("mykey"), []byte("myvalue"), 0)
-		if err != nil {
-			return err
-		}
-
-		// set the key in a sub transaction
-		err = txn.Sub(func(txn *Txn) (err error) {
-			return txn.Put(db, []byte("mykey"), []byte("yourvalue"), 0)
-		})
-		if err != nil {
-			return err
-		}
-
-		// set the key before aborting a subtransaction
-		err = txn.Sub(func(txn *Txn) (err error) {
-			err = txn.Put(db, []byte("mykey"), []byte("badvalue"), 0)
-			if err != nil {
-				return err
-			}
-			return errSubAbort
-		})
-		//nolint:goerr113
-		if err != errSubAbort {
-			return fmt.Errorf("expected abort: %v", err)
-		}
-
-		return nil
-	})
-	if err != nil {
-		t.Errorf("update: %v", err)
-		return
-	}
-
-	err = env.View(func(txn *Txn) (err error) {
-		v, err := txn.Get(db, []byte("mykey"))
-		if err != nil {
-			return err
-		}
-		if string(v) != "yourvalue" {
 			return fmt.Errorf("value: %q", v)
 		}
 		return nil
@@ -1044,57 +965,80 @@ func TestTxn_Stat(t *testing.T) {
 	}
 }
 
-func BenchmarkTxn_Sub_commit(b *testing.B) {
-	env := setup(b)
+func TestSequence(t *testing.T) {
+	env := setup(t)
 	path, err := env.Path()
 	if err != nil {
 		env.Close()
-		b.Error(err)
+		t.Error(err)
 		return
 	}
 	defer os.RemoveAll(path)
 	defer env.Close()
 
+	var dbi1 DBI
+	var dbi2 DBI
 	err = env.Update(func(txn *Txn) (err error) {
-		b.ResetTimer()
-		defer b.StopTimer()
-		for i := 0; i < b.N; i++ {
-			err = txn.Sub(func(txn *Txn) (err error) { return nil })
-			if err != nil {
-				return err
-			}
+		dbi1, err = txn.OpenDBISimple("testdb", Create)
+		if err != nil {
+			return err
 		}
+		dbi2, err = txn.OpenDBISimple("testdb2", Create)
+		return err
+	})
+	if err != nil {
+		t.Errorf("%s", err)
+		return
+	}
+
+	err = env.Update(func(txn *Txn) (err error) {
+		v, err := txn.Sequence(dbi1, 0) // 0 accepted, validate on app level
+		if err != nil {
+			return err
+		}
+		if v != 0 {
+			t.Errorf("unexpected value: %d (expected %d)", v, 0)
+		}
+		v, err = txn.Sequence(dbi2, 2)
+		if err != nil {
+			return err
+		}
+		if v != 0 {
+			t.Errorf("unexpected value: %d (expected %d)", v, 1)
+		}
+
+		v, err = txn.Sequence(dbi1, 3)
+		if err != nil {
+			return err
+		}
+		if v != 0 {
+			t.Errorf("unexpected value: %d (expected %d)", 0, 0)
+		}
+
 		return nil
 	})
 	if err != nil {
-		b.Error(err)
-		return
+		t.Errorf("%s", err)
 	}
-}
 
-func BenchmarkTxn_Sub_abort(b *testing.B) {
-	env := setup(b)
-	path, err := env.Path()
-	if err != nil {
-		env.Close()
-		b.Error(err)
-		return
-	}
-	defer os.RemoveAll(path)
-	defer env.Close()
-
-	var e = fmt.Errorf("abort")
-
-	err = env.Update(func(txn *Txn) (err error) {
-		b.ResetTimer()
-		defer b.StopTimer()
-		for i := 0; i < b.N; i++ {
-			_ = txn.Sub(func(txn *Txn) (err error) { return e })
+	err = env.View(func(txn *Txn) (err error) {
+		v, err := txn.Sequence(dbi1, 0)
+		if err != nil {
+			return err
 		}
+		if v != 3 {
+			t.Errorf("unexpected value: %d (expected %d)", v, 3)
+		}
+
+		_, err = txn.Sequence(dbi1, 3) // error if > 0 in read tx
+		if err == nil {
+			t.Errorf("error expected")
+		}
+
 		return nil
 	})
 	if err != nil {
-		b.Error(err)
+		t.Errorf("%s", err)
 		return
 	}
 }

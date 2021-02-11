@@ -11,7 +11,7 @@ import "C"
 import (
 	"unsafe"
 
-	"github.com/torquem-ch/mdbx-go/internal/mdbxarch"
+	"github.com/ledgerwatch/turbo-geth/ethdb/mdbx/internal/lmdbarch"
 )
 
 // Just for docs:
@@ -21,7 +21,7 @@ import (
 //};
 
 // valSizeBits is the number of bits which constraining the length of the
-// single values in an database, either 32 or 31 depending on the
+// single values in an LMDB database, either 32 or 31 depending on the
 // platform.  valMaxSize is the largest data size allowed based.  See runtime
 // source file malloc.go and the compiler typecheck.go for more information
 // about memory limits and array bound limits.
@@ -30,9 +30,9 @@ import (
 //		https://github.com/golang/go/blob/36a80c5941ec36d9c44d6f3c068d13201e023b5f/src/cmd/compile/internal/gc/typecheck.go#L383
 //
 // On 64-bit systems, luckily, the value 2^32-1 coincides with the maximum data
-// size for MAXDATASIZE.
+// size for LMDB (MAXDATASIZE).
 const (
-	valSizeBits = mdbxarch.Width64*32 + (1-mdbxarch.Width64)*31
+	valSizeBits = lmdbarch.Width64*32 + (1-lmdbarch.Width64)*31
 	valMaxSize  = 1<<valSizeBits - 1
 )
 
@@ -49,9 +49,9 @@ type Multi struct {
 // WrapMulti converts a page of contiguous values with stride size into a
 // Multi.  WrapMulti panics if len(page) is not a multiple of stride.
 //
-//		_, val, _ := cursor.Get(nil, nil, mdbx.FirstDup)
-//		_, page, _ := cursor.Get(nil, nil, mdbx.GetMultiple)
-//		multi := mdbx.WrapMulti(page, len(val))
+//		_, val, _ := cursor.Get(nil, nil, lmdb.FirstDup)
+//		_, page, _ := cursor.Get(nil, nil, lmdb.GetMultiple)
+//		multi := lmdb.WrapMulti(page, len(val))
 //
 // See mdb_cursor_get and MDB_GET_MULTIPLE.
 func WrapMulti(page []byte, stride int) *Multi {

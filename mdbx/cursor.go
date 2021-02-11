@@ -88,7 +88,7 @@ func (c *Cursor) Renew(txn *Txn) error {
 func (c *Cursor) close() bool {
 	if c._c != nil {
 		if c.txn._txn == nil && !c.txn.readonly {
-			// the cursor has already been released by MDBX.
+			// the cursor has already been released by LMDB.
 		} else {
 			C.mdbx_cursor_close(c._c)
 		}
