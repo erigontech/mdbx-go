@@ -29,6 +29,7 @@ const (
 	DupFixed   = C.MDBX_DUPFIXED   // Duplicate items have a fixed size (DupSort).
 	ReverseDup = C.MDBX_REVERSEDUP // Reverse duplicate values (DupSort).
 	Create     = C.MDBX_CREATE     // Create DB if not already existing.
+	DBAccede   = C.MDBX_DB_ACCEDE  // Use sorted duplicates.
 )
 
 const (
@@ -143,8 +144,8 @@ func (txn *Txn) getID() uintptr {
 // RunOp will abort txn before returning any failure encountered.
 //
 // RunOp primarily exists to allow applications and other packages to provide
-// variants of the managed transactions provided by mdbx (i.e. View, Update,
-// etc).  For example, the mdbxpool package uses RunOp to provide an
+// variants of the managed transactions provided by lmdb (i.e. View, Update,
+// etc).  For example, the lmdbpool package uses RunOp to provide an
 // Txn-friendly sync.Pool and a function analogous to Env.View that uses
 // transactions from that pool.
 func (txn *Txn) RunOp(fn TxnOp, terminate bool) error {
@@ -268,7 +269,7 @@ func (txn *Txn) clearTxn() {
 
 	// Clear txn.id because it no longer matches the value of txn._txn (and
 	// future calls to txn.ID() should not see the stale id).  Instead of
-	// returning the old ID future calls to txn.ID() will query to make
+	// returning the old ID future calls to txn.ID() will query LMDB to make
 	// sure the value returned for an invalid Txn is more or less consistent
 	// for people familiar with the C semantics.
 	txn.resetID()
@@ -315,7 +316,7 @@ func (txn *Txn) renew() error {
 	ret := C.mdbx_txn_renew(txn._txn)
 
 	// mdbx_txn_renew causes txn._txn to pick up a new transaction ID.  It's
-	// slightly confusing in the MDBX docs.  Txn ID corresponds to database
+	// slightly confusing in the LMDB docs.  Txn ID corresponds to database
 	// snapshot the reader is holding, which is good because renewed
 	// transactions can see updates which happened since they were created (or
 	// since they were last renewed).  It should follow that renewing a Txn
@@ -352,7 +353,7 @@ func (txn *Txn) OpenDBISimple(name string, flags uint) (DBI, error) {
 	return dbi, err
 }
 
-// CreateDBI is a shorthand for OpenDBI that passed the flag mdbx.Create.
+// CreateDBI is a shorthand for OpenDBI that passed the flag lmdb.Create.
 func (txn *Txn) CreateDBI(name string) (DBI, error) {
 	return txn.OpenDBI(name, Create, nil, nil)
 }
@@ -374,7 +375,7 @@ func (txn *Txn) OpenRoot(flags uint) (DBI, error) {
 type Cmp func(k1, k2 []byte) int
 
 // openDBI returns returns whatever DBI value was set by mdbx_open_dbi.  In an
-// error case, MDBX does not currently set DBI in case of failure, so zero is
+// error case, LMDB does not currently set DBI in case of failure, so zero is
 // returned in those cases.  This is not a big deal for now because
 // applications are expected to handle any error encountered opening a
 // database.
@@ -630,7 +631,7 @@ func (txn *Txn) errf(format string, v ...interface{}) {
 func (txn *Txn) finalize() {
 	if txn._txn != nil {
 		if !txn.Pooled {
-			txn.errf("mdbx: aborting unreachable transaction %#x", uintptr(unsafe.Pointer(txn)))
+			txn.errf("lmdb: aborting unreachable transaction %#x", uintptr(unsafe.Pointer(txn)))
 		}
 
 		txn.abort()
@@ -687,4 +688,13 @@ func (txn *Txn) DCmp(dbi DBI, a []byte, b []byte) int {
 		return -1
 	}
 	return 0
+}
+
+func (txn *Txn) Sequence(dbi DBI, increment uint64) (uint64, error) {
+	var res C.uint64_t
+	ret := C.mdbx_dbi_sequence(txn._txn, C.MDBX_dbi(dbi), &res, C.uint64_t(increment))
+	if ret != 0 {
+		return uint64(res), operrno("mdbx_dbi_sequence", ret)
+	}
+	return uint64(res), nil
 }

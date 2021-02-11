@@ -1,7 +1,7 @@
 /* mdbx_load.c - memory-mapped database load tool */
 
 /*
- * Copyright 2015-2020 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2021 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -22,7 +22,7 @@
 
 #define MDBX_TOOLS /* Avoid using internal mdbx_assert() */
 /*
- * Copyright 2015-2020 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2021 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -34,6 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
+#define MDBX_BUILD_SOURCERY c28f4f8639430c26ee6745bff5a95c11b991330980f283efba4afe6c3d07f335_v0_9_3_11_g34dcb410
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -125,7 +126,7 @@
 
 #include "mdbx.h"
 /*
- * Copyright 2015-2020 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2021 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -360,7 +361,7 @@
 #   if (defined(__GNUC__) || __has_builtin(__builtin_expect)) && !defined(__COVERITY__)
 #       define likely(cond) __builtin_expect(!!(cond), 1)
 #   else
-#       define likely(x) (x)
+#       define likely(x) (!!(x))
 #   endif
 #endif /* likely */
 
@@ -368,7 +369,7 @@
 #   if (defined(__GNUC__) || __has_builtin(__builtin_expect)) && !defined(__COVERITY__)
 #       define unlikely(cond) __builtin_expect(!!(cond), 0)
 #   else
-#       define unlikely(x) (x)
+#       define unlikely(x) (!!(x))
 #   endif
 #endif /* unlikely */
 
@@ -557,7 +558,7 @@ extern "C" {
 /* https://en.wikipedia.org/wiki/Operating_system_abstraction_layer */
 
 /*
- * Copyright 2015-2020 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2021 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -701,6 +702,7 @@ __extern_C key_t ftok(const char *, int);
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include <excpt.h>
 #include <tlhelp32.h>
 #include <windows.h>
 #include <winnt.h>
@@ -735,7 +737,8 @@ static inline void *mdbx_calloc(size_t nelem, size_t size) {
 
 #ifndef mdbx_realloc
 static inline void *mdbx_realloc(void *ptr, size_t bytes) {
-  return LocalReAlloc(ptr, bytes, LMEM_MOVEABLE);
+  return ptr ? LocalReAlloc(ptr, bytes, LMEM_MOVEABLE)
+             : LocalAlloc(LMEM_FIXED, bytes);
 }
 #endif /* mdbx_realloc */
 
@@ -1018,15 +1021,17 @@ extern void mdbx_osal_jitter(bool tiny);
 /*----------------------------------------------------------------------------*/
 /* Atomics */
 
-#if defined(__cplusplus) && !defined(__STDC_NO_ATOMICS__) && __has_include(<cstdatomic>)
+#if defined(__cplusplus) && !defined(__STDC_NO_ATOMICS__) && (__has_include(<cstdatomic>) || __has_extension(cxx_atomic))
 #include <cstdatomic>
-#elif !defined(__cplusplus) && (__STDC_VERSION__ >= 201112L) &&                \
+#define MDBX_HAVE_C11ATOMICS
+#elif !defined(__cplusplus) &&                                                 \
+    (__STDC_VERSION__ >= 201112L || __has_extension(c_atomic)) &&              \
     !defined(__STDC_NO_ATOMICS__) &&                                           \
     (__GNUC_PREREQ(4, 9) || __CLANG_PREREQ(3, 8) ||                            \
      !(defined(__GNUC__) || defined(__clang__)))
 #include <stdatomic.h>
+#define MDBX_HAVE_C11ATOMICS
 #elif defined(__GNUC__) || defined(__clang__)
-/* LY: nothing required */
 #elif defined(_MSC_VER)
 #pragma warning(disable : 4163) /* 'xyz': not available as an intrinsic */
 #pragma warning(disable : 4133) /* 'function': incompatible types - from       \
@@ -1062,14 +1067,6 @@ static __maybe_unused __inline void mdbx_compiler_barrier(void) {
   _ReadWriteBarrier();
 #elif defined(__INTEL_COMPILER) /* LY: Intel Compiler may mimic GCC and MSC */
   __memory_barrier();
-  if (type > MDBX_BARRIER_COMPILER)
-#if defined(__ia64__) || defined(__ia64) || defined(_M_IA64)
-    __mf();
-#elif defined(__i386__) || defined(__x86_64__)
-    _mm_mfence();
-#else
-#error "Unknown target for Intel Compiler, please report to us."
-#endif
 #elif defined(__SUNPRO_C) || defined(__sun) || defined(sun)
   __compiler_barrier();
 #elif (defined(_HPUX_SOURCE) || defined(__hpux) || defined(__HP_aCC)) &&       \
@@ -1084,21 +1081,23 @@ static __maybe_unused __inline void mdbx_compiler_barrier(void) {
 }
 
 static __maybe_unused __inline void mdbx_memory_barrier(void) {
-#if __has_extension(c_atomic) && !defined(__STDC_NO_ATOMICS__)
-  atomic_thread_fence(__ATOMIC_SEQ_CST);
+#ifdef MDBX_HAVE_C11ATOMICS
+  atomic_thread_fence(memory_order_seq_cst);
 #elif defined(__ATOMIC_SEQ_CST)
+#ifdef __clang__
+  __c11_atomic_thread_fence(__ATOMIC_SEQ_CST);
+#else
   __atomic_thread_fence(__ATOMIC_SEQ_CST);
+#endif
 #elif defined(__clang__) || defined(__GNUC__)
   __sync_synchronize();
-#elif defined(_MSC_VER)
+#elif defined(_WIN32) || defined(_WIN64)
   MemoryBarrier();
 #elif defined(__INTEL_COMPILER) /* LY: Intel Compiler may mimic GCC and MSC */
-#if defined(__ia64__) || defined(__ia64) || defined(_M_IA64)
-  __mf();
-#elif defined(__i386__) || defined(__x86_64__)
+#if defined(__ia32__)
   _mm_mfence();
 #else
-#error "Unknown target for Intel Compiler, please report to us."
+  __mf();
 #endif
 #elif defined(__SUNPRO_C) || defined(__sun) || defined(sun)
   __machine_rw_barrier();
@@ -1138,8 +1137,7 @@ MDBX_INTERNAL_FUNC int mdbx_vasprintf(char **strp, const char *fmt, va_list ap);
 
 #if defined(__linux__) || defined(__gnu_linux__)
 MDBX_INTERNAL_VAR uint32_t mdbx_linux_kernel_version;
-MDBX_INTERNAL_VAR bool
-    mdbx_RunningOnWSL /* Windows Subsystem for Linux is mad and trouble-full */;
+MDBX_INTERNAL_VAR bool mdbx_RunningOnWSL1 /* Windows Subsystem 1 for Linux */;
 #endif /* Linux */
 
 #ifndef mdbx_strdup
@@ -1562,11 +1560,6 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 #endif /* DOXYGEN */
 
-/** Enables support for huge write-transactions */
-#ifndef MDBX_HUGE_TRANSACTIONS
-#define MDBX_HUGE_TRANSACTIONS 0
-#endif /* MDBX_HUGE_TRANSACTIONS */
-
 /** Using fcntl(F_FULLFSYNC) with 5-10 times slowdown */
 #define MDBX_OSX_WANNA_DURABILITY 0
 /** Using fsync() with chance of data lost on power failure */
@@ -1615,6 +1608,33 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_TRUST_RTC_CONFIG STRINGIFY(MDBX_TRUST_RTC)
 #endif /* MDBX_TRUST_RTC */
+
+/** Controls online database auto-compactification during write-transactions. */
+#ifndef MDBX_ENABLE_REFUND
+#define MDBX_ENABLE_REFUND 1
+#endif
+#if !(MDBX_ENABLE_REFUND == 0 || MDBX_ENABLE_REFUND == 1)
+#error MDBX_ENABLE_REFUND must be defined as 0 or 1
+#endif /* MDBX_ENABLE_REFUND */
+
+/** Disable some checks to reduce an overhead and detection probability of
+ * database corruption to a values closer to the LMDB. */
+#ifndef MDBX_DISABLE_PAGECHECKS
+#define MDBX_DISABLE_PAGECHECKS 0
+#endif
+#if !(MDBX_DISABLE_PAGECHECKS == 0 || MDBX_DISABLE_PAGECHECKS == 1)
+#error MDBX_DISABLE_PAGECHECKS must be defined as 0 or 1
+#endif /* MDBX_DISABLE_PAGECHECKS */
+
+/** Controls sort order of internal page number lists.
+ * The database format depend on this option and libmdbx builded with different
+ * option value are incompatible. */
+#ifndef MDBX_PNL_ASCENDING
+#define MDBX_PNL_ASCENDING 0
+#endif
+#if !(MDBX_PNL_ASCENDING == 0 || MDBX_PNL_ASCENDING == 1)
+#error MDBX_PNL_ASCENDING must be defined as 0 or 1
+#endif /* MDBX_PNL_ASCENDING */
 
 //------------------------------------------------------------------------------
 
@@ -1816,6 +1836,31 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 /*----------------------------------------------------------------------------*/
 /* Basic constants and types */
 
+typedef union {
+  volatile uint32_t weak;
+#ifdef MDBX_HAVE_C11ATOMICS
+  volatile _Atomic uint32_t c11a;
+#endif /* MDBX_HAVE_C11ATOMICS */
+} MDBX_atomic_uint32_t;
+
+typedef union {
+  volatile uint64_t weak;
+#if defined(MDBX_HAVE_C11ATOMICS) && (MDBX_64BIT_CAS || MDBX_64BIT_ATOMIC)
+  volatile _Atomic uint64_t c11a;
+#endif
+#if !defined(MDBX_HAVE_C11ATOMICS) || !MDBX_64BIT_CAS || !MDBX_64BIT_ATOMIC
+  __anonymous_struct_extension__ struct {
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    MDBX_atomic_uint32_t low, high;
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    MDBX_atomic_uint32_t high, low;
+#else
+#error "FIXME: Unsupported byte order"
+#endif /* __BYTE_ORDER__ */
+  };
+#endif
+} MDBX_atomic_uint64_t;
+
 /* The minimum number of keys required in a database page.
  * Setting this to a larger value will place a smaller bound on the
  * maximum size of a data item. Data items larger than this size will
@@ -1854,6 +1899,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
  * MDBX uses 32 bit for page numbers. This limits database
  * size up to 2^44 bytes, in case of 4K pages. */
 typedef uint32_t pgno_t;
+typedef MDBX_atomic_uint32_t atomic_pgno_t;
 #define PRIaPGNO PRIu32
 #define MAX_PAGENO UINT32_C(0x7FFFffff)
 #define MIN_PAGENO NUM_METAS
@@ -1862,6 +1908,7 @@ typedef uint32_t pgno_t;
 
 /* A transaction ID. */
 typedef uint64_t txnid_t;
+typedef MDBX_atomic_uint64_t atomic_txnid_t;
 #define PRIaTXN PRIi64
 #define MIN_TXNID UINT64_C(1)
 #define MAX_TXNID (SAFE64_INVALID_THRESHOLD - 1)
@@ -1887,24 +1934,6 @@ typedef uint16_t indx_t;
 /*----------------------------------------------------------------------------*/
 /* Core structures for database and shared memory (i.e. format definition) */
 #pragma pack(push, 1)
-
-typedef union mdbx_safe64 {
-  volatile uint64_t inconsistent;
-#if MDBX_64BIT_ATOMIC
-  volatile uint64_t atomic;
-#endif /* MDBX_64BIT_ATOMIC */
-  __anonymous_struct_extension__ struct {
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    volatile uint32_t low;
-    volatile uint32_t high;
-#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    volatile uint32_t high;
-    volatile uint32_t low;
-#else
-#error "FIXME: Unsupported byte order"
-#endif /* __BYTE_ORDER__ */
-  };
-} mdbx_safe64_t;
 
 /* Information about a single database in the environment. */
 typedef struct MDBX_db {
@@ -1937,10 +1966,10 @@ typedef struct mdbx_geo_t {
 typedef struct MDBX_meta {
   /* Stamp identifying this as an MDBX file.
    * It must be set to MDBX_MAGIC with MDBX_DATA_VERSION. */
-  uint64_t mm_magic_and_version;
+  uint32_t mm_magic_and_version[2];
 
   /* txnid that committed this page, the first of a two-phase-update pair */
-  mdbx_safe64_t mm_txnid_a;
+  uint32_t mm_txnid_a[2];
 
   uint16_t mm_extra_flags;  /* extra DB flags, zero (nothing) for now */
   uint8_t mm_validator_id;  /* ID of checksum and page validation method,
@@ -1960,17 +1989,18 @@ typedef struct MDBX_meta {
 #define MDBX_DATASIGN_NONE 0u
 #define MDBX_DATASIGN_WEAK 1u
 #define SIGN_IS_STEADY(sign) ((sign) > MDBX_DATASIGN_WEAK)
-#define META_IS_STEADY(meta) SIGN_IS_STEADY((meta)->mm_datasync_sign)
-  volatile uint64_t mm_datasync_sign;
+#define META_IS_STEADY(meta)                                                   \
+  SIGN_IS_STEADY(unaligned_peek_u64(4, (meta)->mm_datasync_sign))
+  uint32_t mm_datasync_sign[2];
 
   /* txnid that committed this page, the second of a two-phase-update pair */
-  mdbx_safe64_t mm_txnid_b;
+  uint32_t mm_txnid_b[2];
 
   /* Number of non-meta pages which were put in GC after COW. May be 0 in case
    * DB was previously handled by libmdbx without corresponding feature.
    * This value in couple with mr_snapshot_pages_retired allows fast estimation
    * of "how much reader is restraining GC recycling". */
-  uint64_t mm_pages_retired;
+  uint32_t mm_pages_retired[2];
 
   /* The analogue /proc/sys/kernel/random/boot_id or similar to determine
    * whether the system was rebooted after the last use of the database files.
@@ -2000,8 +2030,8 @@ typedef struct MDBX_meta {
  * in the snapshot: Either used by a database or listed in a GC record. */
 typedef struct MDBX_page {
   union {
+    uint64_t mp_txnid;         /* txnid that committed this page */
     struct MDBX_page *mp_next; /* for in-memory list of freed pages */
-    uint64_t mp_txnid;         /* txnid during which the page has been COW-ed */
   };
   uint16_t mp_leaf2_ksize; /* key size if this is a LEAF2 page */
 #define P_BRANCH 0x01      /* branch page */
@@ -2011,15 +2041,16 @@ typedef struct MDBX_page {
 #define P_DIRTY 0x10       /* dirty page, also set for P_SUBP pages */
 #define P_LEAF2 0x20       /* for MDBX_DUPFIXED records */
 #define P_SUBP 0x40        /* for MDBX_DUPSORT sub-pages */
+#define P_BAD 0x80         /* explicit flag for invalid/bad page */
 #define P_LOOSE 0x4000     /* page was dirtied then freed, can be reused */
 #define P_KEEP 0x8000      /* leave this page alone during spill */
   uint16_t mp_flags;
   union {
+    uint32_t mp_pages; /* number of overflow pages */
     __anonymous_struct_extension__ struct {
       indx_t mp_lower; /* lower bound of free space */
       indx_t mp_upper; /* upper bound of free space */
     };
-    uint32_t mp_pages; /* number of overflow pages */
   };
   pgno_t mp_pgno; /* page number */
 
@@ -2107,7 +2138,7 @@ typedef struct MDBX_reader {
    * anything; all we need to know is which version of the DB they
    * started from so we can avoid overwriting any data used in that
    * particular version. */
-  mdbx_safe64_t /* txnid_t */ mr_txnid;
+  MDBX_atomic_uint64_t /* txnid_t */ mr_txnid;
 
   /* The information we store in a single slot of the reader table.
    * In addition to a transaction ID, we also record the process and
@@ -2119,23 +2150,18 @@ typedef struct MDBX_reader {
    * opening the lock file. */
 
   /* The thread ID of the thread owning this txn. */
-#if MDBX_WORDBITS >= 64
-  volatile uint64_t mr_tid;
-#else
-  volatile uint32_t mr_tid;
-  volatile uint32_t mr_aba_curer; /* CSN to resolve ABA_problems on 32-bit arch,
-                                     unused for now */
-#endif
+  MDBX_atomic_uint64_t mr_tid;
+
   /* The process ID of the process owning this reader txn. */
-  volatile uint32_t mr_pid;
+  MDBX_atomic_uint32_t mr_pid;
 
   /* The number of pages used in the reader's MVCC snapshot,
    * i.e. the value of meta->mm_geo.next and txn->mt_next_pgno */
-  volatile pgno_t mr_snapshot_pages_used;
+  atomic_pgno_t mr_snapshot_pages_used;
   /* Number of retired pages at the time this reader starts transaction. So,
    * at any time the difference mm_pages_retired - mr_snapshot_pages_retired
    * will give the number of pages which this reader restraining from reuse. */
-  volatile uint64_t mr_snapshot_pages_retired;
+  MDBX_atomic_uint64_t mr_snapshot_pages_retired;
 } MDBX_reader;
 
 /* The header for the reader table (a memory-mapped lock file). */
@@ -2148,25 +2174,25 @@ typedef struct MDBX_lockinfo {
   uint32_t mti_os_and_format;
 
   /* Flags which environment was opened. */
-  volatile uint32_t mti_envmode;
+  MDBX_atomic_uint32_t mti_envmode;
 
   /* Threshold of un-synced-with-disk pages for auto-sync feature,
    * zero means no-threshold, i.e. auto-sync is disabled. */
-  volatile pgno_t mti_autosync_threshold;
+  atomic_pgno_t mti_autosync_threshold;
 
   /* Low 32-bit of txnid with which meta-pages was synced,
    * i.e. for sync-polling in the MDBX_NOMETASYNC mode. */
-  volatile uint32_t mti_meta_sync_txnid;
+  MDBX_atomic_uint32_t mti_meta_sync_txnid;
 
   /* Period for timed auto-sync feature, i.e. at the every steady checkpoint
    * the mti_unsynced_timeout sets to the current_time + mti_autosync_period.
    * The time value is represented in a suitable system-dependent form, for
    * example clock_gettime(CLOCK_BOOTTIME) or clock_gettime(CLOCK_MONOTONIC).
    * Zero means timed auto-sync is disabled. */
-  volatile uint64_t mti_autosync_period;
+  MDBX_atomic_uint64_t mti_autosync_period;
 
   /* Marker to distinguish uniqueness of DB/CLK.*/
-  volatile uint64_t mti_bait_uniqueness;
+  MDBX_atomic_uint64_t mti_bait_uniqueness;
 
   alignas(MDBX_CACHELINE_SIZE) /* cacheline ---------------------------------*/
 
@@ -2175,21 +2201,21 @@ typedef struct MDBX_lockinfo {
       mdbx_ipclock_t mti_wlock;
 #endif /* MDBX_LOCKING > 0 */
 
-  volatile txnid_t mti_oldest_reader;
+  atomic_txnid_t mti_oldest_reader;
 
   /* Timestamp of the last steady sync. Value is represented in a suitable
    * system-dependent form, for example clock_gettime(CLOCK_BOOTTIME) or
    * clock_gettime(CLOCK_MONOTONIC). */
-  volatile uint64_t mti_sync_timestamp;
+  MDBX_atomic_uint64_t mti_sync_timestamp;
 
   /* Number un-synced-with-disk pages for auto-sync feature. */
-  volatile pgno_t mti_unsynced_pages;
+  atomic_pgno_t mti_unsynced_pages;
 
   /* Number of page which was discarded last time by madvise(MADV_FREE). */
-  volatile pgno_t mti_discarded_tail;
+  atomic_pgno_t mti_discarded_tail;
 
   /* Timestamp of the last readers check. */
-  volatile uint64_t mti_reader_check_timestamp;
+  MDBX_atomic_uint64_t mti_reader_check_timestamp;
 
   alignas(MDBX_CACHELINE_SIZE) /* cacheline ---------------------------------*/
 
@@ -2201,8 +2227,8 @@ typedef struct MDBX_lockinfo {
   /* The number of slots that have been used in the reader table.
    * This always records the maximum count, it is not decremented
    * when readers release their slots. */
-  volatile unsigned mti_numreaders;
-  volatile unsigned mti_readers_refresh_flag;
+  MDBX_atomic_uint32_t mti_numreaders;
+  MDBX_atomic_uint32_t mti_readers_refresh_flag;
 
 #if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) ||              \
     (!defined(__cplusplus) && defined(_MSC_VER))
@@ -2219,7 +2245,8 @@ typedef struct MDBX_lockinfo {
    (unsigned)offsetof(MDBX_lockinfo, mti_numreaders) * 37 +                    \
    (unsigned)offsetof(MDBX_lockinfo, mti_readers) * 29)
 
-#define MDBX_DATA_MAGIC ((MDBX_MAGIC << 8) + MDBX_DATA_VERSION)
+#define MDBX_DATA_MAGIC                                                        \
+  ((MDBX_MAGIC << 8) + MDBX_PNL_ASCENDING * 64 + MDBX_DATA_VERSION)
 #define MDBX_DATA_MAGIC_DEVEL ((MDBX_MAGIC << 8) + 255)
 
 #define MDBX_LOCK_MAGIC ((MDBX_MAGIC << 8) + MDBX_LOCK_VERSION)
@@ -2256,20 +2283,21 @@ typedef struct MDBX_lockinfo {
 #if MDBX_WORDBITS >= 64
 #define MAX_MAPSIZE MAX_MAPSIZE64
 #define MDBX_READERS_LIMIT                                                     \
-  ((65536 - sizeof(MDBX_lockinfo)) / sizeof(MDBX_reader))
+  ((MAX_PAGESIZE - sizeof(MDBX_lockinfo)) / sizeof(MDBX_reader))
+#define MDBX_PGL_LIMIT MAX_PAGENO
 #else
 #define MDBX_READERS_LIMIT 1024
 #define MAX_MAPSIZE MAX_MAPSIZE32
+#define MDBX_PGL_LIMIT (MAX_MAPSIZE32 / MIN_PAGESIZE)
 #endif /* MDBX_WORDBITS */
 
 /*----------------------------------------------------------------------------*/
-/* Two kind lists of pages (aka PNL) */
 
-/* An PNL is an Page Number List, a sorted array of IDs. The first element of
- * the array is a counter for how many actual page-numbers are in the list.
- * PNLs are sorted in descending order, this allow cut off a page with lowest
- * pgno (at the tail) just truncating the list */
-#define MDBX_PNL_ASCENDING 0
+/* An PNL is an Page Number List, a sorted array of IDs.
+ * The first element of the array is a counter for how many actual page-numbers
+ * are in the list. By default PNLs are sorted in descending order, this allow
+ * cut off a page with lowest pgno (at the tail) just truncating the list. The
+ * sort order of PNLs is controlled by the MDBX_PNL_ASCENDING build option. */
 typedef pgno_t *MDBX_PNL;
 
 #if MDBX_PNL_ASCENDING
@@ -2284,36 +2312,27 @@ typedef pgno_t *MDBX_PNL;
 typedef txnid_t *MDBX_TXL;
 
 /* An Dirty-Page list item is an pgno/pointer pair. */
-typedef union MDBX_DP {
-  __anonymous_struct_extension__ struct {
-    pgno_t pgno;
-    MDBX_page *ptr;
-  };
-  __anonymous_struct_extension__ struct {
-    unsigned sorted;
-    unsigned length;
-  };
-} MDBX_DP;
+typedef struct MDBX_dp {
+  pgno_t pgno;
+  MDBX_page *ptr;
+} MDBX_dp;
 
-/* An DPL (dirty-page list) is a sorted array of MDBX_DPs.
- * The first element's length member is a count of how many actual
- * elements are in the array. */
-typedef MDBX_DP *MDBX_DPL;
+/* An DPL (dirty-page list) is a sorted array of MDBX_DPs. */
+typedef struct MDBX_dpl {
+  unsigned sorted;
+  unsigned length;
+  unsigned detent; /* allocated size excluding the MDBX_DPL_RESERVE_GAP */
+#if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) ||              \
+    (!defined(__cplusplus) && defined(_MSC_VER))
+  MDBX_dp items[] /* dynamic size with holes at zero and after the last */;
+#endif
+} MDBX_dpl;
 
 /* PNL sizes */
 #define MDBX_PNL_GRANULATE 1024
+#define MDBX_PNL_RADIXSORT_THRESHOLD 1024
 #define MDBX_PNL_INITIAL                                                       \
   (MDBX_PNL_GRANULATE - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(pgno_t))
-
-#if MDBX_HUGE_TRANSACTIONS
-#define MDBX_PNL_MAX                                                           \
-  ((1u << 26) - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(pgno_t))
-#define MDBX_DPL_TXNFULL (MDBX_PNL_MAX / 2)
-#else
-#define MDBX_PNL_MAX                                                           \
-  ((1u << 24) - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(pgno_t))
-#define MDBX_DPL_TXNFULL (MDBX_PNL_MAX / 4)
-#endif /* MDBX_HUGE_TRANSACTIONS */
 
 #define MDBX_TXL_GRANULATE 32
 #define MDBX_TXL_INITIAL                                                       \
@@ -2408,8 +2427,6 @@ struct MDBX_txn {
   MDBX_db *mt_dbs;
   /* Array of sequence numbers for each DB handle */
   unsigned *mt_dbiseqs;
-  /* In write txns, array of cursors for each DB */
-  MDBX_cursor **mt_cursors;
 
   /* Transaction DBI Flags */
 #define DBI_DIRTY MDBX_DBI_DIRTY /* DB was written in this txn */
@@ -2436,16 +2453,20 @@ struct MDBX_txn {
       MDBX_reader *reader;
     } to;
     struct {
+      /* In write txns, array of cursors for each DB */
+      MDBX_cursor **cursors;
       pgno_t *reclaimed_pglist; /* Reclaimed GC pages */
       txnid_t last_reclaimed;   /* ID of last used record */
+#if MDBX_ENABLE_REFUND
       pgno_t loose_refund_wl /* FIXME: describe */;
+#endif /* MDBX_ENABLE_REFUND */
       /* dirtylist room: Dirty array size - dirty pages visible to this txn.
        * Includes ancestor txns' dirty pages not hidden by other txns'
        * dirty/spilled pages. Thus commit(nested txn) has room to merge
        * dirtylist into mt_parent after freeing hidden mt_parent pages. */
       unsigned dirtyroom;
       /* For write txns: Modified pages. Sorted when not MDBX_WRITEMAP. */
-      MDBX_DPL dirtylist;
+      MDBX_dpl *dirtylist;
       /* The list of reclaimed txns from GC */
       MDBX_TXL lifo_reclaimed;
       /* The list of pages that became unused during this transaction. */
@@ -2455,26 +2476,19 @@ struct MDBX_txn {
       MDBX_page *loose_pages;
       /* Number of loose pages (tw.loose_pages) */
       unsigned loose_count;
-      /* Number of retired to parent pages (tw.retired2parent_pages) */
-      unsigned retired2parent_count;
-      /* The list of parent's txn dirty pages that retired (became unused)
-       * in this transaction, linked through `mp_next`. */
-      MDBX_page *retired2parent_pages;
       /* The sorted list of dirty pages we temporarily wrote to disk
        * because the dirty list was full. page numbers in here are
        * shifted left by 1, deleted slots have the LSB set. */
       MDBX_PNL spill_pages;
+      unsigned spill_least_removed;
     } tw;
   };
 };
 
-/* Enough space for 2^32 nodes with minimum of 2 keys per node. I.e., plenty.
- * At 4 keys per node, enough for 2^64 nodes, so there's probably no need to
- * raise this on a 64 bit machine. */
 #if MDBX_WORDBITS >= 64
-#define CURSOR_STACK 28
+#define CURSOR_STACK 32
 #else
-#define CURSOR_STACK 20
+#define CURSOR_STACK 24
 #endif
 
 struct MDBX_xcursor;
@@ -2554,7 +2568,7 @@ typedef struct MDBX_cursor_couple {
 /* The database environment. */
 struct MDBX_env {
 #define MDBX_ME_SIGNATURE UINT32_C(0x9A899641)
-  uint32_t me_signature;
+  MDBX_atomic_uint32_t me_signature;
   /* Failed to update the meta page. Probably an I/O error. */
 #define MDBX_FATAL_ERROR UINT32_C(0x80000000)
   /* Some fields are initialized. */
@@ -2600,38 +2614,47 @@ struct MDBX_env {
   mdbx_ipclock_t *me_wlock;
 #endif /* MDBX_LOCKING > 0 */
 
-  MDBX_dbx *me_dbxs;           /* array of static DB info */
-  uint16_t *me_dbflags;        /* array of flags from MDBX_db.md_flags */
-  unsigned *me_dbiseqs;        /* array of dbi sequence numbers */
-  volatile txnid_t *me_oldest; /* ID of oldest reader last time we looked */
-  MDBX_page *me_dpages;        /* list of malloc'd blocks for re-use */
+  MDBX_dbx *me_dbxs;         /* array of static DB info */
+  uint16_t *me_dbflags;      /* array of flags from MDBX_db.md_flags */
+  unsigned *me_dbiseqs;      /* array of dbi sequence numbers */
+  atomic_txnid_t *me_oldest; /* ID of oldest reader last time we looked */
+  MDBX_page *me_dp_reserve;  /* list of malloc'd blocks for re-use */
   /* PNL of pages that became unused in a write txn */
   MDBX_PNL me_retired_pages;
-  /* MDBX_DP of pages written during a write txn. */
-  MDBX_DPL me_dirtylist;
   /* Number of freelist items that can fit in a single overflow page */
   unsigned me_maxgc_ov1page;
   unsigned me_branch_nodemax; /* max size of a branch-node */
   uint32_t me_live_reader;    /* have liveness lock in reader table */
   void *me_userctx;           /* User-settable context */
-  volatile uint64_t *me_sync_timestamp;
-  volatile uint64_t *me_autosync_period;
-  volatile pgno_t *me_unsynced_pages;
-  volatile pgno_t *me_autosync_threshold;
-  volatile pgno_t *me_discarded_tail;
-  volatile uint32_t *me_meta_sync_txnid;
+  MDBX_atomic_uint64_t *me_sync_timestamp;
+  MDBX_atomic_uint64_t *me_autosync_period;
+  atomic_pgno_t *me_unsynced_pages;
+  atomic_pgno_t *me_autosync_threshold;
+  atomic_pgno_t *me_discarded_tail;
+  MDBX_atomic_uint32_t *me_meta_sync_txnid;
   MDBX_hsr_func *me_hsr_callback; /* Callback for kicking laggard readers */
+  unsigned me_dp_reserve_len;
+  struct {
+    unsigned dp_reserve_limit;
+    unsigned rp_augment_limit;
+    unsigned dp_limit;
+    unsigned dp_initial;
+    uint8_t dp_loose_limit;
+    uint8_t spill_max_denominator;
+    uint8_t spill_min_denominator;
+    uint8_t spill_parent4child_denominator;
+  } me_options;
   struct {
 #if MDBX_LOCKING > 0
     mdbx_ipclock_t wlock;
 #endif /* MDBX_LOCKING > 0 */
-    txnid_t oldest;
-    uint64_t sync_timestamp;
-    uint64_t autosync_period;
-    pgno_t autosync_pending;
-    pgno_t autosync_threshold;
-    pgno_t discarded_tail;
-    uint32_t meta_sync_txnid;
+    atomic_txnid_t oldest;
+    MDBX_atomic_uint64_t sync_timestamp;
+    MDBX_atomic_uint64_t autosync_period;
+    atomic_pgno_t autosync_pending;
+    atomic_pgno_t autosync_threshold;
+    atomic_pgno_t discarded_tail;
+    MDBX_atomic_uint32_t meta_sync_txnid;
   } me_lckless_stub;
 #if MDBX_DEBUG
   MDBX_assert_func *me_assert_func; /*  Callback for assertion failures */
@@ -2859,7 +2882,7 @@ static __maybe_unused __inline void mdbx_jitter4testing(bool tiny) {
   ((rc) != MDBX_RESULT_TRUE && (rc) != MDBX_RESULT_FALSE)
 
 /* Internal error codes, not exposed outside libmdbx */
-#define MDBX_NO_ROOT (MDBX_LAST_LMDB_ERRCODE + 10)
+#define MDBX_NO_ROOT (MDBX_LAST_ADDED_ERRCODE + 10)
 
 /* Debugging output value of a cursor DBI: Negative in a sub-cursor. */
 #define DDBI(mc)                                                               \
@@ -3234,7 +3257,6 @@ static MDBX_envinfo envinfo;
 static int mode = GLOBAL;
 
 static MDBX_val kbuf, dbuf;
-static MDBX_val k0buf;
 
 #define STRLENOF(s) (sizeof(s) - 1)
 
@@ -3565,16 +3587,17 @@ static int readline(MDBX_val *out, MDBX_val *buf) {
 
 static void usage(void) {
   fprintf(stderr,
-          "usage: %s [-V] [-q] [-a] [-f file] [-s name] [-N] [-T] [-r] [-n]"
-          "dbpath\n"
+          "usage: %s "
+          "[-V] [-q] [-a] [-f file] [-s name] [-N] [-p] [-T] [-r] [-n] dbpath\n"
           "  -V\t\tprint version and exit\n"
           "  -q\t\tbe quiet\n"
           "  -a\t\tappend records in input order (required for custom "
           "comparators)\n"
           "  -f file\tread from file instead of stdin\n"
           "  -s name\tload into named subDB\n"
-          "  -N\t\tdon't overwrite existing records when loading (), just skip "
-          "them\n"
+          "  -N\t\tdon't overwrite existing records when loading, just skip "
+          "ones\n"
+          "  -p\t\tpurge subDB before loading\n"
           "  -T\t\tread plaintext\n"
           "  -r\t\trescue mode (ignore errors to load corrupted DB dump)\n"
           "  -n\t\tdon't use subdirectory for newly created database "
@@ -3597,17 +3620,26 @@ int main(int argc, char *argv[]) {
   MDBX_cursor *mc = nullptr;
   MDBX_dbi dbi;
   char *envname = nullptr;
-  int envflags = MDBX_UTTERLY_NOSYNC, putflags = 0;
-  bool append = false;
+  int envflags = MDBX_SAFE_NOSYNC | MDBX_ACCEDE, putflags = MDBX_UPSERT;
   bool quiet = false;
   bool rescue = false;
-  MDBX_val prevk;
+  bool purge = false;
 
   prog = argv[0];
   if (argc < 2)
     usage();
 
-  while ((i = getopt(argc, argv, "af:ns:NTVrq")) != EOF) {
+  while ((i = getopt(argc, argv,
+                     "a"
+                     "f:"
+                     "n"
+                     "s:"
+                     "N"
+                     "p"
+                     "T"
+                     "V"
+                     "r"
+                     "q")) != EOF) {
     switch (i) {
     case 'V':
       printf("mdbx_load version %d.%d.%d.%d\n"
@@ -3624,7 +3656,7 @@ int main(int argc, char *argv[]) {
              mdbx_build.options);
       return EXIT_SUCCESS;
     case 'a':
-      append = true;
+      putflags |= MDBX_APPEND;
       break;
     case 'f':
       if (freopen(optarg, "r", stdin) == nullptr) {
@@ -3640,7 +3672,10 @@ int main(int argc, char *argv[]) {
       subname = mdbx_strdup(optarg);
       break;
     case 'N':
-      putflags = MDBX_NOOVERWRITE | MDBX_NODUPDATA;
+      putflags |= MDBX_NOOVERWRITE | MDBX_NODUPDATA;
+      break;
+    case 'p':
+      purge = true;
       break;
     case 'T':
       mode |= NOHDR | PRINT;
@@ -3681,6 +3716,11 @@ int main(int argc, char *argv[]) {
 
   dbuf.iov_len = 4096;
   dbuf.iov_base = mdbx_malloc(dbuf.iov_len);
+  if (!dbuf.iov_base) {
+    rc = MDBX_ENOMEM;
+    error("value-buffer", rc);
+    goto env_close;
+  }
 
   /* read first header for mapsize= */
   if (!(mode & NOHDR)) {
@@ -3708,7 +3748,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  if (envinfo.mi_mapsize) {
+  if (envinfo.mi_geo.current | envinfo.mi_mapsize) {
     if (envinfo.mi_geo.current) {
       rc = mdbx_env_set_geometry(
           env, (intptr_t)envinfo.mi_geo.lower, (intptr_t)envinfo.mi_geo.current,
@@ -3741,17 +3781,19 @@ int main(int argc, char *argv[]) {
     goto env_close;
   }
 
-  kbuf.iov_len = mdbx_env_get_maxvalsize_ex(env, MDBX_DUPSORT);
-  if (kbuf.iov_len >= INTPTR_MAX / 4) {
+  kbuf.iov_len = mdbx_env_get_maxvalsize_ex(env, 0) + 1;
+  if (kbuf.iov_len >= INTPTR_MAX / 2) {
     fprintf(stderr, "mdbx_env_get_maxkeysize() failed, returns %zu\n",
             kbuf.iov_len);
     goto env_close;
   }
-  kbuf.iov_len = (kbuf.iov_len + 1) * 2;
-  kbuf.iov_base = malloc(kbuf.iov_len * 2);
-  k0buf.iov_len = kbuf.iov_len;
-  k0buf.iov_base = (char *)kbuf.iov_base + kbuf.iov_len;
-  prevk.iov_base = k0buf.iov_base;
+
+  kbuf.iov_base = malloc(kbuf.iov_len);
+  if (!kbuf.iov_base) {
+    rc = MDBX_ENOMEM;
+    error("key-buffer", rc);
+    goto env_close;
+  }
 
   while (rc == MDBX_SUCCESS) {
     if (user_break) {
@@ -3777,9 +3819,10 @@ int main(int argc, char *argv[]) {
     }
 
     const char *const dbi_name = subname ? subname : "@MAIN";
-    rc = mdbx_dbi_open_ex(txn, subname, dbi_flags | MDBX_CREATE, &dbi,
-                          append ? equal_or_greater : nullptr,
-                          append ? equal_or_greater : nullptr);
+    rc =
+        mdbx_dbi_open_ex(txn, subname, dbi_flags | MDBX_CREATE, &dbi,
+                         (putflags & MDBX_APPEND) ? equal_or_greater : nullptr,
+                         (putflags & MDBX_APPEND) ? equal_or_greater : nullptr);
     if (unlikely(rc != MDBX_SUCCESS)) {
       error("mdbx_dbi_open_ex", rc);
       goto txn_abort;
@@ -3807,19 +3850,25 @@ int main(int argc, char *argv[]) {
       }
     }
 
+    if (purge) {
+      rc = mdbx_drop(txn, dbi, false);
+      if (unlikely(rc != MDBX_SUCCESS)) {
+        error("mdbx_drop", rc);
+        goto txn_abort;
+      }
+    }
+
+    if (putflags & MDBX_APPEND)
+      putflags = (dbi_flags & MDBX_DUPSORT) ? putflags | MDBX_APPENDDUP
+                                            : putflags & ~MDBX_APPENDDUP;
+
     rc = mdbx_cursor_open(txn, dbi, &mc);
     if (unlikely(rc != MDBX_SUCCESS)) {
       error("mdbx_cursor_open", rc);
       goto txn_abort;
     }
-    /* if (append) {
-      mc->mc_flags |= C_SKIPORD;
-      if (mc->mc_xcursor)
-        mc->mc_xcursor->mx_cursor.mc_flags |= C_SKIPORD;
-    } */
 
     int batch = 0;
-    prevk.iov_len = 0;
     while (rc == MDBX_SUCCESS) {
       MDBX_val key, data;
       rc = readline(&key, &kbuf);
@@ -3834,18 +3883,7 @@ int main(int argc, char *argv[]) {
         goto txn_abort;
       }
 
-      int appflag = 0;
-      if (append) {
-        appflag = MDBX_APPEND;
-        if (dbi_flags & MDBX_DUPSORT) {
-          if (prevk.iov_len == key.iov_len &&
-              memcmp(prevk.iov_base, key.iov_base, key.iov_len) == 0)
-            appflag = MDBX_APPEND | MDBX_APPENDDUP;
-          else
-            memcpy(prevk.iov_base, key.iov_base, prevk.iov_len = key.iov_len);
-        }
-      }
-      rc = mdbx_cursor_put(mc, &key, &data, putflags | appflag);
+      rc = mdbx_cursor_put(mc, &key, &data, putflags);
       if (rc == MDBX_KEYEXIST && putflags)
         continue;
       if (rc == MDBX_BAD_VALSIZE && rescue) {
@@ -3866,9 +3904,7 @@ int main(int argc, char *argv[]) {
         goto txn_abort;
       }
 
-      if (batch == 10000 || txn_info.txn_space_dirty > MEGABYTE * 16) {
-        mdbx_cursor_close(mc);
-        mc = nullptr;
+      if (batch == 10000 || txn_info.txn_space_dirty > MEGABYTE * 256) {
         rc = mdbx_txn_commit(txn);
         if (unlikely(rc != MDBX_SUCCESS)) {
           error("mdbx_txn_commit", rc);
@@ -3881,16 +3917,11 @@ int main(int argc, char *argv[]) {
           error("mdbx_txn_begin", rc);
           goto env_close;
         }
-        rc = mdbx_cursor_open(txn, dbi, &mc);
+        rc = mdbx_cursor_bind(txn, mc, dbi);
         if (unlikely(rc != MDBX_SUCCESS)) {
-          error("mdbx_cursor_open", rc);
+          error("mdbx_cursor_bind", rc);
           goto txn_abort;
         }
-        /* if (append) {
-          mc->mc_flags |= C_SKIPORD;
-          if (mc->mc_xcursor)
-            mc->mc_xcursor->mx_cursor.mc_flags |= C_SKIPORD;
-        } */
       }
     }
 
@@ -3902,15 +3933,22 @@ int main(int argc, char *argv[]) {
       error("mdbx_txn_commit", rc);
       goto env_close;
     }
-    rc = mdbx_dbi_close(env, dbi);
-    if (unlikely(rc != MDBX_SUCCESS)) {
-      error("mdbx_dbi_close", rc);
-      goto env_close;
+    if (subname) {
+      assert(dbi != MAIN_DBI);
+      rc = mdbx_dbi_close(env, dbi);
+      if (unlikely(rc != MDBX_SUCCESS)) {
+        error("mdbx_dbi_close", rc);
+        goto env_close;
+      }
+    } else {
+      assert(dbi == MAIN_DBI);
     }
 
     /* try read next header */
     if (!(mode & NOHDR))
       rc = readhdr();
+    else if (ferror(stdin) || feof(stdin))
+      break;
   }
 
   switch (rc) {
@@ -3931,6 +3969,8 @@ txn_abort:
   mdbx_txn_abort(txn);
 env_close:
   mdbx_env_close(env);
+  free(kbuf.iov_base);
+  free(dbuf.iov_base);
 
   return rc ? EXIT_FAILURE : EXIT_SUCCESS;
 }

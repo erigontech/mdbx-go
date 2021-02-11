@@ -13,7 +13,7 @@ import (
 )
 
 // OpError is an error returned by the C API.  Not all errors returned by
-// mdbx-go have type OpError but typically they do.  The Errno field will
+// lmdb-go have type OpError but typically they do.  The Errno field will
 // either have type Errno or syscall.Errno.
 type OpError struct {
 	Op    string
@@ -26,17 +26,17 @@ func (err *OpError) Error() string {
 }
 
 // Errno is an error type that represents the (unique) errno values defined by
-// mdbx.  Other errno values (such as EINVAL) are represented with type
-// syscall.Errno.  On Windows, MDBX return codes are translated into portable
+// LMDB.  Other errno values (such as EINVAL) are represented with type
+// syscall.Errno.  On Windows, LMDB return codes are translated into portable
 // syscall.Errno constants (e.g. syscall.EINVAL, syscall.EACCES, etc.).
 //
 // Most often helper functions such as IsNotFound may be used instead of
 // dealing with Errno values directly.
 //
-//		mdbx.IsNotFound(err)
-//		mdbx.IsErrno(err, mdbx.TxnFull)
-//		mdbx.IsErrnoSys(err, syscall.EINVAL)
-//		mdbx.IsErrnoFn(err, os.IsPermission)
+//		lmdb.IsNotFound(err)
+//		lmdb.IsErrno(err, lmdb.TxnFull)
+//		lmdb.IsErrnoSys(err, syscall.EINVAL)
+//		lmdb.IsErrnoFn(err, os.IsPermission)
 type Errno C.int
 
 // The most common error codes do not need to be handled explicity.  Errors can
@@ -44,7 +44,7 @@ type Errno C.int
 // they should be checked using the IsErrno function instead of direct
 // comparison because they will typically be wrapped with an OpError.
 const (
-	// Error codes defined by mdbx.  See the list of MDBX return codes for more
+	// Error codes defined by LMDB.  See the list of LMDB return codes for more
 	// information about each
 	//
 	//		http://symas.com/mdb/doc/group__errors.html
@@ -90,6 +90,10 @@ func _operrno(op string, ret int) error {
 // a value (EOF).
 func IsNotFound(err error) bool {
 	return IsErrno(err, NotFound)
+}
+
+func IsKeyExists(err error) bool {
+	return IsErrno(err, KeyExist)
 }
 
 // IsNotExist returns true the path passed to the Env.Open method does not

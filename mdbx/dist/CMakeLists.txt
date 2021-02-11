@@ -1,5 +1,5 @@
 ##
-##  Copyright 2020 Leonid Yuriev <leo@yuriev.ru>
+##  Copyright 2020-2021 Leonid Yuriev <leo@yuriev.ru>
 ##  and other libmdbx authors: please see AUTHORS file.
 ##  All rights reserved.
 ##
@@ -340,10 +340,14 @@ if(NOT DEFINED MDBX_CXX_STANDARD)
     set(MDBX_CXX_STANDARD 98)
   endif()
 endif()
-if(NOT HAS_C11 LESS 0)
-  set(MDBX_C_STANDARD 11)
-else()
-  set(MDBX_C_STANDARD 99)
+if(NOT DEFINED MDBX_C_STANDARD)
+  # MSVC >= 19.28 (Microsoft Visual Studio 16.8) is mad!
+  #               It unable process Windows SDK headers in the C11 mode!
+  if(HAS_C11 LESS 0 OR (MSVC AND MSVC_VERSION GREATER 1927))
+    set(MDBX_C_STANDARD 99)
+  else()
+    set(MDBX_C_STANDARD 11)
+  endif()
 endif()
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Windows" AND EXISTS "${MDBX_SOURCE_DIR}/ntdll.def")
@@ -434,7 +438,6 @@ add_mdbx_option(MDBX_BUILD_TOOLS "Build MDBX tools (mdbx_chk/stat/dump/load/copy
 CMAKE_DEPENDENT_OPTION(MDBX_INSTALL_MANPAGES "Install man-pages for MDBX tools (mdbx_chk/stat/dump/load/copy)" ON MDBX_BUILD_TOOLS OFF)
 add_mdbx_option(MDBX_TXN_CHECKOWNER "Checking transaction matches the calling thread inside libmdbx's API" ON)
 add_mdbx_option(MDBX_ENV_CHECKPID "Paranoid checking PID inside libmdbx's API" AUTO)
-add_mdbx_option(MDBX_HUGE_TRANSACTIONS "Support for huge write-transactions" OFF)
 mark_as_advanced(MDBX_ENV_CHECKPID)
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
   add_mdbx_option(MDBX_DISABLE_GNU_SOURCE "Don't use GNU/Linux libc extensions" OFF)
@@ -460,6 +463,7 @@ mark_as_advanced(MDBX_LOCKING)
 add_mdbx_option(MDBX_TRUST_RTC "Does a system have battery-backed Real-Time Clock or just a fake" AUTO)
 mark_as_advanced(MDBX_TRUST_RTC)
 option(MDBX_FORCE_ASSERTIONS "Force enable assertion checking" OFF)
+option(MDBX_DISABLE_PAGECHECKS "Disable some checks to reduce an overhead and detection probability of database corruption to a values closer to the LMDB" OFF)
 
 if(NOT MDBX_AMALGAMATED_SOURCE)
   add_mdbx_option(MDBX_ALLOY_BUILD "Build MDBX library through single/alloyed object file" ON)
@@ -756,14 +760,21 @@ if(NOT CMAKE_CONFIGURATION_TYPES)
   endif()
 endif()
 
+# choice target to fetch definitions and options
+if(MDBX_BUILD_SHARED_LIBRARY)
+  set(target4fetch mdbx)
+else()
+  set(target4fetch mdbx-static)
+endif()
+
 # get definitions
-get_target_property(defs_list mdbx-static COMPILE_DEFINITIONS)
+get_target_property(defs_list ${target4fetch} COMPILE_DEFINITIONS)
 if(defs_list)
   list(APPEND MDBX_BUILD_FLAGS ${defs_list})
 endif()
 
 # get target compile options
-get_target_property(options_list mdbx-static COMPILE_OPTIONS)
+get_target_property(options_list ${target4fetch} COMPILE_OPTIONS)
 if(options_list)
   list(APPEND MDBX_BUILD_FLAGS ${options_list})
 endif()

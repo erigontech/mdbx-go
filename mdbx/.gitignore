@@ -2,6 +2,7 @@
 *.dylib
 *.o
 config.h
+config_darwin.h
 
 mdbx_chk
 mdbx_copy
