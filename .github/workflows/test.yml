@@ -22,17 +22,18 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-10.15, windows-latest] # list of os: https://github.com/actions/virtual-environments
+        os: [ubuntu-20.04, macos-10.15] # list of os: https://github.com/actions/virtual-environments
+#        os: [ubuntu-20.04, macos-10.15, windows-latest] # list of os: https://github.com/actions/virtual-environments
         go: [ '1.15', '1.13' ]
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v2
 
-#      - name: Add Msys64 to PATH # see https://github.com/actions/virtual-environments/issues/1613 and https://github.com/actions/virtual-environments/pull/1648
-#        if: matrix.os == 'windows-latest'
-#        run: echo "::add-path::/c/msys64/mingw64/bin:/c/msys64/usr/bin"
-#        shell: bash
+      - name: Add Msys64 to PATH # see https://github.com/actions/virtual-environments/issues/1613 and https://github.com/actions/virtual-environments/pull/1648
+        if: matrix.os == 'windows-latest'
+        run: echo "::add-path::/c/msys64/mingw64/bin:/c/msys64/usr/bin"
+        shell: bash
 
       - uses: actions/setup-go@v2
         with:
