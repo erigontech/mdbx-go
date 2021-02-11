@@ -139,10 +139,7 @@ questions of why to use one database or the other.
 
 ##Build
 
-There is no dependency on shared libraries.  So most users can simply install
-using `go get`.
-
-`go get github.com/torquem-ch/mdbx-go/mdbx`
+There is no dependency on shared libraries. `go get github.com/torquem-ch/mdbx-go/mdbx`. But it require to call `make mdbx-build` before running any go command.
 
 On FreeBSD 10, you must explicitly set `CC` (otherwise it will fail with a
 cryptic error), for example:
