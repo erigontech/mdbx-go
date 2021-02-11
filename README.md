@@ -136,29 +136,15 @@ questions of why to use one database or the other.
 - As a C library, applications in any language can interact with MDBX
   databases.  Mission critical Go applications can use a database while Python
   scripts perform analysis on the side.
-
+  
 ## Build
 
-There is no dependency on shared libraries. `go get github.com/torquem-ch/mdbx-go/mdbx`. But it require to call `make mdbx-build` before running any go command.
+There is no dependency on shared libraries. But it's impossible to use 'go get' for now. Only way is to copy sources of this package to your project, and call `make mdbx-build` manually.
 
 On FreeBSD 10, you must explicitly set `CC` (otherwise it will fail with a
 cryptic error), for example:
 
     CC=clang go test -v ./...
-
-Building commands and running tests can be done with `go` or with `make`
-
-    make bin
-    make test
-    make check
-    make all
-
-On Linux, you can specify the `pwritev` build tag to reduce the number of syscalls
-required when committing a transaction. In your own package you can then do
-
-    go build -tags pwritev .
-
-to enable the optimisation.
 
 ## Documentation
 
