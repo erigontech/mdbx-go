@@ -9,11 +9,6 @@ GOLDFLAGS="-X main.branch $(BRANCH) -X main.commit $(COMMIT)"
 deps: lintci-deps
 	go get -d ./...
 
-bin:
-	mkdir -p bin
-	GOBIN=${PWD}/bin go install ./exp/cmd/...
-	GOBIN=${PWD}/bin go install ./cmd/...
-
 all: deps check race bin
 
 test: mdbx-build
@@ -40,4 +35,4 @@ clean:
 
 mdbx-build:
 	echo "Building mdbx"
-	cd mdbx/dist/ && make mdbx && cat config.h
+	cd mdbx/dist/ && make clean && make config.h && CFLAGS_EXTRA="-Wno-deprecated-declarations" make mdbx-static.o
