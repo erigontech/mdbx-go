@@ -1,4 +1,4 @@
-#mdbx-go 
+# mdbx-go 
 
 Go bindings to the libmdbx: https://github.com/erthink/libmdbx
 
@@ -14,7 +14,7 @@ and pinned by tag/commit.
 
 Developers concerned with package stability should consult the documentation.
 
-####mdbx [![GoDoc](https://godoc.org/github.com/torquem-ch/mdbx-go/mdbx?status.svg)](https://godoc.org/github.com/github.com/torquem-ch/mdbx-go/mdbx) [![stable](https://img.shields.io/badge/stability-stable-brightgreen.svg)](#user-content-versioning-and-stability)
+#### mdbx [![GoDoc](https://godoc.org/github.com/torquem-ch/mdbx-go/mdbx?status.svg)](https://godoc.org/github.com/github.com/torquem-ch/mdbx-go/mdbx) [![stable](https://img.shields.io/badge/stability-stable-brightgreen.svg)](#user-content-versioning-and-stability)
 
 ```go
 import "github.com/torquem-ch/mdbx-go/mdbx"
@@ -22,7 +22,7 @@ import "github.com/torquem-ch/mdbx-go/mdbx"
 
 Core bindings allowing low-level access to MDBX.
 
-####exp/mdbxpool [![GoDoc](https://godoc.org/github.com/torquem-ch/mdbx-go/mdbx/exp/mdbxpool?status.svg)](https://godoc.org/github.com/torquem-ch/mdbx-go/mdbx/exp/mdbxpool) [![experimental](https://img.shields.io/badge/stability-experimental-red.svg)](#user-content-versioning-and-stability)
+#### exp/mdbxpool [![GoDoc](https://godoc.org/github.com/torquem-ch/mdbx-go/mdbx/exp/mdbxpool?status.svg)](https://godoc.org/github.com/torquem-ch/mdbx-go/mdbx/exp/mdbxpool) [![experimental](https://img.shields.io/badge/stability-experimental-red.svg)](#user-content-versioning-and-stability)
 
 
 ```go
@@ -44,7 +44,7 @@ feedback to speed this process up.
 
 ## Key Features
 
-###Idiomatic API
+### Idiomatic API
 
 API inspired by [BoltDB](https://github.com/boltdb/bolt) with automatic
 commit/rollback of transactions.  The goal of mdbx-go is to provide idiomatic
@@ -57,7 +57,7 @@ users are encouraged to fully read the
 [documentation](https://godoc.org/github.com/torquem-ch/mdbx-go/mdbx) so they are
 aware of these caveats.
 
-###API coverage
+### API coverage
 
 The mdbx-go project aims for complete coverage of the MDBX C API (within
 reason).  Some notable features and optimizations that are supported:
@@ -72,7 +72,7 @@ reason).  Some notable features and optimizations that are supported:
 For tracking purposes a list of unsupported features is kept in an
 [issue](https://github.com/torquem-ch/mdbx-go/issues/1).
 
-###Zero-copy reads
+### Zero-copy reads
 
 Applications with high performance requirements can opt-in to fast, zero-copy
 reads at the cost of runtime safety.  Zero-copy behavior is specified at the
@@ -89,13 +89,13 @@ err := mdbx.View(func(txn *mdbx.Txn) error {
 })
 ```
 
-##MDBX compared to BoltDB
+## MDBX compared to BoltDB
 
 BoltDB is a quality database with a design similar to MDBX.  Both store
 key-value data in a file and provide ACID transactions.  So there are often
 questions of why to use one database or the other.
 
-###Advantages of BoltDB
+### Advantages of BoltDB
 
 - Nested databases allow for hierarchical data organization.
 
@@ -112,7 +112,7 @@ questions of why to use one database or the other.
   information about caveats with the MDBX package, consult its
   [documentation](https://godoc.org/github.com/torquem-ch/mdbx-go/mdbx).
 
-###Advantages of LMDB and MDBX
+### Advantages of LMDB and MDBX
 
 - Keys can contain multiple values using the DupSort flag.
 
@@ -137,7 +137,7 @@ questions of why to use one database or the other.
   databases.  Mission critical Go applications can use a database while Python
   scripts perform analysis on the side.
 
-##Build
+## Build
 
 There is no dependency on shared libraries. `go get github.com/torquem-ch/mdbx-go/mdbx`. But it require to call `make mdbx-build` before running any go command.
 
@@ -160,9 +160,9 @@ required when committing a transaction. In your own package you can then do
 
 to enable the optimisation.
 
-##Documentation
+## Documentation
 
-###Go doc
+### Go doc
 
 The `go doc` documentation available on
 [godoc.org](https://godoc.org/github.com/torquem-ch/mdbx-go) is the primary source
@@ -170,15 +170,15 @@ of developer documentation for mdbx-go.  It provides an overview of the API
 with a lot of usage examples.  Where necessary the documentation points out
 differences between the semantics of methods and their C counterparts.
 
-###LMDB
+### LMDB
 
 The LMDB [homepage](http://symas.com/mdb/)
 
-###MDBX
+### MDBX
 
 The MDBX [homepage](https://github.com/erthink/libmdbx)
 
-###Versioning and Stability
+### Versioning and Stability
 
 The mdbx-go project makes regular releases with IDs `X.Y.Z`.  All packages
 outside of the `exp/` directory are considered stable and adhere to the
