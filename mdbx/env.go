@@ -9,12 +9,14 @@ import "C"
 import (
 	"errors"
 	"os"
+	"fmt"
 	"runtime"
 	"sync"
 	"unsafe"
+	"time"
 )
 
-// success is a value returned from the LMDB API to indicate a successful call.
+// success is a value returned from the API to indicate a successful call.
 // The functions in this API this behavior and its use is not required.
 const success = C.MDBX_SUCCESS
 
@@ -32,13 +34,20 @@ const (
 	Readonly   = C.MDBX_RDONLY     // Used in several functions to denote an object as readonly.
 	WriteMap   = C.MDBX_WRITEMAP   // Use a writable memory map.
 	NoMetaSync = C.MDBX_NOMETASYNC // Don't fsync metapage after commit.
-	SafeNoSync = C.MDBX_SAFE_NOSYNC
-	Durable    = C.MDBX_SYNC_DURABLE
-	NoTLS      = C.MDBX_NOTLS // Danger zone. When unset reader locktable slots are tied to their thread.
-	//NoLock      = C.MDBX_NOLOCK     // Danger zone. LMDB does not use any locks.
+	//NoSync      = C.MDBX_NOSYNC     // Don't fsync after commit.
+	SafeNoSync    = C.MDBX_SAFE_NOSYNC
+	Durable       = C.MDBX_SYNC_DURABLE
+	UtterlyNoSync = C.MDBX_UTTERLY_NOSYNC
+	MapAsync      = C.MDBX_MAPASYNC // Flush asynchronously when using the WriteMap flag.
+	NoTLS         = C.MDBX_NOTLS    // Danger zone. When unset reader locktable slots are tied to their thread.
+	//NoLock      = C.MDBX_NOLOCK     // Danger zone. does not use any locks.
 	NoReadahead = C.MDBX_NORDAHEAD // Disable readahead. Requires OS support.
-	NoMemInit   = C.MDBX_NOMEMINIT // Disable LMDB memory initialization.
-	Exclusive   = C.MDBX_EXCLUSIVE // Disable LMDB memory initialization.
+	NoMemInit   = C.MDBX_NOMEMINIT // Disable MDBX memory initialization.
+	Exclusive   = C.MDBX_EXCLUSIVE
+
+	DefaultMaxBatchSize  int = 1000
+	DefaultMaxBatchDelay     = 10 * time.Millisecond
+//	DefaultAllocSize         = 16 * 1024 * 1024
 )
 
 const (
@@ -83,25 +92,6 @@ const (
 	DbgDoNotChange     = C.MDBX_DBG_DONTCHANGE
 )
 
-const (
-	OptMaxDB                        = C.MDBX_opt_max_db
-	OptMaxReaders                   = C.MDBX_opt_max_readers
-	OptSyncBytes                    = C.MDBX_opt_sync_bytes
-	OptSyncPeriod                   = C.MDBX_opt_sync_period
-	OptRpAugmentLimit               = C.MDBX_opt_rp_augment_limit
-	OptLooseLimit                   = C.MDBX_opt_loose_limit
-	OptDpReverseLimit               = C.MDBX_opt_dp_reserve_limit
-	OptTxnDpLimit                   = C.MDBX_opt_txn_dp_limit
-	OptTxnDpInitial                 = C.MDBX_opt_txn_dp_initial
-	OptSpillMaxDenominator          = C.MDBX_opt_spill_max_denominator
-	OptSpillMinDenominator          = C.MDBX_opt_spill_min_denominator
-	OptSpillParent4ChildDenominator = C.MDBX_opt_spill_parent4child_denominator
-)
-
-var (
-	LoggerDoNotChange = C.MDBX_LOGGER_DONTCHANGE
-)
-
 // DBI is a handle for a database in an Env.
 //
 // See MDBX_dbi
@@ -117,6 +107,9 @@ type Env struct {
 	// closeLock is used to allow the Txn finalizer to check if the Env has
 	// been closed, so that it may know if it must abort.
 	closeLock sync.RWMutex
+
+	batchMu sync.Mutex
+	batch   *batch
 
 	ckey *C.MDBX_val
 	cval *C.MDBX_val
@@ -158,7 +151,7 @@ var errNegSize = errors.New("negative size")
 //
 // See mdbx_env_get_fd.
 func (env *Env) FD() (uintptr, error) {
-	// fdInvalid is the value -1 as a uintptr, which is used by LMDB in the
+	// fdInvalid is the value -1 as a uintptr, which is used by MDBX in the
 	// case that env has not been opened yet.  the strange construction is done
 	// to avoid constant value overflow errors at compile time.
 	const fdInvalid = ^uintptr(0)
@@ -175,10 +168,6 @@ func (env *Env) FD() (uintptr, error) {
 		return 0, errNotOpen
 	}
 	return fd, nil
-}
-
-func (env *Env) StderrLogger() *C.MDBX_debug_func {
-	return C.mdbxgo_stderr_logger()
 }
 
 // ReaderList dumps the contents of the reader lock table as text.  Readers
@@ -310,12 +299,12 @@ func (env *Env) Stat() (*Stat, error) {
 		return nil, operrno("mdbx_env_stat_ex", ret)
 	}
 	stat := Stat{PSize: uint(_stat.ms_psize),
-		Depth:         uint(_stat.ms_depth),
-		BranchPages:   uint64(_stat.ms_branch_pages),
-		LeafPages:     uint64(_stat.ms_leaf_pages),
-		OverflowPages: uint64(_stat.ms_overflow_pages),
-		Entries:       uint64(_stat.ms_entries),
-		LastTxId:      uint64(_stat.ms_mod_txnid)}
+	Depth:         uint(_stat.ms_depth),
+	BranchPages:   uint64(_stat.ms_branch_pages),
+	LeafPages:     uint64(_stat.ms_leaf_pages),
+	OverflowPages: uint64(_stat.ms_overflow_pages),
+	Entries:       uint64(_stat.ms_entries),
+	LastTxId:      uint64(_stat.ms_mod_txnid)}
 	return &stat, nil
 }
 
@@ -407,8 +396,8 @@ func (env *Env) Flags() (uint, error) {
 	return uint(_flags), nil
 }
 
-func (env *Env) SetDebug(logLvl int, dbg int, logger *C.MDBX_debug_func) error {
-	ret := C.mdbx_setup_debug(C.MDBX_log_level_t(logLvl), C.MDBX_debug_flags_t(dbg), logger)
+func (env *Env) SetDebug(logLvl int, dbg int) error {
+	ret := C.mdbx_setup_debug(C.MDBX_log_level_t(logLvl), C.MDBX_debug_flags_t(dbg), C.MDBX_LOGGER_DONTCHANGE)
 	return operrno("mdbx_setup_debug", ret)
 }
 
@@ -456,19 +445,14 @@ func (env *Env) Path() (string, error) {
 //	return operrno("mdbx_env_set_mapsize", ret)
 //}
 
-func (env *Env) SetOption(option uint, value uint64) error {
-	ret := C.mdbx_env_set_option(env._env, C.MDBX_option_t(option), C.uint64_t(value))
-	return operrno("mdbx_env_set_option", ret)
-}
-
 func (env *Env) SetGeometry(sizeLower int, sizeNow int, sizeUpper int, growthStep int, shrinkThreshold int, pageSize int) error {
 	ret := C.mdbx_env_set_geometry(env._env,
-		C.intptr_t(sizeLower),
-		C.intptr_t(sizeNow),
-		C.intptr_t(sizeUpper),
-		C.intptr_t(growthStep),
-		C.intptr_t(shrinkThreshold),
-		C.intptr_t(pageSize))
+	C.intptr_t(sizeLower),
+	C.intptr_t(sizeNow),
+	C.intptr_t(sizeUpper),
+	C.intptr_t(growthStep),
+	C.intptr_t(shrinkThreshold),
+	C.intptr_t(pageSize))
 	return operrno("mdbx_env_set_geometry", ret)
 }
 
@@ -542,6 +526,120 @@ func (env *Env) BeginTxn(parent *Txn, flags uint) (*Txn, error) {
 	}
 	return txn, err
 }
+
+
+func (db *Env) Batch(fn func(*Txn) error) error {
+	errCh := make(chan error, 1)
+
+	db.batchMu.Lock()
+	//if (db.batch == nil) || (db.batch != nil && len(db.batch.calls) >= db.MaxBatchSize) {
+	if (db.batch == nil) || (db.batch != nil && len(db.batch.calls) >= DefaultMaxBatchSize) {
+		// There is no existing batch, or the existing batch is full; start a new one.
+		db.batch = &batch{
+			db: db,
+		}
+		//db.batch.timer = time.AfterFunc(db.MaxBatchDelay, db.batch.trigger)
+		db.batch.timer = time.AfterFunc(DefaultMaxBatchDelay, db.batch.trigger)
+	}
+	db.batch.calls = append(db.batch.calls, call{fn: fn, err: errCh})
+	if len(db.batch.calls) >= DefaultMaxBatchSize {
+		// wake up batch, it's ready to run
+		go db.batch.trigger()
+	}
+	db.batchMu.Unlock()
+
+	err := <-errCh
+	if err == trySolo {
+		err = db.Update(fn)
+	}
+	return err
+}
+
+type call struct {
+	fn  func(*Txn) error
+	err chan<- error
+}
+
+// trigger runs the batch if it hasn't already been run.
+func (b *batch) trigger() {
+	b.start.Do(b.run)
+}
+
+type batch struct {
+	db    *Env
+	timer *time.Timer
+	start sync.Once
+	calls []call
+}
+
+var trySolo = errors.New("batch function returned an error and should be re-run solo")
+
+type panicked struct {
+	reason interface{}
+}
+
+
+func (p panicked) Error() string {
+	if err, ok := p.reason.(error); ok {
+		return err.Error()
+	}
+	return fmt.Sprintf("panic: %v", p.reason)
+}
+
+func safelyCall(fn func(*Txn) error, tx *Txn) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = panicked{p}
+		}
+	}()
+	return fn(tx)
+}
+// run performs the transactions in the batch and communicates results
+// back to DB.Batch.
+func (b *batch) run() {
+	b.db.batchMu.Lock()
+	b.timer.Stop()
+	// Make sure no new work is added to this batch, but don't break
+	// other batches.
+	if b.db.batch == b {
+		b.db.batch = nil
+	}
+	b.db.batchMu.Unlock()
+
+	retry:
+	for len(b.calls) > 0 {
+		var failIdx = -1
+		err := b.db.Update(func(tx *Txn) error {
+			for i, c := range b.calls {
+				if err := safelyCall(c.fn, tx); err != nil {
+					failIdx = i
+					return err
+				}
+			}
+			return nil
+		})
+
+		if failIdx >= 0 {
+			// take the failing transaction out of the batch. it's
+			// safe to shorten b.calls here because db.batch no longer
+			// points to us, and we hold the mutex anyway.
+			c := b.calls[failIdx]
+			b.calls[failIdx], b.calls = b.calls[len(b.calls)-1], b.calls[:len(b.calls)-1]
+			// tell the submitter re-run it solo, continue with the rest of the batch
+			c.err <- trySolo
+			continue retry
+		}
+
+		// pass success, or bolt internal errors, to all callers
+		for _, c := range b.calls {
+			if c.err != nil {
+				c.err <- err
+			}
+		}
+		break retry
+	}
+}
+
 
 // RunTxn creates a new Txn and calls fn with it as an argument.  Run commits
 // the transaction if fn returns nil otherwise the transaction is aborted.
