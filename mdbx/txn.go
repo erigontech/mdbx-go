@@ -336,16 +336,23 @@ func (txn *Txn) renew() error {
 // null bytes in the name argument.
 //
 // See mdbx_dbi_open.
-func (txn *Txn) OpenDBI(name string, flags uint) (DBI, error) {
+func (txn *Txn) OpenDBI(name string, flags uint, cmp, dcmp CmpFunc) (DBI, error) {
 	cname := C.CString(name)
-	dbi, err := txn.openDBI(cname, flags)
+	dbi, err := txn.openDBI(cname, flags, (*C.MDBX_cmp_func)(unsafe.Pointer(cmp)), (*C.MDBX_cmp_func)(unsafe.Pointer(dcmp)))
+	C.free(unsafe.Pointer(cname))
+	return dbi, err
+}
+
+func (txn *Txn) OpenDBISimple(name string, flags uint) (DBI, error) {
+	cname := C.CString(name)
+	dbi, err := txn.openDBISimple(cname, flags)
 	C.free(unsafe.Pointer(cname))
 	return dbi, err
 }
 
 // CreateDBI is a shorthand for OpenDBI that passed the flag lmdb.Create.
 func (txn *Txn) CreateDBI(name string) (DBI, error) {
-	return txn.OpenDBI(name, Create)
+	return txn.OpenDBI(name, Create, nil, nil)
 }
 
 // Flags returns the database flags for handle dbi.
@@ -359,12 +366,23 @@ func (txn *Txn) Flags(dbi DBI) (uint, error) {
 // does not require env.SetMaxDBs() to be called beforehand.  And, OpenRoot can
 // be called without flags in a View transaction.
 func (txn *Txn) OpenRoot(flags uint) (DBI, error) {
-	return txn.openDBI(nil, flags)
+	return txn.openDBI(nil, flags, nil, nil)
 }
 
 type Cmp func(k1, k2 []byte) int
 
-func (txn *Txn) openDBI(cname *C.char, flags uint) (DBI, error) {
+// openDBI returns returns whatever DBI value was set by mdbx_open_dbi.  In an
+// error case, LMDB does not currently set DBI in case of failure, so zero is
+// returned in those cases.  This is not a big deal for now because
+// applications are expected to handle any error encountered opening a
+// database.
+func (txn *Txn) openDBI(cname *C.char, flags uint, cmp, dcmp *C.MDBX_cmp_func) (DBI, error) {
+	var dbi C.MDBX_dbi
+	ret := C.mdbx_dbi_open_ex(txn._txn, cname, C.MDBX_db_flags_t(flags), &dbi, cmp, dcmp)
+	return DBI(dbi), operrno("mdbx_dbi_open", ret)
+}
+
+func (txn *Txn) openDBISimple(cname *C.char, flags uint) (DBI, error) {
 	var dbi C.MDBX_dbi
 	ret := C.mdbx_dbi_open(txn._txn, cname, C.MDBX_db_flags_t(flags), &dbi)
 	return DBI(dbi), operrno("mdbx_dbi_open", ret)
