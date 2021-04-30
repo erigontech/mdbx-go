@@ -131,8 +131,16 @@ details about dealing with such situations.
 package mdbx
 
 /*
-#cgo CFLAGS: -O2 -g -Wno-deprecated-declarations -pthread -W -Wall -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -std=gnu11 -pthread -Wno-error=attributes -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers
-#cgo LDFLAGS: ${SRCDIR}/dist/mdbx-static.o
+#cgo linux CFLAGS: -O2 -g -Wall -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes -DNDEBUG=1 -ULIBMDBX_EXPORTS
+#cgo darwin CFLAGS: -O2 -g -Wall -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes -DNDEBUG=1 -ULIBMDBX_EXPORTS
+#cgo windows CFLAGS: -O2 -g -Wall -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes -DNDEBUG=1 -ULIBMDBX_EXPORTS
+
+#include "config.h"
+#include "mdbx.h"
+#include "mdbxgo.h"
+
+//#cgo CFLAGS: -O2 -g -Wno-deprecated-declarations -pthread -W -Wall -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -std=gnu11 -pthread -Wno-error=attributes -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers
+//#cgo LDFLAGS: ${SRCDIR}/dist/mdbx-static.o
 */
 import "C"
 
