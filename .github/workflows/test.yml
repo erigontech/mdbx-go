@@ -36,8 +36,12 @@ jobs:
       - name: Run CMake+Ninja without triplet
         uses: lukka/run-cmake@main
         with:
+          cmakeGenerator: 'Ninja'
+          cmakeListsOrSettingsJson: 'CMakeListsTxtBasic'
           cmakeListsTxtPath: '${{ github.workspace }}/mdbx/dist/CMakeLists.txt'
           buildWithCMakeArgs: '-- -v'
+          buildDirectory: '${{ runner.workspace }}/b/ninja/'
+
 
       - name: Add Msys64 to PATH # see https://github.com/actions/virtual-environments/issues/1613 and https://github.com/actions/virtual-environments/pull/1648
         if: matrix.os == 'windows-latest'
