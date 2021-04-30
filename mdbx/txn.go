@@ -9,7 +9,6 @@ import "C"
 
 import (
 	"log"
-	"runtime"
 	"time"
 	"unsafe"
 )
@@ -196,7 +195,6 @@ func (txn *Txn) Commit() (CommitLatency, error) {
 		panic("managed transaction cannot be committed directly")
 	}
 
-	runtime.SetFinalizer(txn, nil)
 	return txn.commit()
 }
 
@@ -242,7 +240,6 @@ func (txn *Txn) Abort() {
 		panic("managed transaction cannot be aborted directly")
 	}
 
-	runtime.SetFinalizer(txn, nil)
 	txn.abort()
 }
 
@@ -424,6 +421,9 @@ type TxInfo struct {
 	  For WRITE transaction: The summarized size of the dirty database
 	  pages that generated during this transaction. */
 	SpaceDirty uint64
+
+	Spill   uint64
+	Unspill uint64
 }
 
 // scan_rlt   The boolean flag controls the scan of the read lock
@@ -453,7 +453,7 @@ func (txn *Txn) StatDBI(dbi DBI) (*Stat, error) {
 	var _stat C.MDBX_stat
 	ret := C.mdbx_dbi_stat(txn._txn, C.MDBX_dbi(dbi), &_stat, C.size_t(unsafe.Sizeof(_stat)))
 	if ret != success {
-		return nil, operrno("mdbx_stat", ret)
+		return nil, operrno("mdbx_dbi_stat", ret)
 	}
 	stat := Stat{PSize: uint(_stat.ms_psize),
 		Depth:         uint(_stat.ms_depth),
@@ -613,11 +613,7 @@ func (txn *Txn) Del(dbi DBI, key, val []byte) error {
 //
 // See mdbx_cursor_open.
 func (txn *Txn) OpenCursor(dbi DBI) (*Cursor, error) {
-	cur, err := openCursor(txn, dbi)
-	if cur != nil && txn.readonly {
-		runtime.SetFinalizer(cur, (*Cursor).close)
-	}
-	return cur, err
+	return openCursor(txn, dbi)
 }
 
 func (txn *Txn) errf(format string, v ...interface{}) {
@@ -626,16 +622,6 @@ func (txn *Txn) errf(format string, v ...interface{}) {
 		return
 	}
 	log.Printf(format, v...)
-}
-
-func (txn *Txn) finalize() {
-	if txn._txn != nil {
-		if !txn.Pooled {
-			txn.errf("lmdb: aborting unreachable transaction %#x", uintptr(unsafe.Pointer(txn)))
-		}
-
-		txn.abort()
-	}
 }
 
 // TxnOp is an operation applied to a managed transaction.  The Txn passed to a

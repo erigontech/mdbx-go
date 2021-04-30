@@ -12,7 +12,7 @@ deps: lintci-deps
 all: deps check race bin
 
 test: mdbx-build
-	go test -cover ./mdbx ./exp/mdbxpool
+	go test ./mdbx ./exp/mdbxpool
 
 race: mdbx-build
 	go test -race ./mdbx ./exp/mdbxpool

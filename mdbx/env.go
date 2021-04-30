@@ -26,15 +26,16 @@ const (
 	EnvDefaults = C.MDBX_ENV_DEFAULTS
 	LifoReclaim = C.MDBX_LIFORECLAIM
 	//FixedMap    = C.MDBX_FIXEDMAP   // Danger zone. Map memory at a fixed address.
-	NoSubdir   = C.MDBX_NOSUBDIR // Argument to Open is a file, not a directory.
-	Accede     = C.MDBX_ACCEDE
-	Coalesce   = C.MDBX_COALESCE
-	Readonly   = C.MDBX_RDONLY     // Used in several functions to denote an object as readonly.
-	WriteMap   = C.MDBX_WRITEMAP   // Use a writable memory map.
-	NoMetaSync = C.MDBX_NOMETASYNC // Don't fsync metapage after commit.
-	SafeNoSync = C.MDBX_SAFE_NOSYNC
-	Durable    = C.MDBX_SYNC_DURABLE
-	NoTLS      = C.MDBX_NOTLS // Danger zone. When unset reader locktable slots are tied to their thread.
+	NoSubdir      = C.MDBX_NOSUBDIR // Argument to Open is a file, not a directory.
+	Accede        = C.MDBX_ACCEDE
+	Coalesce      = C.MDBX_COALESCE
+	Readonly      = C.MDBX_RDONLY     // Used in several functions to denote an object as readonly.
+	WriteMap      = C.MDBX_WRITEMAP   // Use a writable memory map.
+	NoMetaSync    = C.MDBX_NOMETASYNC // Don't fsync metapage after commit.
+	UtterlyNoSync = C.MDBX_UTTERLY_NOSYNC
+	SafeNoSync    = C.MDBX_SAFE_NOSYNC
+	Durable       = C.MDBX_SYNC_DURABLE
+	NoTLS         = C.MDBX_NOTLS // Danger zone. When unset reader locktable slots are tied to their thread.
 	//NoLock      = C.MDBX_NOLOCK     // Danger zone. LMDB does not use any locks.
 	NoReadahead = C.MDBX_NORDAHEAD // Disable readahead. Requires OS support.
 	NoMemInit   = C.MDBX_NOMEMINIT // Disable LMDB memory initialization.
@@ -177,10 +178,6 @@ func (env *Env) FD() (uintptr, error) {
 	return fd, nil
 }
 
-func (env *Env) StderrLogger() *C.MDBX_debug_func {
-	return C.mdbxgo_stderr_logger()
-}
-
 // ReaderList dumps the contents of the reader lock table as text.  Readers
 // start on the second line as space-delimited fields described by the first
 // line.
@@ -299,13 +296,7 @@ type Stat struct {
 // See mdbx_env_stat.
 func (env *Env) Stat() (*Stat, error) {
 	var _stat C.MDBX_stat
-	var ret C.int
-	if err := env.View(func(txn *Txn) error {
-		ret = C.mdbx_env_stat_ex(env._env, txn._txn, &_stat, C.size_t(unsafe.Sizeof(_stat)))
-		return nil
-	}); err != nil {
-		return nil, err
-	}
+	var ret C.int = C.mdbx_env_stat_ex(env._env, nil, &_stat, C.size_t(unsafe.Sizeof(_stat)))
 	if ret != success {
 		return nil, operrno("mdbx_env_stat_ex", ret)
 	}
@@ -319,12 +310,36 @@ func (env *Env) Stat() (*Stat, error) {
 	return &stat, nil
 }
 
+type EnvInfoGeo struct {
+	Lower   uint64
+	Upper   uint64
+	Current uint64
+	Shrink  uint64
+	Grow    uint64
+}
+type EnfInfoPageOps struct {
+	Newly   uint64 /**< Quantity of a new pages added */
+	Cow     uint64 /**< Quantity of pages copied for update */
+	Clone   uint64 /**< Quantity of parent's dirty pages clones for nested transactions */
+	Split   uint64 /**< Page splits */
+	Merge   uint64 /**< Page merges */
+	Spill   uint64 /**< Quantity of spilled dirty pages */
+	Unspill uint64 /**< Quantity of unspilled/reloaded pages */
+	Wops    uint64 /**< Number of explicit write operations (not a pages) to a disk */
+}
+
 // EnvInfo contains information an environment.
 //
 // See MDBX_envinfo.
 type EnvInfo struct {
-	MapSize                        int64 // Size of the data memory map
-	LastPNO                        int64 // ID of the last used page
+	MapSize int64 // Size of the data memory map
+	LastPNO int64 // ID of the last used page
+	Geo     EnvInfoGeo
+	/** Statistics of page operations.
+	 * \details Overall statistics of page operations of all (running, completed
+	 * and aborted) transactions in the current multi-process session (since the
+	 * first process opened the database). */
+	PageOps                        EnfInfoPageOps
 	LastTxnID                      int64 // ID of the last committed transaction
 	MaxReaders                     uint  // maximum number of threads for the environment
 	NumReaders                     uint  // maximum number of threads used in the environment
@@ -353,7 +368,24 @@ func (env *Env) Info() (*EnvInfo, error) {
 		return nil, operrno("mdbx_env_info", ret)
 	}
 	info := EnvInfo{
-		MapSize:        int64(_info.mi_mapsize),
+		MapSize: int64(_info.mi_mapsize),
+		Geo: EnvInfoGeo{
+			Lower:   uint64(_info.mi_geo.lower),
+			Upper:   uint64(_info.mi_geo.upper),
+			Current: uint64(_info.mi_geo.current),
+			Shrink:  uint64(_info.mi_geo.shrink),
+			Grow:    uint64(_info.mi_geo.grow),
+		},
+		//PageOps: EnfInfoPageOps{
+		//	Newly:   uint64(_info.mi_pgop_stat.newly),
+		//	Cow:     uint64(_info.mi_pgop_stat.cow),
+		//	Clone:   uint64(_info.mi_pgop_stat.clone),
+		//	Split:   uint64(_info.mi_pgop_stat.split),
+		//	Merge:   uint64(_info.mi_pgop_stat.merge),
+		//	Spill:   uint64(_info.mi_pgop_stat.spill),
+		//	Unspill: uint64(_info.mi_pgop_stat.unspill),
+		//	Wops:    uint64(_info.mi_pgop_stat.wops),
+		//},
 		LastPNO:        int64(_info.mi_last_pgno),
 		LastTxnID:      int64(_info.mi_recent_txnid),
 		MaxReaders:     uint(_info.mi_maxreaders),
@@ -371,7 +403,7 @@ func (env *Env) Info() (*EnvInfo, error) {
 }
 
 // Sync flushes buffers to disk.  If force is true a synchronous flush occurs
-// and ignores any NoSync or MapAsync flag on the environment.
+// and ignores any UtterlyNoSync or MapAsync flag on the environment.
 //
 // See mdbx_env_sync.
 func (env *Env) Sync(force bool, nonblock bool) error {
@@ -427,34 +459,6 @@ func (env *Env) Path() (string, error) {
 	}
 	return C.GoString(cpath), nil
 }
-
-// SetMaxFreelistReuse sets the size of the environment memory map.
-//
-// Find a big enough contiguous page range for large values in freelist is hard
-//        just allocate new pages and even don't try to search if value is bigger than this limit.
-//        measured in pages
-//func (env *Env) SetMaxFreelistReuse(pagesLimit uint) error {
-//	ret := C.mdbx_env_set_maxfree_reuse(env._env, C.uint(pagesLimit))
-//	return operrno("mdbx_env_set_maxfree_reuse", ret)
-//}
-
-// MaxFreelistReuse
-//func (env *Env) MaxFreelistReuse() (uint, error) {
-//	var pages C.uint
-//	ret := C.mdbx_env_get_maxfree_reuse(env._env, &pages)
-//	return uint(pages), operrno("mdbx_env_get_maxreaders", ret)
-//}
-
-// SetMapSize sets the size of the environment memory map.
-//
-// See mdbx_env_set_mapsize.
-//func (env *Env) SetMapSize(size int64) error {
-//	if size < 0 {
-//		return errNegSize
-//	}
-//	ret := C.mdbx_env_set_mapsize(env._env, C.size_t(size))
-//	return operrno("mdbx_env_set_mapsize", ret)
-//}
 
 func (env *Env) SetOption(option uint, value uint64) error {
 	ret := C.mdbx_env_set_option(env._env, C.MDBX_option_t(option), C.uint64_t(value))
@@ -528,19 +532,12 @@ func (env *Env) SetMaxDBs(size int) error {
 // methods, which assist in management of Txn objects and provide OS thread
 // locking required for write transactions.
 //
-// A finalizer detects unreachable, live transactions and logs thems to
-// standard error.  The transactions are aborted, but their presence should be
-// interpreted as an application error which should be patched so transactions
-// are terminated explicitly.  Unterminated transactions can adversly effect
+// Unterminated transactions can adversly effect
 // database performance and cause the database to grow until the map is full.
 //
 // See mdbx_txn_begin.
 func (env *Env) BeginTxn(parent *Txn, flags uint) (*Txn, error) {
-	txn, err := beginTxn(env, parent, flags)
-	if txn != nil {
-		runtime.SetFinalizer(txn, func(v interface{}) { v.(*Txn).finalize() })
-	}
-	return txn, err
+	return beginTxn(env, parent, flags)
 }
 
 // RunTxn creates a new Txn and calls fn with it as an argument.  Run commits

@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"syscall"
 	"testing"
-	"time"
 )
 
 func TestTxn_ID(t *testing.T) {
@@ -112,37 +111,6 @@ func TestTxn_errLogf(t *testing.T) {
 	} else {
 		defer txn.Abort()
 		txn.errf("this is just a test")
-	}
-}
-
-func TestTxn_finalizer(t *testing.T) {
-	env := setup(t)
-	defer clean(env, t)
-
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	called := make(chan struct{})
-	func() {
-		txn, err := env.BeginTxn(nil, 0)
-		if err != nil {
-			t.Error(err)
-		} else {
-			txn.errLogf = func(string, ...interface{}) {
-				close(called)
-			}
-		}
-	}()
-
-	// make sure that finalizer has a chance to get called.  it seems like this
-	// may not be consistent across versions of go.
-	runtime.GC()
-	runtime.Gosched()
-
-	select {
-	case <-called:
-	case <-time.After(time.Second):
-		t.Errorf("error logging function was not called")
 	}
 }
 
@@ -965,6 +933,47 @@ func TestTxn_Stat(t *testing.T) {
 	}
 }
 
+func TestTxn_StatOnEmpty(t *testing.T) {
+	env := setup(t)
+	path, err := env.Path()
+	if err != nil {
+		env.Close()
+		t.Error(err)
+		return
+	}
+	defer os.RemoveAll(path)
+	defer env.Close()
+
+	var dbi DBI
+	err = env.Update(func(txn *Txn) (err error) {
+		dbi, err = txn.OpenDBISimple("testdb", Create|DupSort)
+		return err
+	})
+	if err != nil {
+		t.Errorf("%s", err)
+		return
+	}
+	env.CloseDBI(dbi)
+
+	err = env.Update(func(txn *Txn) (err error) {
+		dbi, err = txn.OpenDBISimple("testdb", 0)
+		return err
+	})
+	if err != nil {
+		t.Errorf("%s", err)
+		return
+	}
+
+	err = env.Update(func(txn *Txn) (err error) {
+		err = txn.Drop(dbi, true)
+		return err
+	})
+	if err != nil {
+		t.Errorf("%s", err)
+		return
+	}
+}
+
 func TestSequence(t *testing.T) {
 	env := setup(t)
 	path, err := env.Path()
@@ -1073,9 +1082,30 @@ func BenchmarkTxn_commit(b *testing.B) {
 	defer os.RemoveAll(path)
 	defer env.Close()
 
+	var db DBI
+	err = env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBISimple("testdb", Create)
+		if err != nil {
+			return err
+		}
+		return err
+	})
+	if err != nil {
+		b.Errorf("%s", err)
+		return
+	}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		err := env.Update(func(txn *Txn) error { return nil })
+		var k [8]byte
+		binary.BigEndian.PutUint64(k[:], uint64(i))
+		err = env.Update(func(txn *Txn) error {
+			err = txn.Put(db, k[:], k[:], 0)
+			if err != nil {
+				return err
+			}
+			return nil
+		})
 		if err != nil {
 			b.Error(err)
 			return
