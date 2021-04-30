@@ -22,4 +22,4 @@ jobs:
           key: go-${{ matrix.os }}-${{ matrix.go }}-${{ hashFiles('**/go.sum') }}
 
       - name: Test
-        run: go test ./mdbx
+        run: cp mdbx/dist/mdbx.c mdbx/ ; cp mdbx/dist/mdbx.h mdbx/ ; go test ./mdbx
