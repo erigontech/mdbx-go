@@ -131,9 +131,9 @@ details about dealing with such situations.
 package mdbx
 
 /*
-#cgo linux CFLAGS: -O2 -g -Wall -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes -DNDEBUG=1 -ULIBMDBX_EXPORTS
-#cgo darwin CFLAGS: -O2 -g -Wall -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes -DNDEBUG=1 -ULIBMDBX_EXPORTS
-#cgo windows CFLAGS: -O2 -g -Wall -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes -DNDEBUG=1 -ULIBMDBX_EXPORTS
+#cgo linux CFLAGS: -O2 -g -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes -DNDEBUG=1 -ULIBMDBX_EXPORTS
+#cgo darwin CFLAGS: -O2 -g -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes -DNDEBUG=1 -ULIBMDBX_EXPORTS
+#cgo windows CFLAGS: -O2 -g -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes -DNDEBUG=1 -ULIBMDBX_EXPORTS
 
 #include "config.h"
 #include "mdbx.h"
