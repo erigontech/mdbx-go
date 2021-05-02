@@ -684,3 +684,24 @@ func (txn *Txn) Sequence(dbi DBI, increment uint64) (uint64, error) {
 	}
 	return uint64(res), nil
 }
+
+// DBIs - return names of all existing DBIs. Doesn't include Main and GC.
+func (txn *Txn) DBIs() ([]string, error) {
+	var res []string
+	root, err := txn.OpenRoot(0)
+	if err != nil {
+		return nil, err
+	}
+	c, err := txn.OpenCursor(root)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	for k, _, err := c.Get(nil, nil, First); !IsNotFound(err); k, _, err = c.Get(nil, nil, Next) {
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, string(k))
+	}
+	return res, nil
+}
