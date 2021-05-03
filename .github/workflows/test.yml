@@ -24,5 +24,11 @@ jobs:
           path: ~/go/pkg/mod
           key: go-${{ matrix.os }}-${{ matrix.go }}-${{ hashFiles('**/go.sum') }}
 
+      - name: Test1
+        run: cd mdbx/dist && cmake .
+
+      - name: Test1
+        run: cd mdbx/dist && make
+
       - name: Test
         run: make win
