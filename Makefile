@@ -9,7 +9,7 @@ GOLDFLAGS="-X main.branch $(BRANCH) -X main.commit $(COMMIT)"
 deps: lintci-deps
 	go get -d ./...
 
-all: deps check race bin
+all: deps check mdbx-build
 
 test: mdbx-build
 	go test ./mdbx ./exp/mdbxpool
