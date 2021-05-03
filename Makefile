@@ -36,3 +36,7 @@ clean:
 mdbx-build:
 	echo "Building mdbx"
 	cd mdbx/dist/ && make clean && make config.h && CFLAGS_EXTRA="-Wno-deprecated-declarations" make mdbx-static.o
+
+win:
+	echo "Building mdbx"
+	cd mdbx/dist/ && make clean && make config.h && cp config.h ./../ && cp mdbx.h ./../ && cp mdbx.c ./../ && cd ./.. && go test .
