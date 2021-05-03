@@ -27,8 +27,5 @@ jobs:
       - name: Test1
         run: cd mdbx/dist && cmake . && ls -la
 
-      - name: Test1
-        run: cd mdbx/dist && make
-
       - name: Test
         run: make win
