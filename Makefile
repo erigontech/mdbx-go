@@ -39,4 +39,4 @@ mdbx-build:
 
 win:
 	echo "Building mdbx"
-	cd mdbx/dist/ && make clean && make config.h && cp config.h ./../ && cp mdbx.h ./../ && cp mdbx.c ./../ && cd ./.. && go test .
+	go test .
