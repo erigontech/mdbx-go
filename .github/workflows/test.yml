@@ -25,7 +25,7 @@ jobs:
           key: go-${{ matrix.os }}-${{ matrix.go }}-${{ hashFiles('**/go.sum') }}
 
       - name: Test1
-        run: cd mdbx/dist && cmake . && ls
+        run: cd mdbx/dist && cmake -B ./.. . && ls
 
       - name: Test
-        run: go test ./mdbx
+        run: mv ./mdbx/dist/*.vcxproj . && mv ./mdbx/dist/*.sln . && mv ./mdbx/dist/*.def . &&  go test ./mdbx
