@@ -1,16 +1,19 @@
 name: Test
-on: [push]
+on: [ push ]
 jobs:
 
   test:
     strategy:
       matrix:
-        os: [windows-latest] # list of os: https://github.com/actions/virtual-environments
+        os: [ windows-latest ] # list of os: https://github.com/actions/virtual-environments
         go: [ '1.15', '1.13' ]
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v2
+
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v1.0.2
 
       - uses: actions/setup-go@v2
         with:
