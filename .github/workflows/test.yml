@@ -28,4 +28,4 @@ jobs:
         run: cd mdbx/dist && cmake . && ls
 
       - name: Test
-        run: make win
+        run: go test .
