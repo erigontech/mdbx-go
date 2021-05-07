@@ -28,5 +28,6 @@ jobs:
         run: cd mdbx/dist && cmake -B ./.. . && ls
 
       - name: Test
-        run: mv ./mdbx/dist/*.vcxproj . && mv ./mdbx/dist/*.sln . && mv ./mdbx/dist/*.def . && CGO_LDFLAGS_ALLOW=".*" go test ./mdbx
+        run: make win
+
 #https://github.com/golang/go/issues/20982
