@@ -38,7 +38,4 @@ mdbx-build:
 	cd mdbx/dist/ && make clean && make config.h && CFLAGS_EXTRA="-Wno-deprecated-declarations" make mdbx-static.o
 
 win:
-	mv ./mdbx/dist/*.vcxproj .
-	mv ./mdbx/dist/*.sln .
-	mv ./mdbx/dist/*.def .
 	CGO_LDFLAGS_ALLOW=".*"	go test ./mdbx
