@@ -145,10 +145,7 @@ package mdbx
 //#cgo CFLAGS: -Wno-deprecated-declarations -pthread -W -Wall -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers -O2 -g
 
 
-//#include "mdbx.h"
 #include "mdbxgo.h"
-
-//#include "config.h"
 */
 import "C"
 
