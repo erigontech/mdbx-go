@@ -30,7 +30,9 @@ jobs:
           key: go-${{ matrix.os }}-${{ matrix.go }}-${{ hashFiles('**/go.sum') }}
 
       - name: Test1
-        run: ls && cd libmdbx && ls && cmake . && cmake --build . -DMDBX_BUILD_TYPE=Release -DMDBX_INSTALL_STATIC=1 && ls && ls Release
+        run: ls && cd libmdbx && ls && cmake . && cmake --build .  -DMDBX_INSTALL_STATIC=1 && ls && ls Debug
+#         -DMDBX_BUILD_TYPE=Release
+#-DCMAKE_BUILD_TYPE=Release
 
       - name: Test
         run: make win
