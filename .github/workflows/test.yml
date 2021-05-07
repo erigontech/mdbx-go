@@ -11,8 +11,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: 'libmdbx'
+
+      - name: checkout submodule
+        run: |
+          git submodule init
+          git submodule update
 
       - run: git submodule sync --recursive
 
