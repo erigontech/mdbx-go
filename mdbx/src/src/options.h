@@ -1,0 +1,413 @@
+/*******************************************************************************
+ *******************************************************************************
+ *******************************************************************************
+ *
+ *
+ *         ####   #####    #####     #     ####   #    #   ####
+ *        #    #  #    #     #       #    #    #  ##   #  #
+ *        #    #  #    #     #       #    #    #  # #  #   ####
+ *        #    #  #####      #       #    #    #  #  # #       #
+ *        #    #  #          #       #    #    #  #   ##  #    #
+ *         ####   #          #       #     ####   #    #   ####
+ *
+ *
+ */
+
+/** \defgroup build_option Build options
+ * The libmdbx build options.
+ @{ */
+
+/** Using fcntl(F_FULLFSYNC) with 5-10 times slowdown */
+#define MDBX_OSX_WANNA_DURABILITY 0
+/** Using fsync() with chance of data lost on power failure */
+#define MDBX_OSX_WANNA_SPEED 1
+
+#ifndef MDBX_OSX_SPEED_INSTEADOF_DURABILITY
+/** Choices \ref MDBX_OSX_WANNA_DURABILITY or \ref MDBX_OSX_WANNA_SPEED
+ * for OSX & iOS */
+#define MDBX_OSX_SPEED_INSTEADOF_DURABILITY MDBX_OSX_WANNA_DURABILITY
+#endif /* MDBX_OSX_SPEED_INSTEADOF_DURABILITY */
+
+/** Controls checking PID against reuse DB environment after the fork() */
+#ifndef MDBX_ENV_CHECKPID
+#if defined(MADV_DONTFORK) || defined(_WIN32) || defined(_WIN64)
+/* PID check could be omitted:
+ *  - on Linux when madvise(MADV_DONTFORK) is available, i.e. after the fork()
+ *    mapped pages will not be available for child process.
+ *  - in Windows where fork() not available. */
+#define MDBX_ENV_CHECKPID 0
+#else
+#define MDBX_ENV_CHECKPID 1
+#endif
+#define MDBX_ENV_CHECKPID_CONFIG "AUTO=" STRINGIFY(MDBX_ENV_CHECKPID)
+#else
+#define MDBX_ENV_CHECKPID_CONFIG STRINGIFY(MDBX_ENV_CHECKPID)
+#endif /* MDBX_ENV_CHECKPID */
+
+/** Controls checking transaction owner thread against misuse transactions from
+ * other threads. */
+#ifndef MDBX_TXN_CHECKOWNER
+#define MDBX_TXN_CHECKOWNER 1
+#define MDBX_TXN_CHECKOWNER_CONFIG "AUTO=" STRINGIFY(MDBX_TXN_CHECKOWNER)
+#else
+#define MDBX_TXN_CHECKOWNER_CONFIG STRINGIFY(MDBX_TXN_CHECKOWNER)
+#endif /* MDBX_TXN_CHECKOWNER */
+
+/** Does a system have battery-backed Real-Time Clock or just a fake. */
+#ifndef MDBX_TRUST_RTC
+#if defined(__linux__) || defined(__gnu_linux__) || defined(__NetBSD__) ||     \
+    defined(__OpenBSD__)
+#define MDBX_TRUST_RTC 0 /* a lot of embedded systems have a fake RTC */
+#else
+#define MDBX_TRUST_RTC 1
+#endif
+#define MDBX_TRUST_RTC_CONFIG "AUTO=" STRINGIFY(MDBX_TRUST_RTC)
+#else
+#define MDBX_TRUST_RTC_CONFIG STRINGIFY(MDBX_TRUST_RTC)
+#endif /* MDBX_TRUST_RTC */
+
+/** Controls online database auto-compactification during write-transactions. */
+#ifndef MDBX_ENABLE_REFUND
+#define MDBX_ENABLE_REFUND 1
+#elif !(MDBX_ENABLE_REFUND == 0 || MDBX_ENABLE_REFUND == 1)
+#error MDBX_ENABLE_REFUND must be defined as 0 or 1
+#endif /* MDBX_ENABLE_REFUND */
+
+/** Controls gathering statistics for page operations. */
+#ifndef MDBX_ENABLE_PGOP_STAT
+#define MDBX_ENABLE_PGOP_STAT 1
+#elif !(MDBX_ENABLE_PGOP_STAT == 0 || MDBX_ENABLE_PGOP_STAT == 1)
+#error MDBX_ENABLE_PGOP_STAT must be defined as 0 or 1
+#endif /* MDBX_ENABLE_PGOP_STAT */
+
+/** Controls use of POSIX madvise() hints and friends. */
+#ifndef MDBX_ENABLE_MADVISE
+#define MDBX_ENABLE_MADVISE 1
+#elif !(MDBX_ENABLE_MADVISE == 0 || MDBX_ENABLE_MADVISE == 1)
+#error MDBX_ENABLE_MADVISE must be defined as 0 or 1
+#endif /* MDBX_ENABLE_MADVISE */
+
+/** Disable some checks to reduce an overhead and detection probability of
+ * database corruption to a values closer to the LMDB. */
+#ifndef MDBX_DISABLE_PAGECHECKS
+#define MDBX_DISABLE_PAGECHECKS 0
+#elif !(MDBX_DISABLE_PAGECHECKS == 0 || MDBX_DISABLE_PAGECHECKS == 1)
+#error MDBX_DISABLE_PAGECHECKS must be defined as 0 or 1
+#endif /* MDBX_DISABLE_PAGECHECKS */
+
+#ifndef MDBX_PNL_PREALLOC_FOR_RADIXSORT
+#define MDBX_PNL_PREALLOC_FOR_RADIXSORT 1
+#elif !(MDBX_PNL_PREALLOC_FOR_RADIXSORT == 0 ||                                \
+        MDBX_PNL_PREALLOC_FOR_RADIXSORT == 1)
+#error MDBX_PNL_PREALLOC_FOR_RADIXSORT must be defined as 0 or 1
+#endif /* MDBX_PNL_PREALLOC_FOR_RADIXSORT */
+
+#ifndef MDBX_DPL_PREALLOC_FOR_RADIXSORT
+#define MDBX_DPL_PREALLOC_FOR_RADIXSORT 1
+#elif !(MDBX_DPL_PREALLOC_FOR_RADIXSORT == 0 ||                                \
+        MDBX_DPL_PREALLOC_FOR_RADIXSORT == 1)
+#error MDBX_DPL_PREALLOC_FOR_RADIXSORT must be defined as 0 or 1
+#endif /* MDBX_DPL_PREALLOC_FOR_RADIXSORT */
+
+/* Basically, this build-option is for TODO. Guess it should be replaced
+ * with MDBX_ENABLE_WRITEMAP_SPILLING with the three variants:
+ *  0/OFF = Don't track dirty pages at all and don't spilling ones.
+ *          This should be by-default on Linux and may-be other systems
+ *          (not sure: Darwin/OSX, FreeBSD, Windows 10) where kernel provides
+ *          properly LRU tracking and async writing on-demand.
+ *  1/ON  = Lite tracking of dirty pages but with LRU labels and explicit
+ *          spilling with msync(MS_ASYNC). */
+#ifndef MDBX_FAKE_SPILL_WRITEMAP
+#if defined(__linux__) || defined(__gnu_linux__)
+#define MDBX_FAKE_SPILL_WRITEMAP 1 /* msync(MS_ASYNC) is no-op on Linux */
+#else
+#define MDBX_FAKE_SPILL_WRITEMAP 0
+#endif
+#elif !(MDBX_FAKE_SPILL_WRITEMAP == 0 || MDBX_FAKE_SPILL_WRITEMAP == 1)
+#error MDBX_FAKE_SPILL_WRITEMAP must be defined as 0 or 1
+#endif /* MDBX_FAKE_SPILL_WRITEMAP */
+
+/** Controls sort order of internal page number lists.
+ * This mostly experimental/advanced option with not for regular MDBX users.
+ * \warning The database format depend on this option and libmdbx builded with
+ * different option value are incompatible. */
+#ifndef MDBX_PNL_ASCENDING
+#define MDBX_PNL_ASCENDING 0
+#elif !(MDBX_PNL_ASCENDING == 0 || MDBX_PNL_ASCENDING == 1)
+#error MDBX_PNL_ASCENDING must be defined as 0 or 1
+#endif /* MDBX_PNL_ASCENDING */
+
+/** Avoid dependence from MSVC CRT and use ntdll.dll instead. */
+#ifndef MDBX_WITHOUT_MSVC_CRT
+#define MDBX_WITHOUT_MSVC_CRT 1
+#elif !(MDBX_WITHOUT_MSVC_CRT == 0 || MDBX_WITHOUT_MSVC_CRT == 1)
+#error MDBX_WITHOUT_MSVC_CRT must be defined as 0 or 1
+#endif /* MDBX_WITHOUT_MSVC_CRT */
+
+/** Size of buffer used during copying a environment/database file. */
+#ifndef MDBX_ENVCOPY_WRITEBUF
+#define MDBX_ENVCOPY_WRITEBUF 1048576u
+#elif MDBX_ENVCOPY_WRITEBUF < 65536u || MDBX_ENVCOPY_WRITEBUF > 1073741824u || \
+    MDBX_ENVCOPY_WRITEBUF % 65536u
+#error MDBX_ENVCOPY_WRITEBUF must be defined in range 65536..1073741824 and be multiple of 65536
+#endif /* MDBX_ENVCOPY_WRITEBUF */
+
+/** Forces assertion checking */
+#ifndef MDBX_FORCE_ASSERTIONS
+#define MDBX_FORCE_ASSERTIONS 0
+#elif !(MDBX_FORCE_ASSERTIONS == 0 || MDBX_FORCE_ASSERTIONS == 1)
+#error MDBX_FORCE_ASSERTIONS must be defined as 0 or 1
+#endif /* MDBX_FORCE_ASSERTIONS */
+
+/** Presumed malloc size overhead for each allocation
+ * to adjust allocations to be more aligned. */
+#ifndef MDBX_ASSUME_MALLOC_OVERHEAD
+#ifdef __SIZEOF_POINTER__
+#define MDBX_ASSUME_MALLOC_OVERHEAD (__SIZEOF_POINTER__ * 2u)
+#else
+#define MDBX_ASSUME_MALLOC_OVERHEAD (sizeof(void *) * 2u)
+#endif
+#elif MDBX_ASSUME_MALLOC_OVERHEAD < 0 || MDBX_ASSUME_MALLOC_OVERHEAD > 64 ||   \
+    MDBX_ASSUME_MALLOC_OVERHEAD % 4
+#error MDBX_ASSUME_MALLOC_OVERHEAD must be defined in range 0..64 and be multiple of 4
+#endif /* MDBX_ASSUME_MALLOC_OVERHEAD */
+
+/** In case the MDBX_DEBUG is undefined set it corresponding to NDEBUG */
+#ifndef MDBX_DEBUG
+#ifdef NDEBUG
+#define MDBX_DEBUG 0
+#else
+#define MDBX_DEBUG 1
+#endif
+#endif /* MDBX_DEBUG */
+
+/** If defined then enables integration with Valgrind,
+ * a memory analyzing tool. */
+#ifndef MDBX_USE_VALGRIND
+#endif /* MDBX_USE_VALGRIND */
+
+/** If defined then enables use C11 atomics,
+ *  otherwise detects ones availability automatically. */
+#ifndef MDBX_HAVE_C11ATOMICS
+#endif /* MDBX_HAVE_C11ATOMICS */
+
+//------------------------------------------------------------------------------
+
+/** Win32 File Locking API for \ref MDBX_LOCKING */
+#define MDBX_LOCKING_WIN32FILES -1
+
+/** SystemV IPC semaphores for \ref MDBX_LOCKING */
+#define MDBX_LOCKING_SYSV 5
+
+/** POSIX-1 Shared anonymous semaphores for \ref MDBX_LOCKING */
+#define MDBX_LOCKING_POSIX1988 1988
+
+/** POSIX-2001 Shared Mutexes for \ref MDBX_LOCKING */
+#define MDBX_LOCKING_POSIX2001 2001
+
+/** POSIX-2008 Robust Mutexes for \ref MDBX_LOCKING */
+#define MDBX_LOCKING_POSIX2008 2008
+
+/** BeOS Benaphores, aka Futexes for \ref MDBX_LOCKING */
+#define MDBX_LOCKING_BENAPHORE 1995
+
+/** Advanced: Choices the locking implementation (autodetection by default). */
+#if defined(_WIN32) || defined(_WIN64)
+#define MDBX_LOCKING MDBX_LOCKING_WIN32FILES
+#else
+#ifndef MDBX_LOCKING
+#if defined(_POSIX_THREAD_PROCESS_SHARED) &&                                   \
+    _POSIX_THREAD_PROCESS_SHARED >= 200112L && !defined(__FreeBSD__)
+
+/* Some platforms define the EOWNERDEAD error code even though they
+ * don't support Robust Mutexes. If doubt compile with -MDBX_LOCKING=2001. */
+#if defined(EOWNERDEAD) && _POSIX_THREAD_PROCESS_SHARED >= 200809L &&          \
+    ((defined(_POSIX_THREAD_ROBUST_PRIO_INHERIT) &&                            \
+      _POSIX_THREAD_ROBUST_PRIO_INHERIT > 0) ||                                \
+     (defined(_POSIX_THREAD_ROBUST_PRIO_PROTECT) &&                            \
+      _POSIX_THREAD_ROBUST_PRIO_PROTECT > 0) ||                                \
+     defined(PTHREAD_MUTEX_ROBUST) || defined(PTHREAD_MUTEX_ROBUST_NP)) &&     \
+    (!defined(__GLIBC__) ||                                                    \
+     __GLIBC_PREREQ(2, 10) /* troubles with Robust mutexes before 2.10 */)
+#define MDBX_LOCKING MDBX_LOCKING_POSIX2008
+#else
+#define MDBX_LOCKING MDBX_LOCKING_POSIX2001
+#endif
+#elif defined(__sun) || defined(__SVR4) || defined(__svr4__)
+#define MDBX_LOCKING MDBX_LOCKING_POSIX1988
+#else
+#define MDBX_LOCKING MDBX_LOCKING_SYSV
+#endif
+#define MDBX_LOCKING_CONFIG "AUTO=" STRINGIFY(MDBX_LOCKING)
+#else
+#define MDBX_LOCKING_CONFIG STRINGIFY(MDBX_LOCKING)
+#endif /* MDBX_LOCKING */
+#endif /* !Windows */
+
+/** Advanced: Using POSIX OFD-locks (autodetection by default). */
+#ifndef MDBX_USE_OFDLOCKS
+#if defined(F_OFD_SETLK) && defined(F_OFD_SETLKW) && defined(F_OFD_GETLK) &&   \
+    !defined(MDBX_SAFE4QEMU) &&                                                \
+    !defined(__sun) /* OFD-lock are broken on Solaris */
+#define MDBX_USE_OFDLOCKS 1
+#else
+#define MDBX_USE_OFDLOCKS 0
+#endif
+#define MDBX_USE_OFDLOCKS_CONFIG "AUTO=" STRINGIFY(MDBX_USE_OFDLOCKS)
+#else
+#define MDBX_USE_OFDLOCKS_CONFIG STRINGIFY(MDBX_USE_OFDLOCKS)
+#endif /* MDBX_USE_OFDLOCKS */
+
+/** Advanced: Using sendfile() syscall (autodetection by default). */
+#ifndef MDBX_USE_SENDFILE
+#if ((defined(__linux__) || defined(__gnu_linux__)) &&                         \
+     !defined(__ANDROID_API__)) ||                                             \
+    (defined(__ANDROID_API__) && __ANDROID_API__ >= 21)
+#define MDBX_USE_SENDFILE 1
+#else
+#define MDBX_USE_SENDFILE 0
+#endif
+#endif /* MDBX_USE_SENDFILE */
+
+/** Advanced: Using copy_file_range() syscall (autodetection by default). */
+#ifndef MDBX_USE_COPYFILERANGE
+#if __GLIBC_PREREQ(2, 27) && defined(_GNU_SOURCE)
+#define MDBX_USE_COPYFILERANGE 1
+#else
+#define MDBX_USE_COPYFILERANGE 0
+#endif
+#endif /* MDBX_USE_COPYFILERANGE */
+
+/** Advanced: Using sync_file_range() syscall (autodetection by default). */
+#ifndef MDBX_USE_SYNCFILERANGE
+#if ((defined(__linux__) || defined(__gnu_linux__)) &&                         \
+     defined(SYNC_FILE_RANGE_WRITE) && !defined(__ANDROID_API__)) ||           \
+    (defined(__ANDROID_API__) && __ANDROID_API__ >= 26)
+#define MDBX_USE_SYNCFILERANGE 1
+#else
+#define MDBX_USE_SYNCFILERANGE 0
+#endif
+#endif /* MDBX_USE_SYNCFILERANGE */
+
+//------------------------------------------------------------------------------
+
+#ifndef MDBX_CPU_WRITEBACK_INCOHERENT
+#if defined(__ia32__) || defined(__e2k__) || defined(__hppa) ||                \
+    defined(__hppa__) || defined(DOXYGEN)
+#define MDBX_CPU_WRITEBACK_INCOHERENT 0
+#else
+#define MDBX_CPU_WRITEBACK_INCOHERENT 1
+#endif
+#endif /* MDBX_CPU_WRITEBACK_INCOHERENT */
+
+#ifndef MDBX_MMAP_INCOHERENT_FILE_WRITE
+#ifdef __OpenBSD__
+#define MDBX_MMAP_INCOHERENT_FILE_WRITE 1
+#else
+#define MDBX_MMAP_INCOHERENT_FILE_WRITE 0
+#endif
+#endif /* MDBX_MMAP_INCOHERENT_FILE_WRITE */
+
+#ifndef MDBX_MMAP_INCOHERENT_CPU_CACHE
+#if defined(__mips) || defined(__mips__) || defined(__mips64) ||               \
+    defined(__mips64__) || defined(_M_MRX000) || defined(_MIPS_) ||            \
+    defined(__MWERKS__) || defined(__sgi)
+/* MIPS has cache coherency issues. */
+#define MDBX_MMAP_INCOHERENT_CPU_CACHE 1
+#else
+/* LY: assume no relevant mmap/dcache issues. */
+#define MDBX_MMAP_INCOHERENT_CPU_CACHE 0
+#endif
+#endif /* MDBX_MMAP_INCOHERENT_CPU_CACHE */
+
+#ifndef MDBX_64BIT_ATOMIC
+#if MDBX_WORDBITS >= 64 || defined(DOXYGEN)
+#define MDBX_64BIT_ATOMIC 1
+#else
+#define MDBX_64BIT_ATOMIC 0
+#endif
+#define MDBX_64BIT_ATOMIC_CONFIG "AUTO=" STRINGIFY(MDBX_64BIT_ATOMIC)
+#else
+#define MDBX_64BIT_ATOMIC_CONFIG STRINGIFY(MDBX_64BIT_ATOMIC)
+#endif /* MDBX_64BIT_ATOMIC */
+
+#ifndef MDBX_64BIT_CAS
+#if defined(ATOMIC_LLONG_LOCK_FREE)
+#if ATOMIC_LLONG_LOCK_FREE > 1
+#define MDBX_64BIT_CAS 1
+#else
+#define MDBX_64BIT_CAS 0
+#endif
+#elif defined(__GCC_ATOMIC_LLONG_LOCK_FREE)
+#if __GCC_ATOMIC_LLONG_LOCK_FREE > 1
+#define MDBX_64BIT_CAS 1
+#else
+#define MDBX_64BIT_CAS 0
+#endif
+#elif defined(__CLANG_ATOMIC_LLONG_LOCK_FREE)
+#if __CLANG_ATOMIC_LLONG_LOCK_FREE > 1
+#define MDBX_64BIT_CAS 1
+#else
+#define MDBX_64BIT_CAS 0
+#endif
+#elif defined(_MSC_VER) || defined(__APPLE__) || defined(DOXYGEN)
+#define MDBX_64BIT_CAS 1
+#else
+#define MDBX_64BIT_CAS MDBX_64BIT_ATOMIC
+#endif
+#define MDBX_64BIT_CAS_CONFIG "AUTO=" STRINGIFY(MDBX_64BIT_CAS)
+#else
+#define MDBX_64BIT_CAS_CONFIG STRINGIFY(MDBX_64BIT_CAS)
+#endif /* MDBX_64BIT_CAS */
+
+#ifndef MDBX_UNALIGNED_OK
+#ifdef _MSC_VER
+#define MDBX_UNALIGNED_OK 1 /* avoid MSVC misoptimization */
+#elif __CLANG_PREREQ(5, 0) || __GNUC_PREREQ(5, 0)
+#define MDBX_UNALIGNED_OK 0 /* expecting optimization is well done */
+#elif (defined(__ia32__) || defined(__ARM_FEATURE_UNALIGNED)) &&               \
+    !defined(__ALIGNED__)
+#define MDBX_UNALIGNED_OK 1
+#else
+#define MDBX_UNALIGNED_OK 0
+#endif
+#endif /* MDBX_UNALIGNED_OK */
+
+#ifndef MDBX_CACHELINE_SIZE
+#if defined(SYSTEM_CACHE_ALIGNMENT_SIZE)
+#define MDBX_CACHELINE_SIZE SYSTEM_CACHE_ALIGNMENT_SIZE
+#elif defined(__ia64__) || defined(__ia64) || defined(_M_IA64)
+#define MDBX_CACHELINE_SIZE 128
+#else
+#define MDBX_CACHELINE_SIZE 64
+#endif
+#endif /* MDBX_CACHELINE_SIZE */
+
+/** @} end of build options */
+/*******************************************************************************
+ *******************************************************************************
+ ******************************************************************************/
+
+#ifdef DOXYGEN
+/* !!! Actually this is a fake definitions     !!!
+ * !!! for documentation generation by Doxygen !!! */
+
+/** Controls enabling of debugging features.
+ *
+ *  - `MDBX_DEBUG = 0` (by default) Disables any debugging features at all,
+ *                     including logging and assertion controls.
+ *                     Logging level and corresponding debug flags changing
+ *                     by \ref mdbx_setup_debug() will not have effect.
+ *  - `MDBX_DEBUG > 0` Enables code for the debugging features (logging,
+ *                     assertions checking and internal audit).
+ *                     Simultaneously sets the default logging level
+ *                     to the `MDBX_DEBUG` value.
+ *                     Also enables \ref MDBX_DBG_AUDIT if `MDBX_DEBUG >= 2`.
+ *
+ * \ingroup build_option */
+#define MDBX_DEBUG 0...7
+
+/** Disables using of GNU libc extensions. */
+#define MDBX_DISABLE_GNU_SOURCE 0 or 1
+
+#endif /* DOXYGEN */
