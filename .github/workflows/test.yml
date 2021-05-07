@@ -6,7 +6,7 @@ jobs:
     strategy:
       matrix:
         os: [ windows-latest ] # list of os: https://github.com/actions/virtual-environments
-        go: [ '1.15' ]
+        go: [ '1.16' ]
     runs-on: ${{ matrix.os }}
 
     steps:
