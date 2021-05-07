@@ -17,8 +17,6 @@ jobs:
           git submodule init
           git submodule update
 
-      - run: git submodule sync --recursive
-
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v1.0.2
 
