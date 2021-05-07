@@ -1,0 +1,13 @@
+name: Spell checking
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 5
+    - uses: check-spelling/check-spelling@main
