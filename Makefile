@@ -40,4 +40,5 @@ mdbx-build:
 win:
 	cp mdbx/dist/*.h mdbx/
 	cp mdbx/dist/*.c mdbx/
+	cp C:\WINDOWS\SYSTEM32\ntdll.dll .
 	CGO_LDFLAGS_ALLOW=".*"	go test ./mdbx
