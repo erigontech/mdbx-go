@@ -153,7 +153,7 @@ import "C"
 /*
  Expiremental try to compile mdbx by cgo
  #define MDBX_CONFIG_H "config.h"
- #cgo CFLAGS: -DNDEBUG=1 -ULIBMDBX_EXPORTS -std=gnu11 -W -Wall -Werror -Wextra -Wpedantic -Wno-deprecated-declarations -pthread -fPIC -fvisibility=hidden -std=gnu11 -pthread -Wno-error=attributes -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers -O2 -g
+ #cgo CFLAGS: -DNDEBUG=1 -ULIBMDBX_EXPORTS  -W -Wall -Werror -Wextra -Wpedantic -Wno-deprecated-declarations -pthread -fPIC -fvisibility=hidden -Wno-error=attributes -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers -O2 -g
  //cc -ffunction-sections
 */
 
