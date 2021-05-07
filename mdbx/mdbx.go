@@ -133,6 +133,7 @@ package mdbx
 /*
 //#cgo linux CFLAGS: -O2 -g -Werror -Wno-deprecated-declarations -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes  -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers -DNDEBUG=1
 #cgo darwin CFLAGS: -O2 -g -Werror -Wno-deprecated-declarations -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers -DNDEBUG=1
+#cgo windows LDFLAGS: -L ntdll.dll
 #cgo windows CFLAGS: -O2 -g -Werror -Wno-deprecated-declarations -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers -DNDEBUG=1
 
 //#cgo CFLAGS: -O2 -g -Wno-deprecated-declarations -pthread -W -Wall -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -std=gnu11 -pthread -Wno-error=attributes -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers
@@ -141,7 +142,6 @@ package mdbx
 
 //#cgo CFLAGS: -Wno-deprecated-declarations -pthread -W -Wall -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers -O2 -g
 
-#cgo windows LDFLAGS: ntdll.dll
 
 //#include "mdbx.h"
 #include "mdbxgo.h"
