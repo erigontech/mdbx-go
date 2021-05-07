@@ -39,6 +39,6 @@ mdbx-build:
 
 win:
 	cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
-	ls mdbx/src/Debug
+	ls libmdbx/Debug
 	CGO_CFLAGS='-DMDBX_BUILD_FLAGS_CONFIG="config.h"' go test ./mdbx
 	#CGO_LDFLAGS_ALLOW=".*"	CGO_CFLAGS='-DMDBX_BUILD_FLAGS_CONFIG="config.h"' go test ./mdbx
