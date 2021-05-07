@@ -42,4 +42,5 @@ win:
 	cp mdbx/dist/*.c mdbx/
 	cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/
 	ls mdbx
-	CGO_LDFLAGS_ALLOW=".*"	CGO_CFLAGS='-DMDBX_BUILD_FLAGS_CONFIG="config.h"' go test ./mdbx
+	CGO_CFLAGS='-DMDBX_BUILD_FLAGS_CONFIG="config.h"' go test ./mdbx
+	#CGO_LDFLAGS_ALLOW=".*"	CGO_CFLAGS='-DMDBX_BUILD_FLAGS_CONFIG="config.h"' go test ./mdbx
