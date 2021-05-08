@@ -39,7 +39,8 @@ mdbx-build:
 
 win:
 	ls
-	cd libmdbx && ls && cmake . && cmake --build .  -DCMAKE_C_COMPILER_ID=MINGW64
+	cd libmdbx && ls && cmake  -DCMAKE_SYSTEM_NAME=Windows  -DCMAKE_INSTALL_PREFIX=${MINGW} -DCMAKE_FIND_ROOT_PATH=${MINGW}    -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER    -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY  -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY  -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc  -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++  -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres.
+	cd libmdbx && cmake --build .
 	cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
 	cp libmdbx/mdbx.h mdbx/
 	ls libmdbx/Debug
