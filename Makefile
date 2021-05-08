@@ -38,12 +38,5 @@ mdbx-build:
 	cd mdbx/dist/ && make clean && make config.h && CFLAGS_EXTRA="-Wno-deprecated-declarations" make mdbx-static.o
 
 win:
-	cmake --version
-	cd libmdbx && ls && cmake -G "MinGW Makefiles" .
-	#cd libmdbx && ls && cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=OFF .
-	cd libmdbx &&  cmake --build .
-	cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
-	cp libmdbx/mdbx.h mdbx/
-	ls libmdbx/Debug
 	CGO_CFLAGS='-DMDBX_BUILD_FLAGS_CONFIG="config.h"' go test ./mdbx
 	#CGO_LDFLAGS_ALLOW=".*"	CGO_CFLAGS='-DMDBX_BUILD_FLAGS_CONFIG="config.h"' go test ./mdbx
