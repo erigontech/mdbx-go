@@ -38,11 +38,6 @@ mdbx-build:
 	cd mdbx/dist/ && make clean && make config.h && CFLAGS_EXTRA="-Wno-deprecated-declarations" make mdbx-static.o
 
 win:
-	go env
-	ls
-	echo ${CC}
-	echo ${CXX_FOR_TARGET}
-	echo ${CC_FOR_TARGET}
 	cmake --version
 	cd libmdbx && ls && cmake -G "MinGW Makefiles" .
 	cd libmdbx &&  cmake --build .
