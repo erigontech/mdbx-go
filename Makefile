@@ -43,6 +43,7 @@ win:
 	echo ${CC}
 	echo ${CXX_FOR_TARGET}
 	echo ${CC_FOR_TARGET}
+	cmake --version
 	cd libmdbx && ls && cmake -G "MinGW Makefiles" .
 	cd libmdbx &&  cmake --build .
 	cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
