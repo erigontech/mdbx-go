@@ -19,6 +19,9 @@ jobs:
           cd libmdbx && git checkout devel
 #          && cd .. && cp 2.patch libmdbx && cd libmdbx && git apply 2.patch
 
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v1.0.2
+
       - name: build mdbx
         run: |
           cmake --version
@@ -32,9 +35,7 @@ jobs:
 
           #          cmake -G "MinGW Makefiles" .
 
-          #      - name: Add msbuild to PATH
-          #        uses: microsoft/setup-msbuild@v1.0.2
-        #        cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
+                 cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
 
       - uses: actions/setup-go@v2
         with:
