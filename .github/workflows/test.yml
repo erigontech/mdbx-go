@@ -17,8 +17,8 @@ jobs:
           git submodule init
           git submodule update
 
-      - name: Add msbuild to PATH
-        uses: microsoft/setup-msbuild@v1.0.2
+#      - name: Add msbuild to PATH
+#        uses: microsoft/setup-msbuild@v1.0.2
 
       - uses: actions/setup-go@v2
         with:
