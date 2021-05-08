@@ -35,6 +35,6 @@ jobs:
 #-DCMAKE_BUILD_TYPE=Release
 
       - name: Test
-        run: CXX_FOR_TARGET=x86_64-w64-mingw32-g++  CC_FOR_TARGET=x86_64-w64-mingw32-gcc CC=x86_64-w64-mingw32-gcc make win
+        run: make win
 
 #https://github.com/golang/go/issues/20982
