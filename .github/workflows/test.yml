@@ -29,8 +29,8 @@ jobs:
           path: ~/go/pkg/mod
           key: go-${{ matrix.os }}-${{ matrix.go }}-${{ hashFiles('**/go.sum') }}
 
-      - name: Test1
-        run: ls && cd libmdbx && ls && cmake . && cmake --build . -DCMAKE_C_COMPILER_ID=MINGW64 && ls && ls Debug
+#      - name: Test1
+#        run: ls && cd libmdbx && ls && cmake . && cmake --build . -DCMAKE_C_COMPILER_ID=MINGW64 && ls && ls Debug
 #         -DMDBX_BUILD_TYPE=Release
 #-DCMAKE_BUILD_TYPE=Release
 

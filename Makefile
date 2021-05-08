@@ -39,7 +39,7 @@ mdbx-build:
 
 win:
 	ls
-	cd libmdbx && ls && cmake . && cmake --build .
+	cd libmdbx && ls && cmake . && cmake --build .  -DCMAKE_C_COMPILER_ID=MINGW64
 	cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
 	cp libmdbx/mdbx.h mdbx/
 	ls libmdbx/Debug
