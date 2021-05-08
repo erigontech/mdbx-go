@@ -22,7 +22,8 @@ jobs:
         run: |
           cmake --version
           cd libmdbx
-          ls && cmake -G "MinGW Makefiles" .
+          ls
+          cmake -G "MinGW Makefiles" .
           cmake --build .
           cd ..
           cp libmdbx/mdbx.h mdbx/
