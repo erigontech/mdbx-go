@@ -21,8 +21,10 @@ jobs:
       - name: build mdbx
         run: |
           cmake --version
-          cd libmdbx && ls && cmake -G "MinGW Makefiles" .
-          cd libmdbx &&  cmake --build .
+          cd libmdbx
+          ls && cmake -G "MinGW Makefiles" .
+          cmake --build .
+          cd ..
           cp libmdbx/mdbx.h mdbx/
 
           #      - name: Add msbuild to PATH
