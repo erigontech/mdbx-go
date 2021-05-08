@@ -1,0 +1,14 @@
+diff --git a/src/osal.h b/src/osal.h
+index a4e0fd4..1a6eec5 100644
+--- a/src/osal.h
++++ b/src/osal.h
+@@ -148,6 +148,9 @@ __extern_C key_t ftok(const char *, int);
+ #elif _WIN32_WINNT < 0x0500
+ #error At least 'Windows 2000' API is required for libmdbx.
+ #endif /* _WIN32_WINNT */
++#ifdef __MINGW32__
++#define __USE_MINGW_ANSI_STDIO 1
++#endif 
+ #if (defined(__MINGW32__) || defined(__MINGW64__)) &&                          \
+     !defined(__USE_MINGW_ANSI_STDIO)
+ #define __USE_MINGW_ANSI_STDIO 1
