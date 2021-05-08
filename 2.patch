@@ -1,0 +1,26 @@
+From bd9ea2f413e1067bf1d8ea79cf6f6fa3c14c7405 Mon Sep 17 00:00:00 2001
+From: "alex.sharov" <AskAlexSharov@gmail.com>
+Date: Sat, 8 May 2021 15:58:33 +0700
+Subject: a
+
+---
+ src/osal.h | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/osal.h b/src/osal.h
+index a4e0fd4..eb7143a 100644
+--- a/src/osal.h
++++ b/src/osal.h
+@@ -148,6 +148,9 @@ __extern_C key_t ftok(const char *, int);
+ #elif _WIN32_WINNT < 0x0500
+ #error At least 'Windows 2000' API is required for libmdbx.
+ #endif /* _WIN32_WINNT */
++#ifdef __MINGW32__
++#define __USE_MINGW_ANSI_STDIO 1
++#endif
+ #if (defined(__MINGW32__) || defined(__MINGW64__)) &&                          \
+     !defined(__USE_MINGW_ANSI_STDIO)
+ #define __USE_MINGW_ANSI_STDIO 1
+-- 
+2.24.3 (Apple Git-128)
+
