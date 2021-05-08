@@ -40,6 +40,7 @@ mdbx-build:
 win:
 	cmake --version
 	cd libmdbx && ls && cmake -G "MinGW Makefiles" .
+	#cd libmdbx && ls && cmake -DMDBX_WITHOUT_MSVC_CRT:BOOL=OFF .
 	cd libmdbx &&  cmake --build .
 	cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
 	cp libmdbx/mdbx.h mdbx/
