@@ -22,13 +22,13 @@ jobs:
         run: |
           cmake --version
           cd libmdbx && ls && cmake -G "MinGW Makefiles" .
-    #        cd libmdbx && ls && cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=OFF .
           cd libmdbx &&  cmake --build .
-    #        cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
           cp libmdbx/mdbx.h mdbx/
 
-#      - name: Add msbuild to PATH
-#        uses: microsoft/setup-msbuild@v1.0.2
+          #      - name: Add msbuild to PATH
+          #        uses: microsoft/setup-msbuild@v1.0.2
+        #        cd libmdbx && ls && cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=OFF .
+        #        cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
 
       - uses: actions/setup-go@v2
         with:
