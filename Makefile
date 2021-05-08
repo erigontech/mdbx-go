@@ -38,7 +38,7 @@ mdbx-build:
 	cd mdbx/dist/ && make clean && make config.h && CFLAGS_EXTRA="-Wno-deprecated-declarations" make mdbx-static.o
 
 win:
-	rm -r 'C:/Program Files (x86)/Microsoft Visual Studio'
+	go env
 	ls
 	echo ${CC}
 	echo ${CXX_FOR_TARGET}
