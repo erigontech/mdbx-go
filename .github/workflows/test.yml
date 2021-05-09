@@ -33,7 +33,7 @@ jobs:
           ar -xv ./libmdbx-static.a
           ls
           cd ../../
-          cp libmdbx/build/libmdbx-static.a mdbx/
+          cp libmdbx/build/alloy.c.o mdbx/
           cp libmdbx/mdbx.h mdbx/
           ls mdbx/
 
