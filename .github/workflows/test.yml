@@ -21,8 +21,8 @@ jobs:
       - name: fetch tags
         run: git fetch --unshallow --tags --prune --force
 
-      - name: Add msbuild to PATH
-        uses: microsoft/setup-msbuild@v1.0.2
+#      - name: Add msbuild to PATH
+#        uses: microsoft/setup-msbuild@v1.0.2
 
       - name: build mdbx
         run: |
