@@ -21,23 +21,23 @@ jobs:
       #      - name: Add msbuild to PATH
       #        uses: microsoft/setup-msbuild@v1.0.2
 
-#      - name: build mdbx
-#        run: |
-#          cmake --version
-#          cd libmdbx
-#          mkdir build
-#          cd build
-#          cmake -G "MinGW Makefiles" ..
-#          cmake --build . --target mdbx-static
-#          ls
-#          ar -xv ./libmdbx-static.a
-#          ls
-#          cd ../../
-#          cp libmdbx/build/alloy.c.obj mdbx/
-#          cp libmdbx/build/alloy.c.obj .
-#          pwd
-#          cp libmdbx/mdbx.h mdbx/
-#          ls mdbx/
+      - name: build mdbx
+        run: |
+          cmake --version
+          cd libmdbx
+          mkdir build
+          cd build
+          cmake -G "MinGW Makefiles" ..
+          cmake --build . --target mdbx-static
+          ls
+          ar -xv ./libmdbx-static.a
+          ls
+          cd ../../
+          cp libmdbx/build/alloy.c.obj mdbx/
+          cp libmdbx/build/alloy.c.obj .
+          pwd
+          cp libmdbx/mdbx.h mdbx/
+          ls mdbx/
 
       #          cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
       #          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON .
