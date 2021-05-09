@@ -30,6 +30,7 @@ jobs:
           cmake --build .
           ls
           ls cmake
+          ls CMakeFiles
           cd ..
           cp libmdbx/mdbx.h mdbx/
 
