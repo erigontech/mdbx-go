@@ -18,8 +18,8 @@ jobs:
           git submodule update
           cd libmdbx && git checkout devel
 
-#      - name: Add msbuild to PATH
-#        uses: microsoft/setup-msbuild@v1.0.2
+      #      - name: Add msbuild to PATH
+      #        uses: microsoft/setup-msbuild@v1.0.2
 
       - name: build mdbx
         run: |
@@ -34,8 +34,8 @@ jobs:
           cd ..
           cp libmdbx/mdbx.h mdbx/
 
-#          cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
-#          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON .
+      #          cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
+      #          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON .
 
 
       - uses: actions/setup-go@v2
