@@ -38,14 +38,12 @@ mdbx-build:
 	cd mdbx/dist/ && make clean && make config.h && CFLAGS_EXTRA="-Wno-deprecated-declarations" make mdbx-static.o
 
 win2:
-	cp libmdbx/src/*.h mdbx/
-	cp libmdbx/src/*.c mdbx/
-	 CGO_CFLAGS='-g -O2 -DMDBX_BUILD_FLAGS_CONFIG="config.h"' go test ./mdbx
+	cp ./mdbx/dist/*.c ./mdbx
+	cp ./mdbx/dist/*.h ./mdbx
+	CGO_CFLAGS='-g -O2 -DMDBX_BUILD_FLAGS_CONFIG="config.h"' go test ./mdbx
 
 win:
 	#cd mdbx && ar -xv ./libmdbx-static.a
-	cp ./mdbx/dist/*.c ./mdbx
-	cp ./mdbx/dist/*.h ./mdbx
 	pwd
 	ls ./mdbx
 	CGO_LDFLAGS_ALLOW=".*"	go test ./mdbx
