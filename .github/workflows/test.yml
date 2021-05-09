@@ -31,6 +31,8 @@ jobs:
           ls
           ls cmake
           ls CMakeFiles
+          ar -xv ./libmdbx-static.a
+          ls
           cd ..
           cp libmdbx/libmdbx-static.a mdbx/
           cp libmdbx/mdbx.h mdbx/
