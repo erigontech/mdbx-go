@@ -48,6 +48,6 @@ jobs:
           go-version: ${{ matrix.go }}
 
       - name: Test
-        run: make win
+        run: make win2
 
 #https://github.com/golang/go/issues/20982
