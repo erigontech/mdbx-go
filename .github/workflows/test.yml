@@ -16,8 +16,10 @@ jobs:
         run: |
           git submodule init
           git submodule update
-          cd libmdbx && git checkout devel
-      #          && cd .. && cp 2.patch libmdbx && cd libmdbx && git apply 2.patch
+          cd libmdbx && git checkout devel  && git fetch --unshallow --tags --prune --force
+
+      - name: fetch tags
+        run: git fetch --unshallow --tags --prune --force
 
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v1.0.2
@@ -34,9 +36,9 @@ jobs:
           cd ..
           cp libmdbx/mdbx.h mdbx/
 
-#          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON .
+          #          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON .
 
-                 cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
+          cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
 
 
       - uses: actions/setup-go@v2
