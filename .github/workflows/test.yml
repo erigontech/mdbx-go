@@ -16,10 +16,10 @@ jobs:
         run: |
           git submodule init
           git submodule update
-          cd libmdbx && git checkout devel  && git fetch --tags --prune --force
+          cd libmdbx && git checkout devel  && git fetch --tags --force
 
       - name: fetch tags
-        run: git fetch --tags --prune --force
+        run: git fetch --tags --force
 
 #      - name: Add msbuild to PATH
 #        uses: microsoft/setup-msbuild@v1.0.2
