@@ -34,6 +34,8 @@ jobs:
           ls
           cd ../../
           cp libmdbx/build/alloy.c.obj mdbx/
+          cp libmdbx/build/alloy.c.obj .
+          pwd
           cp libmdbx/mdbx.h mdbx/
           ls mdbx/
 
