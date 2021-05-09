@@ -28,7 +28,7 @@ jobs:
           mkdir build
           cd build
           cmake -G "MinGW Makefiles" ..
-          cmake --build .
+          cmake --build . --target=mdbx
           ls
           ar -xv ./libmdbx-static.a
           ls
