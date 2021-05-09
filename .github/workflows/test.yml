@@ -25,16 +25,15 @@ jobs:
         run: |
           cmake --version
           cd libmdbx
-          ls
+          mkdir build
+          cd build
           cmake -G "MinGW Makefiles" .
           cmake --build .
           ls
-          ls cmake
-          ls CMakeFiles
           ar -xv ./libmdbx-static.a
           ls
-          cd ..
-          cp libmdbx/libmdbx-static.a mdbx/
+          cd ../../
+          cp libmdbx/build/libmdbx-static.a mdbx/
           cp libmdbx/mdbx.h mdbx/
           ls mdbx/
 
