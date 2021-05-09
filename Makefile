@@ -37,6 +37,10 @@ mdbx-build:
 	echo "Building mdbx"
 	cd mdbx/dist/ && make clean && make config.h && CFLAGS_EXTRA="-Wno-deprecated-declarations" make mdbx-static.o
 
+win2:
+	cd mdbx && ar -xv ./libmdbx-static.a
+	go test ./mdbx
+
 win:
 	#cd mdbx && ar -xv ./libmdbx-static.a
 	go test ./mdbx
