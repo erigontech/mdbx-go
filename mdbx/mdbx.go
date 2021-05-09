@@ -133,7 +133,7 @@ package mdbx
 /*
 //#cgo linux CFLAGS: -O2 -g -Werror -Wno-deprecated-declarations -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes  -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers -DNDEBUG=1
 //#cgo darwin CFLAGS: -DMDBX_BUILD_FLAGS_CONFIG="config.h" -O2 -g -Werror -Wno-deprecated-declarations -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers -DNDEBUG=1
-#cgo LDFLAGS: -lalloy
+#cgo darwin LDFLAGS:  -L. -lalloy.c.o
 #cgo windows LDFLAGS: -L. -lalloy.c.obj
 //#cgo windows LDFLAGS: libmdbx-static.a
 
