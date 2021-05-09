@@ -43,4 +43,5 @@ win2:
 
 win:
 	#cd mdbx && ar -xv ./libmdbx-static.a
+	ls ./mdbx
 	CGO_LDFLAGS_ALLOW=".*"	go test ./mdbx
