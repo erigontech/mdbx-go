@@ -34,6 +34,7 @@ jobs:
           cd ..
           cp libmdbx/libmdbx-static.a mdbx/
           cp libmdbx/mdbx.h mdbx/
+          ls mdbx/
 
       #          cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
       #          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON .
