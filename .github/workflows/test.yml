@@ -32,7 +32,7 @@ jobs:
           ls cmake
           ls CMakeFiles
           cd ..
-          cp libmdbx/mdbx-static.a mdbx/
+          cp libmdbx/libmdbx-static.a mdbx/
           cp libmdbx/mdbx.h mdbx/
 
       #          cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/src/Debug
