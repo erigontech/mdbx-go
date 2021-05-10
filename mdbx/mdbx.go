@@ -137,7 +137,7 @@ package mdbx
 
 #cgo darwin LDFLAGS:  -L. -lalloy.c.o
 //#cgo windows LDFLAGS: -l"${SRCDIR}"/ntdll.dll
-#cgo windows LDFLAGS: -L. -l"${SRCDIR}"/alloy.c.obj
+#cgo windows LDFLAGS: -L"${SRCDIR}" -lalloy.c.obj
 
 //#cgo windows LDFLAGS: -l${SRCDIR}/dist/Debug/mdbx-static.lib -l${SRCDIR}/ntdll.dll
 
