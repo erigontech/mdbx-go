@@ -40,6 +40,9 @@ mdbx-build:
 win2:
 	cp ./mdbx/dist/mdbx.c ./mdbx
 	cp ./mdbx/dist/mdbx.h ./mdbx
+	pwd
+	ls
+	ls mdbx
 	CGO_CFLAGS='-g -O2 -DMDBX_BUILD_FLAGS_CONFIG="config.h"' go test ./mdbx
 
 win:
