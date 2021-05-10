@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY beaec28154972d919a9f1b68cf21db2920505aa892c24c4494dbdfa91c023e8c_v0_9_3_186_gdf387ad9
+#define MDBX_BUILD_SOURCERY 10aa116f5f6a1fca4ccea1310d3d331a39161abc5b63b6a30e01812eab671e7c_v0_10_0_0_gaa1f6fbd
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -674,9 +674,18 @@ __extern_C key_t ftok(const char *, int);
 #endif /* SunOS/Solaris */
 
 #if defined(_WIN32) || defined(_WIN64)
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0601 /* Windows 7 */
+#elif _WIN32_WINNT < 0x0500
+#error At least 'Windows 2000' API is required for libmdbx.
+#endif /* _WIN32_WINNT */
+#if (defined(__MINGW32__) || defined(__MINGW64__)) &&                          \
+    !defined(__USE_MINGW_ANSI_STDIO)
+#define __USE_MINGW_ANSI_STDIO 1
+#endif /* MinGW */
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
-#endif
+#endif /* WIN32_LEAN_AND_MEAN */
 #include <excpt.h>
 #include <tlhelp32.h>
 #include <windows.h>
@@ -695,6 +704,15 @@ typedef struct {
   HANDLE event[2];
 } mdbx_condpair_t;
 typedef CRITICAL_SECTION mdbx_fastmutex_t;
+
+#if !defined(_MSC_VER) && !defined(__try)
+/* *INDENT-OFF* */
+/* clang-format off */
+#define __try
+#define __except(COND) if(false)
+/* *INDENT-ON* */
+/* clang-format on */
+#endif /* stub for MSVC's __try/__except */
 
 #if MDBX_WITHOUT_MSVC_CRT
 
@@ -718,9 +736,7 @@ static inline void *mdbx_realloc(void *ptr, size_t bytes) {
 #endif /* mdbx_realloc */
 
 #ifndef mdbx_free
-static inline void mdbx_free(void *ptr) {
-  return HeapFree(GetProcessHeap(), 0, ptr);
-}
+static inline void mdbx_free(void *ptr) { HeapFree(GetProcessHeap(), 0, ptr); }
 #endif /* mdbx_free */
 
 #else /* MDBX_WITHOUT_MSVC_CRT */
@@ -1368,6 +1384,52 @@ MDBX_INTERNAL_VAR MDBX_srwlock_function mdbx_srwlock_Init,
     mdbx_srwlock_AcquireShared, mdbx_srwlock_ReleaseShared,
     mdbx_srwlock_AcquireExclusive, mdbx_srwlock_ReleaseExclusive;
 
+#if _WIN32_WINNT < 0x0600 /* prior to Windows Vista */
+typedef enum _FILE_INFO_BY_HANDLE_CLASS {
+  FileBasicInfo,
+  FileStandardInfo,
+  FileNameInfo,
+  FileRenameInfo,
+  FileDispositionInfo,
+  FileAllocationInfo,
+  FileEndOfFileInfo,
+  FileStreamInfo,
+  FileCompressionInfo,
+  FileAttributeTagInfo,
+  FileIdBothDirectoryInfo,
+  FileIdBothDirectoryRestartInfo,
+  FileIoPriorityHintInfo,
+  FileRemoteProtocolInfo,
+  MaximumFileInfoByHandleClass
+} FILE_INFO_BY_HANDLE_CLASS,
+    *PFILE_INFO_BY_HANDLE_CLASS;
+
+typedef struct _FILE_END_OF_FILE_INFO {
+  LARGE_INTEGER EndOfFile;
+} FILE_END_OF_FILE_INFO, *PFILE_END_OF_FILE_INFO;
+
+#define REMOTE_PROTOCOL_INFO_FLAG_LOOPBACK 0x00000001
+#define REMOTE_PROTOCOL_INFO_FLAG_OFFLINE 0x00000002
+
+typedef struct _FILE_REMOTE_PROTOCOL_INFO {
+  USHORT StructureVersion;
+  USHORT StructureSize;
+  DWORD Protocol;
+  USHORT ProtocolMajorVersion;
+  USHORT ProtocolMinorVersion;
+  USHORT ProtocolRevision;
+  USHORT Reserved;
+  DWORD Flags;
+  struct {
+    DWORD Reserved[8];
+  } GenericReserved;
+  struct {
+    DWORD Reserved[16];
+  } ProtocolSpecificReserved;
+} FILE_REMOTE_PROTOCOL_INFO, *PFILE_REMOTE_PROTOCOL_INFO;
+
+#endif /* _WIN32_WINNT < 0x0600 (prior to Windows Vista) */
+
 typedef BOOL(WINAPI *MDBX_GetFileInformationByHandleEx)(
     _In_ HANDLE hFile, _In_ FILE_INFO_BY_HANDLE_CLASS FileInformationClass,
     _Out_ LPVOID lpFileInformation, _In_ DWORD dwBufferSize);
@@ -1417,32 +1479,6 @@ typedef BOOL(WINAPI *MDBX_PrefetchVirtualMemory)(
     HANDLE hProcess, ULONG_PTR NumberOfEntries,
     PWIN32_MEMORY_RANGE_ENTRY VirtualAddresses, ULONG Flags);
 MDBX_INTERNAL_VAR MDBX_PrefetchVirtualMemory mdbx_PrefetchVirtualMemory;
-
-#if 0 /* LY: unused for now */
-#if !defined(_WIN32_WINNT_WIN81) || _WIN32_WINNT < _WIN32_WINNT_WIN81
-typedef enum OFFER_PRIORITY {
-  VmOfferPriorityVeryLow = 1,
-  VmOfferPriorityLow,
-  VmOfferPriorityBelowNormal,
-  VmOfferPriorityNormal
-} OFFER_PRIORITY;
-#endif /* Windows 8.1 */
-
-typedef DWORD(WINAPI *MDBX_DiscardVirtualMemory)(PVOID VirtualAddress,
-                                                 SIZE_T Size);
-MDBX_INTERNAL_VAR MDBX_DiscardVirtualMemory mdbx_DiscardVirtualMemory;
-
-typedef DWORD(WINAPI *MDBX_ReclaimVirtualMemory)(PVOID VirtualAddress,
-                                                 SIZE_T Size);
-MDBX_INTERNAL_VAR MDBX_ReclaimVirtualMemory mdbx_ReclaimVirtualMemory;
-
-typedef DWORD(WINAPI *MDBX_OfferVirtualMemory(
-  PVOID          VirtualAddress,
-  SIZE_T         Size,
-  OFFER_PRIORITY Priority
-);
-MDBX_INTERNAL_VAR MDBX_OfferVirtualMemory mdbx_OfferVirtualMemory;
-#endif /* unused for now */
 
 typedef enum _SECTION_INHERIT { ViewShare = 1, ViewUnmap = 2 } SECTION_INHERIT;
 
@@ -1570,24 +1606,21 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 /** Controls online database auto-compactification during write-transactions. */
 #ifndef MDBX_ENABLE_REFUND
 #define MDBX_ENABLE_REFUND 1
-#endif
-#if !(MDBX_ENABLE_REFUND == 0 || MDBX_ENABLE_REFUND == 1)
+#elif !(MDBX_ENABLE_REFUND == 0 || MDBX_ENABLE_REFUND == 1)
 #error MDBX_ENABLE_REFUND must be defined as 0 or 1
 #endif /* MDBX_ENABLE_REFUND */
 
 /** Controls gathering statistics for page operations. */
 #ifndef MDBX_ENABLE_PGOP_STAT
 #define MDBX_ENABLE_PGOP_STAT 1
-#endif
-#if !(MDBX_ENABLE_PGOP_STAT == 0 || MDBX_ENABLE_PGOP_STAT == 1)
+#elif !(MDBX_ENABLE_PGOP_STAT == 0 || MDBX_ENABLE_PGOP_STAT == 1)
 #error MDBX_ENABLE_PGOP_STAT must be defined as 0 or 1
 #endif /* MDBX_ENABLE_PGOP_STAT */
 
 /** Controls use of POSIX madvise() hints and friends. */
 #ifndef MDBX_ENABLE_MADVISE
 #define MDBX_ENABLE_MADVISE 1
-#endif
-#if !(MDBX_ENABLE_MADVISE == 0 || MDBX_ENABLE_MADVISE == 1)
+#elif !(MDBX_ENABLE_MADVISE == 0 || MDBX_ENABLE_MADVISE == 1)
 #error MDBX_ENABLE_MADVISE must be defined as 0 or 1
 #endif /* MDBX_ENABLE_MADVISE */
 
@@ -1595,24 +1628,21 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
  * database corruption to a values closer to the LMDB. */
 #ifndef MDBX_DISABLE_PAGECHECKS
 #define MDBX_DISABLE_PAGECHECKS 0
-#endif
-#if !(MDBX_DISABLE_PAGECHECKS == 0 || MDBX_DISABLE_PAGECHECKS == 1)
+#elif !(MDBX_DISABLE_PAGECHECKS == 0 || MDBX_DISABLE_PAGECHECKS == 1)
 #error MDBX_DISABLE_PAGECHECKS must be defined as 0 or 1
 #endif /* MDBX_DISABLE_PAGECHECKS */
 
 #ifndef MDBX_PNL_PREALLOC_FOR_RADIXSORT
 #define MDBX_PNL_PREALLOC_FOR_RADIXSORT 1
-#endif
-#if !(MDBX_PNL_PREALLOC_FOR_RADIXSORT == 0 ||                                  \
-      MDBX_PNL_PREALLOC_FOR_RADIXSORT == 1)
+#elif !(MDBX_PNL_PREALLOC_FOR_RADIXSORT == 0 ||                                \
+        MDBX_PNL_PREALLOC_FOR_RADIXSORT == 1)
 #error MDBX_PNL_PREALLOC_FOR_RADIXSORT must be defined as 0 or 1
 #endif /* MDBX_PNL_PREALLOC_FOR_RADIXSORT */
 
 #ifndef MDBX_DPL_PREALLOC_FOR_RADIXSORT
 #define MDBX_DPL_PREALLOC_FOR_RADIXSORT 1
-#endif
-#if !(MDBX_DPL_PREALLOC_FOR_RADIXSORT == 0 ||                                  \
-      MDBX_DPL_PREALLOC_FOR_RADIXSORT == 1)
+#elif !(MDBX_DPL_PREALLOC_FOR_RADIXSORT == 0 ||                                \
+        MDBX_DPL_PREALLOC_FOR_RADIXSORT == 1)
 #error MDBX_DPL_PREALLOC_FOR_RADIXSORT must be defined as 0 or 1
 #endif /* MDBX_DPL_PREALLOC_FOR_RADIXSORT */
 
@@ -1630,8 +1660,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_FAKE_SPILL_WRITEMAP 0
 #endif
-#endif
-#if !(MDBX_FAKE_SPILL_WRITEMAP == 0 || MDBX_FAKE_SPILL_WRITEMAP == 1)
+#elif !(MDBX_FAKE_SPILL_WRITEMAP == 0 || MDBX_FAKE_SPILL_WRITEMAP == 1)
 #error MDBX_FAKE_SPILL_WRITEMAP must be defined as 0 or 1
 #endif /* MDBX_FAKE_SPILL_WRITEMAP */
 
@@ -1641,40 +1670,40 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
  * different option value are incompatible. */
 #ifndef MDBX_PNL_ASCENDING
 #define MDBX_PNL_ASCENDING 0
-#endif
-#if !(MDBX_PNL_ASCENDING == 0 || MDBX_PNL_ASCENDING == 1)
+#elif !(MDBX_PNL_ASCENDING == 0 || MDBX_PNL_ASCENDING == 1)
 #error MDBX_PNL_ASCENDING must be defined as 0 or 1
 #endif /* MDBX_PNL_ASCENDING */
 
 /** Avoid dependence from MSVC CRT and use ntdll.dll instead. */
 #ifndef MDBX_WITHOUT_MSVC_CRT
 #define MDBX_WITHOUT_MSVC_CRT 1
-#endif
-#if !(MDBX_WITHOUT_MSVC_CRT == 0 || MDBX_WITHOUT_MSVC_CRT == 1)
+#elif !(MDBX_WITHOUT_MSVC_CRT == 0 || MDBX_WITHOUT_MSVC_CRT == 1)
 #error MDBX_WITHOUT_MSVC_CRT must be defined as 0 or 1
 #endif /* MDBX_WITHOUT_MSVC_CRT */
 
 /** Size of buffer used during copying a environment/database file. */
 #ifndef MDBX_ENVCOPY_WRITEBUF
 #define MDBX_ENVCOPY_WRITEBUF 1048576u
-#endif
-#if MDBX_ENVCOPY_WRITEBUF < 65536u || MDBX_ENVCOPY_WRITEBUF > 1073741824u ||   \
+#elif MDBX_ENVCOPY_WRITEBUF < 65536u || MDBX_ENVCOPY_WRITEBUF > 1073741824u || \
     MDBX_ENVCOPY_WRITEBUF % 65536u
 #error MDBX_ENVCOPY_WRITEBUF must be defined in range 65536..1073741824 and be multiple of 65536
 #endif /* MDBX_ENVCOPY_WRITEBUF */
 
 /** Forces assertion checking */
 #ifndef MDBX_FORCE_ASSERTIONS
-#define MDBX_FORCE_ASSERTIONS 1
-#endif
-#if !(MDBX_FORCE_ASSERTIONS == 0 || MDBX_FORCE_ASSERTIONS == 1)
+#define MDBX_FORCE_ASSERTIONS 0
+#elif !(MDBX_FORCE_ASSERTIONS == 0 || MDBX_FORCE_ASSERTIONS == 1)
 #error MDBX_FORCE_ASSERTIONS must be defined as 0 or 1
 #endif /* MDBX_FORCE_ASSERTIONS */
 
 /** Presumed malloc size overhead for each allocation
  * to adjust allocations to be more aligned. */
 #ifndef MDBX_ASSUME_MALLOC_OVERHEAD
+#ifdef __SIZEOF_POINTER__
+#define MDBX_ASSUME_MALLOC_OVERHEAD (__SIZEOF_POINTER__ * 2u)
+#else
 #define MDBX_ASSUME_MALLOC_OVERHEAD (sizeof(void *) * 2u)
+#endif
 #elif MDBX_ASSUME_MALLOC_OVERHEAD < 0 || MDBX_ASSUME_MALLOC_OVERHEAD > 64 ||   \
     MDBX_ASSUME_MALLOC_OVERHEAD % 4
 #error MDBX_ASSUME_MALLOC_OVERHEAD must be defined in range 0..64 and be multiple of 4
@@ -1868,8 +1897,8 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #define MDBX_64BIT_CAS_CONFIG STRINGIFY(MDBX_64BIT_CAS)
 #endif /* MDBX_64BIT_CAS */
 
-#if !defined(MDBX_UNALIGNED_OK)
-#if defined(_MSC_VER)
+#ifndef MDBX_UNALIGNED_OK
+#ifdef _MSC_VER
 #define MDBX_UNALIGNED_OK 1 /* avoid MSVC misoptimization */
 #elif __CLANG_PREREQ(5, 0) || __GNUC_PREREQ(5, 0)
 #define MDBX_UNALIGNED_OK 0 /* expecting optimization is well done */
@@ -2877,7 +2906,10 @@ struct MDBX_env {
   unsigned me_leaf_nodemax; /* max size of a leaf-node */
   uint8_t me_psize2log;     /* log2 of DB page size */
   int8_t me_stuck_meta; /* recovery-only: target meta page or less that zero */
-  unsigned me_os_psize; /* OS page size, from mdbx_syspagesize() */
+  uint16_t me_merge_threshold,
+      me_merge_threshold_gc;  /* pages emptier than this are candidates for
+                                 merging */
+  unsigned me_os_psize;       /* OS page size, from mdbx_syspagesize() */
   unsigned me_maxreaders;     /* size of the reader table */
   MDBX_dbi me_maxdbs;         /* size of the DB table */
   uint32_t me_pid;            /* process ID of this env */
@@ -2904,6 +2936,7 @@ struct MDBX_env {
     uint8_t spill_max_denominator;
     uint8_t spill_min_denominator;
     uint8_t spill_parent4child_denominator;
+    unsigned merge_threshold_16dot16_percent;
     union {
       unsigned all;
       /* tracks options with non-auto values but tuned by user */
@@ -2972,10 +3005,9 @@ struct MDBX_env {
 #endif /* xMDBX_DEBUG_SPILLING */
 
   /* ------------------------------------------------- stub for lck-less mode */
-  alignas(MDBX_CACHELINE_SIZE) uint64_t
-      me_lckless_stub[((sizeof(MDBX_lockinfo) + MDBX_CACHELINE_SIZE - 1) &
-                       ~(MDBX_CACHELINE_SIZE - 1)) /
-                      8];
+  MDBX_atomic_uint64_t
+      x_lckless_stub[(sizeof(MDBX_lockinfo) + MDBX_CACHELINE_SIZE - 1) /
+                     sizeof(MDBX_atomic_uint64_t)];
 };
 
 #ifndef __cplusplus
@@ -3368,7 +3400,7 @@ log2n_powerof2(size_t value) {
    MDBX_LIFORECLAIM | MDBX_EXCLUSIVE)
 #define ENV_USABLE_FLAGS (ENV_CHANGEABLE_FLAGS | ENV_CHANGELESS_FLAGS)
 
-#if !defined(__cplusplus) || defined(__cpp_constexpr)
+#if !defined(__cplusplus) || CONSTEXPR_ENUM_FLAGS_OPERATIONS
 static __maybe_unused void static_checks(void) {
   STATIC_ASSERT_MSG(INT16_MAX - CORE_DBS == MDBX_MAX_DBI,
                     "Oops, MDBX_MAX_DBI or CORE_DBS?");
@@ -3598,6 +3630,13 @@ template <> struct path_to_pchar<std::string> {
 };
 
 #if defined(_WIN32) || defined(_WIN64)
+
+#ifndef WC_ERR_INVALID_CHARS
+static const DWORD WC_ERR_INVALID_CHARS =
+    (6 /* Windows Vista */ <= /* MajorVersion */ LOBYTE(LOWORD(GetVersion())))
+        ? 0x00000080
+        : 0;
+#endif /* WC_ERR_INVALID_CHARS */
 
 template <> struct path_to_pchar<std::wstring> {
   std::string str;
