@@ -44,6 +44,7 @@ win2:
 	ls /d/a/mdbx-go
 	ls /d/a/mdbx-go/mdbx-go
 	ls /d/a/mdbx-go/mdbx-go/mdbx
+	ls D:/a/mdbx-go/mdbx-go/mdbx/alloy.c.obj
 	CGO_CFLAGS='-g -O2 -DMDBX_BUILD_FLAGS_CONFIG="config.h"' go test ./mdbx
 
 win:
