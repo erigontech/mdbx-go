@@ -136,7 +136,7 @@ package mdbx
 #cgo windows CFLAGS: -O2 -g -Werror -Wno-deprecated-declarations -Wextra -Wpedantic -fPIC -fvisibility=hidden -pthread -Wno-error=attributes -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers -DNDEBUG=1 -Wno-cast-function-type
 
 #cgo darwin LDFLAGS:  -L. -lalloy.c.o
-#cgo windows LDFLAGS: -L. -lntdll.dll
+#cgo windows LDFLAGS: -L"${SRCDIR}" -lntdll.dll
 //#cgo windows LDFLAGS: -L. -lntdll.dll -l"${SRCDIR}"/alloy.c.obj
 
 //#cgo windows LDFLAGS: -l${SRCDIR}/dist/Debug/mdbx-static.lib -l${SRCDIR}/ntdll.dll
