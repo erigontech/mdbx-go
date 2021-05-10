@@ -32,7 +32,10 @@ jobs:
           ls
           ar -xv ./libmdbx-static.a
           ls
-          cd ../../
+          echo "alex"
+          pwd
+          cd ..
+          pwd
           cp libmdbx/build/alloy.c.obj mdbx/
           cp libmdbx/build/alloy.c.obj .
           pwd
