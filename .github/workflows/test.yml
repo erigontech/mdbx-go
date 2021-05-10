@@ -34,15 +34,15 @@ jobs:
           ls
           echo "alex"
           pwd
-          cd ..
+          cd ../..
           pwd
           cp libmdbx/build/alloy.c.obj mdbx/
           cp libmdbx/build/alloy.c.obj .
           pwd
-          cp libmdbx/mdbx.h mdbx/
-          ls mdbx/
+#          cp libmdbx/mdbx.h mdbx/
           cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/
           cp C:\WINDOWS\SYSTEM32\ntdll.dll .
+          ls mdbx/
 
       #          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON .
 
