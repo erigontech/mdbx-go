@@ -52,3 +52,4 @@ win:
 	pwd
 	ls ./mdbx
 	cd mdbx && CGO_LDFLAGS_ALLOW=".*"	go build -v .
+
