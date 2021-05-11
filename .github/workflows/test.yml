@@ -30,6 +30,7 @@ jobs:
           cmake -G "MinGW Makefiles" ..
           cmake --build . --target mdbx-static
           ls
+          cp ./libmdbx-static.a ./../../mdbx/libmdbx.a
           ar -xv ./libmdbx-static.a
           ls
           echo "alex"
