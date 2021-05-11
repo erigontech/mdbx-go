@@ -45,6 +45,8 @@ jobs:
           cp libmdbx/build/alloy.c.obj mdbx/libmdbx.o
           cp libmdbx/build/alloy.c.obj mdbx/libmdbx
           cp libmdbx/build/alloy.c.obj .
+          cp libmdbx/build/alloy.c.obj C:/ProgramData/Chocolatey/lib/mingw/tools/install/mingw64/bin/../lib/gcc/libmdbx.o
+
           pwd
           cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/
           cp C:\WINDOWS\SYSTEM32\ntdll.dll .
