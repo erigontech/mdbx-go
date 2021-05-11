@@ -38,6 +38,7 @@ jobs:
           cd ../..
 
           pwd
+          ls C:\WINDOWS\SYSTEM32\ntdll.dll
           cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/
           cp C:\WINDOWS\SYSTEM32\ntdll.dll .
           ls mdbx/
