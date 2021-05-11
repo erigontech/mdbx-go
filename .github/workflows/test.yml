@@ -31,6 +31,7 @@ jobs:
           cmake --build . --target mdbx-static
           ls
           cp ./libmdbx-static.a ./../../mdbx/libmdbx.a
+          cp ./libmdbx-static.a  ./libmdbx.a
           cp ./libmdbx-static.a ./../../mdbx/libmdbx-static.a
           ar -xv ./libmdbx-static.a
           ls
