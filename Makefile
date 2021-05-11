@@ -39,7 +39,7 @@ mdbx-build:
 
 win2:
 	#cp ./mdbx/dist/mdbx.c ./mdbx
-	#cp ./mdbx/dist/mdbx.h ./mdbx
+	cp ./mdbx/dist/mdbx.h ./mdbx
 	#pwd
 	#ls /d/a/mdbx-go
 	#ls /d/a/mdbx-go/mdbx-go
