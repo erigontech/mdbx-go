@@ -30,27 +30,12 @@ jobs:
           cmake -G "MinGW Makefiles" ..
           cmake --build . --target mdbx-static
           ls
-          cp ./libmdbx-static.a ./../../mdbx/libmdbx.a
           cp ./libmdbx-static.a  ./libmdbx.a
-          cp ./libmdbx-static.a ./../../mdbx/libmdbx-static.a
           ar -xv ./libmdbx-static.a
           ls
           echo "alex"
           pwd
           cd ../..
-          pwd
-          echo $PATH
-          ls C:/ProgramData/Chocolatey/lib/mingw/tools/install/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/8.1.0
-          ls C:/ProgramData/Chocolatey/lib/mingw/tools/install/mingw64/bin/../lib/gcc
-          ls C:/ProgramData/Chocolatey/lib/mingw/tools/install/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/8.1.0/../../../../x86_64-w64-mingw32/lib/../lib
-          cp libmdbx/build/alloy.c.obj mdbx/
-          cp libmdbx/build/alloy.c.obj mdbx/libmdbx.obj
-          cp libmdbx/build/alloy.c.obj mdbx/libmdbx.o
-          cp libmdbx/build/alloy.c.obj mdbx/libmdbx
-          cp libmdbx/build/alloy.c.obj .
-          cp libmdbx/build/alloy.c.obj C:/ProgramData/Chocolatey/lib/mingw/tools/install/mingw64/bin/../lib/gcc/libmdbx.obj
-          cp libmdbx/build/alloy.c.obj C:/ProgramData/Chocolatey/lib/mingw/tools/install/mingw64/bin/../lib/gcc/libmdbx.o
-          cp libmdbx/build/alloy.c.obj C:/ProgramData/Chocolatey/lib/mingw/tools/install/mingw64/bin/../lib/gcc/libmdbx
 
           pwd
           cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/
