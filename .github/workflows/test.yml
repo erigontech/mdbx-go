@@ -54,8 +54,7 @@ jobs:
       #          cp libmdbx/mdbx.h mdbx/
       #          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON .
 
-
-  - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go }}
 
