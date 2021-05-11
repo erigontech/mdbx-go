@@ -25,13 +25,13 @@ jobs:
       #      - name: Add msbuild to PATH
       #        uses: microsoft/setup-msbuild@v1.0.2
 
-#      - name: mvsc
-#        shell: cmd
-#        run: |
-#          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-#          set PATH="C:\P\grep;%PATH%"
-#          set CC=cl.exe
-#          set CXX=cl.exe
+      #      - name: mvsc
+      #        shell: cmd
+      #        run: |
+      #          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+      #          set PATH="C:\P\grep;%PATH%"
+      #          set CC=cl.exe
+      #          set CXX=cl.exe
 
       - name: build mdbx
         run: |
@@ -40,7 +40,7 @@ jobs:
           mkdir build
           cd build
           cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON ..
-          cmake --build . --target mdbx-static
+          cmake --build .
           ls Debug
           cp Debug/mdbx-static.lib .
           ls
