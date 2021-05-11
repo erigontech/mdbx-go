@@ -42,7 +42,9 @@ jobs:
           cd ../..
           echo $LDFLAGS
           cp ./mdbx/dist/mdbx.h ./mdbx
-          CC=cl.exe go test ./mdbx
+          set CC=cl.exe
+          set CXX=cl.exe
+          go test ./mdbx
 
 
       #  -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON
