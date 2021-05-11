@@ -49,8 +49,10 @@ jobs:
           cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/
           cp C:\WINDOWS\SYSTEM32\ntdll.dll .
           ls mdbx/
+          make win2
 
-#          docker run --rm dockcross/windows-static-x64-posix > ./dockcross
+
+      #          docker run --rm dockcross/windows-static-x64-posix > ./dockcross
 #          chmod +x ./dockcross
 #          ./dockcross cmake -B./build -H./libmdbx
 #          ./dockcross cmake --build ./build --target mdbx-static
