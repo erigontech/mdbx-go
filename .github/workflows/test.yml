@@ -46,12 +46,11 @@ jobs:
           cp C:\WINDOWS\SYSTEM32\ntdll.dll .
           ls mdbx/
 
-          docker run --rm dockcross/windows-static-x64-posix > ./dockcross
-          chmod +x ./dockcross
-          ./dockcross cmake -B./build -H./libmdbx
-          ./dockcross cmake --build ./build --target mdbx-static
-
-
+#          docker run --rm dockcross/windows-static-x64-posix > ./dockcross
+#          chmod +x ./dockcross
+#          ./dockcross cmake -B./build -H./libmdbx
+#          ./dockcross cmake --build ./build --target mdbx-static
+#
       #          cp libmdbx/mdbx.h mdbx/
       #          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON .
 
