@@ -62,6 +62,8 @@ jobs:
           go-version: ${{ matrix.go }}
 
       - name: Test
-        run: make win2
+        run: |
+          ls mdbx/
+          make win2
 
 #https://github.com/golang/go/issues/20982
