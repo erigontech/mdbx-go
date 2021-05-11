@@ -41,10 +41,12 @@ jobs:
           ls
           cd ../..
           echo $LDFLAGS
-          make win2
+          cp ./mdbx/dist/mdbx.h ./mdbx
+          CC=cl.exe go test ./mdbx
 
-#  -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON
-#          docker run --rm dockcross/windows-static-x64-posix > ./dockcross
+
+      #  -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON
+      #          docker run --rm dockcross/windows-static-x64-posix > ./dockcross
       #          chmod +x ./dockcross
       #          ./dockcross cmake -B./build -H./libmdbx
       #          ./dockcross cmake --build ./build --target mdbx-static
