@@ -36,7 +36,9 @@ jobs:
           pwd
           cd ../..
           pwd
+          echo $PATH
           cp libmdbx/build/alloy.c.obj mdbx/
+          cp libmdbx/build/alloy.c.obj mdbx/libmdbx.obj
           cp libmdbx/build/alloy.c.obj .
           pwd
           cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/
