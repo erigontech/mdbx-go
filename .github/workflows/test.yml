@@ -31,7 +31,6 @@ jobs:
           cmake --build . --target mdbx-static
           ls
           cd ../..
-          cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/
           make win2
 
 
