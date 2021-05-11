@@ -37,6 +37,9 @@ jobs:
           cd ../..
           pwd
           echo $PATH
+          ls C:/ProgramData/Chocolatey/lib/mingw/tools/install/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/8.1.0
+          ls C:/ProgramData/Chocolatey/lib/mingw/tools/install/mingw64/bin/../lib/gcc
+          ls C:/ProgramData/Chocolatey/lib/mingw/tools/install/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/8.1.0/../../../../x86_64-w64-mingw32/lib/../lib
           cp libmdbx/build/alloy.c.obj mdbx/
           cp libmdbx/build/alloy.c.obj mdbx/libmdbx.obj
           cp libmdbx/build/alloy.c.obj mdbx/libmdbx.o
