@@ -12,15 +12,16 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - uses: actions/setup-go@v2
-        with:
-          go-version: ${{ matrix.go }}
-
       - name: checkout submodule
         run: |
           git submodule init
           git submodule update
           cd libmdbx && git checkout devel
+          choco upgrade mingw -y --no-progress
+
+      - uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go }}
 
       #      - name: Add msbuild to PATH
       #        uses: microsoft/setup-msbuild@v1.0.2
@@ -39,7 +40,7 @@ jobs:
           cd libmdbx
           mkdir build
           cd build
-          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON ..
+          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
           cmake --build . --target mdbx
           ls Debug
           cp Debug/mdbx.lib .
