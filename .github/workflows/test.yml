@@ -42,6 +42,7 @@ jobs:
           cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON ..
           cmake --build . --target mdbx
           ls Debug
+          cp Debug/mdbx.lib .
           ls
           cd ../..
           echo $LDFLAGS
