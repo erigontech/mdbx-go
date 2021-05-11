@@ -29,9 +29,9 @@ jobs:
           cd build
           cmake -G "MinGW Makefiles" ..
           cmake --build . --target mdbx-static
-          cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/
           ls
           cd ../..
+          cp C:\WINDOWS\SYSTEM32\ntdll.dll mdbx/
           make win2
 
 
