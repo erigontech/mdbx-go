@@ -139,7 +139,6 @@ package mdbx
 
 //#cgo windows LDFLAGS: -l${SRCDIR}/dist/Debug/mdbx-static.lib -l${SRCDIR}/ntdll.dll
 
-
 //#cgo CFLAGS: -O2 -g -Wno-deprecated-declarations -pthread -W -Wall -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -std=gnu11 -pthread -Wno-error=attributes -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers
 //#cgo linux LDFLAGS: mdbx-static.o
 //#cgo windows LDFLAGS: -L ntdll_extra_target.vcxproj mdbx-static.vcxproj
