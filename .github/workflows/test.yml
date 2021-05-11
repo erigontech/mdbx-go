@@ -12,6 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - uses: actions/setup-go@v2
+          with:
+            go-version: ${{ matrix.go }}
+
       - name: checkout submodule
         run: |
           git submodule init
@@ -57,9 +61,6 @@ jobs:
       #          cp libmdbx/mdbx.h mdbx/
       #          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON .
 
-      - uses: actions/setup-go@v2
-        with:
-          go-version: ${{ matrix.go }}
 
       - name: Test
         run: |
