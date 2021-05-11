@@ -47,9 +47,6 @@ jobs:
           cd ../..
           echo $LDFLAGS
           cp ./mdbx/dist/mdbx.h ./mdbx
-          set CC=cl.exe
-          set CXX=cl.exe
-          set COLLECT_GCC=cl.exe
           go env
           go test ./mdbx
 
