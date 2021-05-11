@@ -23,7 +23,11 @@ jobs:
 
       - name: mvsc
         shell: cmd
-        run: call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          set PATH="C:\P\grep;%PATH%"
+          set CC=cl.exe
+          set CXX=cl.exe
 
       - name: build mdbx
         run: |
@@ -31,9 +35,6 @@ jobs:
           cd libmdbx
           mkdir build
           cd build
-          set PATH="C:\P\grep;%PATH%"
-          set CC=cl.exe
-          set CXX=cl.exe
           cmake -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
           cmake --build . --target mdbx-static
           cp Debug/mdbx-static.lib .
