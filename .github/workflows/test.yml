@@ -50,7 +50,6 @@ jobs:
           go env
           go test ./mdbx
 
-
 #           cmake -G "MinGW Makefiles" ..
       #  -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON
       #          docker run --rm dockcross/windows-static-x64-posix > ./dockcross
