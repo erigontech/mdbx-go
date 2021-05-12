@@ -34,25 +34,24 @@ jobs:
       #          set CC=cl.exe
       #          set CXX=cl.exe
 
-      - name: build mdbx
+      - name: mingw
         run: |
           cmake --version
           cd libmdbx
           mkdir build
           cd build
-          cmake -G "MinGW Makefiles" -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
+          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
           cmake --build . --target mdbx-static
           ls
+          ls Debug
+          cp Debug/mdbx-static.lib .
           cd ../..
-          echo $LDFLAGS
           cp ./mdbx/dist/mdbx.h ./mdbx
           go env
           go test ./mdbx
 
 
-      #          ls Debug
-      #          cp Debug/mdbx-static.lib .
-#          cmake -G "MinGW Makefiles" ..
+#           cmake -G "MinGW Makefiles" ..
       #  -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON
       #          docker run --rm dockcross/windows-static-x64-posix > ./dockcross
       #          chmod +x ./dockcross
