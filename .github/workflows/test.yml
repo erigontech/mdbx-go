@@ -40,7 +40,7 @@ jobs:
           cd libmdbx
           mkdir build
           cd build
-          cmake -G "MinGW Makefiles"P -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
+          cmake -G "MinGW Makefiles" -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
           cmake --build . --target mdbx
           ls
           ls Debug
@@ -56,7 +56,7 @@ jobs:
       #          chmod +x ./dockcross
       #          ./dockcross cmake -B./build -H./libmdbx
       #          ./dockcross cmake --build ./build --target mdbx-static
-      #
+      #x
       #          cp libmdbx/mdbx.h mdbx/
       #          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON .
 
