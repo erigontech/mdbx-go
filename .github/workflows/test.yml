@@ -44,7 +44,7 @@ jobs:
           cmake --build . --target mdbx-static
           ls
           ls Debug
-          cp Debug/mdbx-static.lib .
+          cp Debug/mdbx.lib .
           cd ../..
           cp ./mdbx/dist/mdbx.h ./mdbx
           go env
