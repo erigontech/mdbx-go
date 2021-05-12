@@ -40,20 +40,20 @@ jobs:
           cd libmdbx
           mkdir build
           cd build
-          cmake -G "MinGW Makefiles" -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
-          cmake --build . --target mdbx
-          ls
-          ls Debug
-          cp Debug/mdbx.lib .
           cd ../..
           cp ./mdbx/dist/mdbx.h ./mdbx
+          cp ./mdbx/dist/mdbx.c ./mdbx
           go env
           go test ./mdbx
 
+      #          cmake -G "MinGW Makefiles" -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
+      #          cmake --build . --target mdbx
+      #          ls
+      #          ls Debug
+      #          cp Debug/mdbx.lib .
       #           cmake -G "MinGW Makefiles" ..
       #  -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON
       #          docker run --rm dockcross/windows-static-x64-posix > ./dockcross
-      #          chmod +x ./dockcross
       #          ./dockcross cmake -B./build -H./libmdbx
       #          ./dockcross cmake --build ./build --target mdbx-static
       #x
