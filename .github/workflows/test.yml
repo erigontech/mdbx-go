@@ -43,8 +43,8 @@ jobs:
           cmake -G "MinGW Makefiles" -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
           cmake --build . --target mdbx
           ls
-          ls Debug
-          cp Debug/mdbx.lib .
+#          ls Debug
+#          cp Debug/mdbx.lib .
           cd ../..
           cp ./mdbx/dist/mdbx.h ./mdbx
           go env
