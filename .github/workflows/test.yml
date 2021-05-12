@@ -40,7 +40,7 @@ jobs:
           cd libmdbx
           mkdir build
           cd build
-          cmake -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
+          cmake -G "MinGW Makefiles" -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
           cmake --build . --target mdbx-static
           ls
           cd ../..
