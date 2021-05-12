@@ -44,7 +44,7 @@ jobs:
           cp ./mdbx/dist/mdbx.h ./mdbx
           cp ./mdbx/dist/mdbx.c ./mdbx
           go env
-          go test ./mdbx
+          make win3
 
       #          cmake -G "MinGW Makefiles" -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
       #          cmake --build . --target mdbx
