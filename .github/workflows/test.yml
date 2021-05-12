@@ -42,8 +42,6 @@ jobs:
           cd build
           cmake -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
           cmake --build . --target mdbx-static
-          ls Debug
-          cp Debug/mdbx-static.lib .
           ls
           cd ../..
           echo $LDFLAGS
@@ -52,6 +50,9 @@ jobs:
           go test ./mdbx
 
 
+      #          ls Debug
+      #          cp Debug/mdbx-static.lib .
+#          cmake -G "MinGW Makefiles" ..
       #  -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON
       #          docker run --rm dockcross/windows-static-x64-posix > ./dockcross
       #          chmod +x ./dockcross
