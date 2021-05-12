@@ -17,7 +17,7 @@ jobs:
           git submodule init
           git submodule update
           cd libmdbx && git checkout devel
-          choco upgrade mingw -y --no-progress
+#          choco upgrade mingw -y --no-progress
 
       - uses: actions/setup-go@v2
         with:
