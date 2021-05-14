@@ -22,6 +22,7 @@ jobs:
           git clean -n
           git submodule update --recursive
           mkdir libmdbx/build && cd libmdbx/build
+          ls .
           cmake -G "MinGW Makefiles" -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
           cmake --build . --target mdbx-static
           ls .
