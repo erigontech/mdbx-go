@@ -17,12 +17,7 @@ jobs:
 
       - name: checkout submodule
         run: |
-          ls .
-          git clean -n
-          git submodule init
-          ls .
-          git clean -n
-          git submodule update --recursive
+          git submodule update --force --recursive --init --remote
           cd libmdbx
           ls .
           mkdir build && cd build
