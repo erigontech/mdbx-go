@@ -21,6 +21,8 @@ jobs:
           git submodule update
           cmake -G "MinGW Makefiles" -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
           ls libmdbx
+          echo '#define MDBX_WITHOUT_MSVC_CRT 1' >> mdbx/config.h
+          cat mdbx/config.h
           cp libmdbx/config.h mdbx/
 
       - uses: actions/setup-go@v2
