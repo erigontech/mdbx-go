@@ -15,11 +15,9 @@ jobs:
 
       - name: upgr
         run: |
-          which gcc
-          gcc --version
           choco version all
+          choco upgrade mingw cmake git -y --no-progress
       #          choco install visualstudio2019buildtools
-      #          choco upgrade mingw cmake git -y --no-progress
 
       - name: checkout submodule
         run: |
@@ -28,13 +26,14 @@ jobs:
           ls .
           mkdir build && cd build
           ls .`
-          cmake -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
-          cmake --build . --target mdbx-static
+          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
+          cmake --build . --target mdbx
           ls .
           echo '#define MDBX_WITHOUT_MSVC_CRT 1' >> config.h
           cat config.h
           cd ../../
           cp libmdbx/build/config.h mdbx/
+          cp libmdbx/build/mdbx.dll mdbx/
 
       - uses: actions/setup-go@v2
         with:
