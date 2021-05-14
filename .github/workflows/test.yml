@@ -17,8 +17,7 @@ jobs:
 
       - name: checkout submodule
         run: |
-          git submodule init
-          git submodule update
+          git submodule update --init --recursiveç
           mkdir libmdbx/build && cd libmdbx/build
           cmake -G "MinGW Makefiles" -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
           cmake --build . --target mdbx-static
