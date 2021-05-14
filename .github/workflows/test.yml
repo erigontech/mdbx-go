@@ -12,7 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-#      - name: checkout submodule
+      - name: upgr
+        run:       choco upgrade mingw -y --no-progress
+
+      #      - name: checkout submodule
 #        run: |
 #          cd libmdbx && git checkout devel
 
@@ -33,7 +36,6 @@ jobs:
 
       - name: mingw
         run: |
-          choco upgrade mingw -y --no-progress
           cmake --version
           cp ./mdbx/dist/mdbx.h ./mdbx
           cp ./mdbx/dist/mdbx.c ./mdbx
