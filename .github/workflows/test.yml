@@ -13,7 +13,10 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: upgr
-        run: choco upgrade mingw cmake -y --no-progress
+        run: |
+          choco version all
+          choco upgrade mingw cmake -y --no-progress
+#          choco install visualstudio2019buildtools
 
       - name: checkout submodule
         run: |
