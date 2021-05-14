@@ -14,9 +14,8 @@ jobs:
 
       - name: upgr
         run: |
+          choco upgrade mingw cmake git -y --no-progress
           choco outdated
-          choco version all
-          choco upgrade mingw cmake -y --no-progress
 #          choco install visualstudio2019buildtools
 
       - name: checkout submodule

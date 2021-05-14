@@ -38,7 +38,7 @@ mdbx-build:
 	cd mdbx/dist/ && make clean && make config.h && CFLAGS_EXTRA="-Wno-deprecated-declarations" make mdbx-static.o
 
 win3:
-	CGO_CFLAGS='-g -O2 -DMDBX_BUILD_FLAGS_CONFIG="config.h"' go test ./mdbx
+	CGO_CFLAGS='-g -O2 -DMDBX_BUILD_FLAGS_CONFIG="config.h"' go test -extldflags=-Wl,--allow-multiple-definition ./mdbx
 
 win2:
 	#cp ./mdbx/dist/mdbx.c ./mdbx
