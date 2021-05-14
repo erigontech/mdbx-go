@@ -11,11 +11,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+      - uses: ilammy/msvc-dev-cmd@v1
 
       - name: upgr
         run: |
-          which gcc
-          choco install visualstudio2019buildtools
+#          which gcc
+#          choco install visualstudio2019buildtools
           choco version all
       #          choco upgrade mingw cmake git -y --no-progress
 
