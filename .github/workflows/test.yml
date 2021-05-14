@@ -20,6 +20,7 @@ jobs:
           git submodule update --force --recursive --init --remote
           cd libmdbx
           ls .
+          SET
           mkdir build && cd build
           ls .
           cmake -G "MinGW Makefiles" -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
