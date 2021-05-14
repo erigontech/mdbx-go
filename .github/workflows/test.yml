@@ -15,9 +15,9 @@ jobs:
 
       - name: upgr
         run: |
-#          which gcc
-#          choco install visualstudio2019buildtools
+          which gcc
           choco version all
+      #          choco install visualstudio2019buildtools
       #          choco upgrade mingw cmake git -y --no-progress
 
       - name: checkout submodule
