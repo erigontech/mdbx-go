@@ -51,7 +51,7 @@ jobs:
       - name: mingw
         run: |
           cmake --version
-          SET
+          SET C
           cp ./mdbx/dist/mdbx.h ./mdbx
           cp ./mdbx/dist/mdbx.c ./mdbx
           go env
