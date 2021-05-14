@@ -25,7 +25,7 @@ jobs:
           ls .
           mkdir build && cd build
           ls .
-          cmake -G "MinGW Makefiles" -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
+          cmake -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
           cmake --build . --target mdbx-static
           ls .
           echo '#define MDBX_WITHOUT_MSVC_CRT 1' >> config.h
