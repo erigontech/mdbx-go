@@ -26,14 +26,15 @@ jobs:
           ls .
           mkdir build && cd build
           ls .
-          cmake -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
+          cmake -G "MinGW Makefiles" -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
           cmake --build . --target mdbx
           ls .
           echo '#define MDBX_WITHOUT_MSVC_CRT 1' >> config.h
           cat config.h
           cd ../../
+          ls  libmdbx/build/Debug/
           cp libmdbx/build/config.h mdbx/
-          cp libmdbx/build/mdbx.dll mdbx/
+          cp libmdbx/build/Debug/mdbx.dll mdbx/
 
       - uses: actions/setup-go@v2
         with:
