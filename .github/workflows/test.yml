@@ -33,7 +33,6 @@ jobs:
           cat config.h
           cd ../../
           cp libmdbx/build/config.h mdbx/
-          cp libmdbx/build/libmdbx.dll mdbx/
 
       - uses: actions/setup-go@v2
         with:
