@@ -15,7 +15,7 @@ jobs:
       - name: upgr
         run: |
           choco uninstall -y mingw cmake git microsoft-edge sbt hg postgresql13 awscli postgresql kubernetes-cli rtools nodejs-lts mongodb bazel cabal composer ghc gradle julia docker-compose kubernetes-helm maven Minikube nginx php tortoisesvn vswhere wixtoolset
-          choco uninstall -y ant apache-httpd R.Project pulumi packer nuget.commandline nssm InnoSetup
+          choco uninstall -y ant apache-httpd R.Project pulumi packer nuget.commandline nssm InnoSetup hub DotNet3.5
           choco version all
           choco upgrade mingw cmake git -y --no-progress
       #          choco install visualstudio2019buildtools
