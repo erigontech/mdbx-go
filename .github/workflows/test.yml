@@ -29,7 +29,7 @@ jobs:
           cmake -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
           cmake --build . --target mdbx
           ls .
-          echo '#define MDBX_WITHOUT_MSVC_CRT 1' >> config.h
+          echo '#define MDBX_WITHOUT_MSVC_CRT 0' >> config.h
           cat config.h
           cd ../../
           cp libmdbx/build/config.h mdbx/
