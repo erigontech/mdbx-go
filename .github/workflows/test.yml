@@ -21,7 +21,7 @@ jobs:
       - name: checkout submodule
         run: |
           git submodule update --force --recursive --init --remote
-          cd mdbx/xdist
+          cd mdbx/dist
           cmake -G "MinGW Makefiles" . -D CMAKE_MAKE_PROGRAM:PATH=C:\ProgramData\chocolatey\bin\make.exe -D MDBX_BUILD_SHARED_LIBRARY:BOOL=ON
           cmake --build .
 
