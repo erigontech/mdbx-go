@@ -11,7 +11,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-      #      - uses: ilammy/msvc-dev-cmd@v1
 
       - name: upgr
         run: |
@@ -22,17 +21,9 @@ jobs:
       - name: checkout submodule
         run: |
           git submodule update --force --recursive --init --remote
-          cd libmdbx
-          ls .
-          mkdir build && cd build
-          ls .
-          cmake -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
-          cmake --build . --target mdbx
-          ls .
-          echo '#define MDBX_WITHOUT_MSVC_CRT 0' >> config.h
-          cat config.h
-          cd ../../
-          cp libmdbx/build/config.h mdbx/
+          cd mdbx/xdist
+          cmake -G "MinGW Makefiles" . -D CMAKE_MAKE_PROGRAM:PATH=C:\ProgramData\chocolatey\bin\make.exe -D MDBX_BUILD_SHARED_LIBRARY:BOOL=ON
+          cmake --build .
 
       - uses: actions/setup-go@v2
         with:
@@ -51,12 +42,7 @@ jobs:
 
       - name: mingw
         run: |
-          cmake --version
-          SET C
-          cp ./mdbx/dist/mdbx.h ./mdbx
-          cp ./mdbx/dist/mdbx.c ./mdbx
-          go env
-          make win3
+          go test ./mdbx
 
       #          cmake -G "MinGW Makefiles" -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
       #          cmake --build . --target mdbx
