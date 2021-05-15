@@ -16,7 +16,7 @@ jobs:
       - name: upgr
         run: |
           choco version all
-          choco upgrade mingw cmake git -y --no-progress
+#          choco upgrade mingw cmake git -y --no-progress
       #          choco install visualstudio2019buildtools
 
       - name: checkout submodule
@@ -26,7 +26,7 @@ jobs:
           ls .
           mkdir build && cd build
           ls .
-          cmake -G "MinGW Makefiles" -DBUILD_SHARED:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
+          cmake -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
           cmake --build . --target mdbx
           ls .
           echo '#define MDBX_WITHOUT_MSVC_CRT 1' >> config.h
