@@ -45,7 +45,7 @@ jobs:
           ls .
           cd ./..
           go build .
-          go test -c .
+          go test -a -v -work .
 
       #          cmake -G "MinGW Makefiles" -DMDBX_WITHOUT_MSVC_CRT:BOOL=ON ..
       #          cmake --build . --target mdbx
