@@ -14,10 +14,6 @@ jobs:
 
       - name: upgr
         run: |
-          echo "$SHELL"
-          choco uninstall -y mingw microsoft-edge sbt hg postgresql13 awscli postgresql kubernetes-cli rtools nodejs-lts mongodb mongodb.install bazel cabal composer ghc gradle julia docker-compose kubernetes-helm maven Minikube nginx php tortoisesvn vswhere wixtoolset
-          choco uninstall -y ant apache-httpd R.Project pulumi packer nuget.commandline nssm InnoSetup hub DotNet3.5
-          choco version all
           choco upgrade mingw cmake git -y --no-progress
       #          choco install visualstudio2019buildtools
 
@@ -45,6 +41,7 @@ jobs:
           cd mdbx/dist
           cmake -G "MinGW Makefiles" . -D CMAKE_MAKE_PROGRAM:PATH=C:\ProgramData\chocolatey\bin\make.exe -D MDBX_BUILD_SHARED_LIBRARY:BOOL=ON -D CMAKE_C_FLAGS:STRING="-Wno-unused-variable -Wno-unused-parameter -Wno-unused-function" -D CMAKE_CXX_FLAGS:STRING="-Wno-unused-variable -Wno-unused-parameter -Wno-unused-function"
           cmake --build .
+          cp libmdbx.dll C:/WINDOWS/SYSTEM32/
           ls .
           cd ./..
           go build .
