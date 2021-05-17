@@ -79,7 +79,13 @@ elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" AND
   set(MDBX_AMALGAMATED_SOURCE TRUE)
   set(MDBX_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 else()
-  message(FATAL_ERROR "Please use libmdbx as a git-submodule or the amalgamated source code")
+  message(FATAL_ERROR "\n"
+    "Please don't use tarballs nor zips which are automatically provided by Github!  "
+    "These archives do not contain version information and thus are unfit to build libmdbx.  "
+    "You can vote for ability of disabling auto-creation such unsuitable archives at https://github.community/t/disable-tarball\n"
+    "Instead of above, just clone the git repository, either download a tarball or zip with the properly amalgamated source core.  "
+    "For embedding libmdbx use a git-submodule or the amalgamated source code.\n"
+    "Please, avoid using any other techniques.")
 endif()
 
 if(DEFINED PROJECT_NAME)
@@ -558,7 +564,7 @@ endmacro()
 macro(libmdbx_setup_libs TARGET MODE)
   target_link_libraries(${TARGET} ${MODE} Threads::Threads)
   if(${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
-    target_link_libraries(${TARGET} ${MODE} ntdll.lib)
+    target_link_libraries(${TARGET} ${MODE} ntdll)
     if(MDBX_NTDLL_EXTRA_IMPLIB AND MDBX_WITHOUT_MSVC_CRT)
       target_link_libraries(${TARGET} ${MODE} ntdll_extra)
     endif()
