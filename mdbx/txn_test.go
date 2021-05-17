@@ -418,8 +418,14 @@ func TestTxn_OpenDBI_emptyName(t *testing.T) {
 		_, err = txn.OpenDBISimple("", Create)
 		return err
 	})
-	if !IsErrnoSys(err, syscall.EACCES) {
-		t.Errorf("mdb_dbi_open: %v", err)
+	if runtime.GOOS == "windows" {
+		if !IsErrnoSys(err, syscall.EIO) {
+			t.Errorf("mdb_dbi_open: %v", err)
+		}
+	} else {
+		if !IsErrnoSys(err, syscall.EACCES) {
+			t.Errorf("mdb_dbi_open: %v", err)
+		}
 	}
 }
 
@@ -972,90 +978,6 @@ func TestTxn_StatOnEmpty(t *testing.T) {
 		t.Errorf("%s", err)
 		return
 	}
-}
-
-func TestTxn_DBIs(t *testing.T) {
-	env := setup(t)
-	defer env.Close()
-
-	if err := env.Update(func(txn *Txn) (err error) {
-		_, err = txn.OpenDBISimple("test1", Create|DupSort)
-		if err != nil {
-			return err
-		}
-		_, err = txn.OpenDBISimple("test2", Create)
-		if err != nil {
-			return err
-		}
-		list, err := txn.DBIs()
-		if err != nil {
-			return err
-		}
-		if len(list) != 2 {
-			t.Fatalf("unexpected list of dbi's %+v", list)
-		}
-		if list[0] != "test1" {
-			t.Fatalf("unexpected list of dbi's %+v", list)
-		}
-		if list[1] != "test2" {
-			t.Fatalf("unexpected list of dbi's %+v", list)
-		}
-
-		return nil
-	}); err != nil {
-		t.Errorf("%s", err)
-		return
-	}
-
-	if err := env.View(func(txn *Txn) (err error) {
-		list, err := txn.DBIs()
-		if err != nil {
-			return err
-		}
-
-		if len(list) != 2 {
-			t.Fatalf("unexpected list of dbi's %+v", list)
-		}
-		if list[0] != "test1" {
-			t.Fatalf("unexpected list of dbi's %+v", list)
-		}
-		if list[1] != "test2" {
-			t.Fatalf("unexpected list of dbi's %+v", list)
-		}
-		return nil
-	}); err != nil {
-		t.Errorf("%s", err)
-		return
-	}
-
-	if err := env.Update(func(txn *Txn) (err error) {
-		dbi, err := txn.OpenDBI("test1", 0, nil, nil)
-		if err != nil {
-			return err
-		}
-
-		err = txn.Drop(dbi, true)
-		if err != nil {
-			return err
-		}
-
-		list, err := txn.DBIs()
-		if err != nil {
-			return err
-		}
-
-		if len(list) != 1 {
-			t.Fatalf("unexpected list of dbi's %+v", list)
-		}
-		if list[0] != "test2" {
-			t.Fatalf("unexpected list of dbi's %+v", list)
-		}
-		return nil
-	}); err != nil {
-		t.Errorf("%s", err)
-		return
-	}
-
 }
 
 func TestSequence(t *testing.T) {
