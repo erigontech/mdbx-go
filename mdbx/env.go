@@ -62,6 +62,8 @@ const (
 	AllowTxOverlap = C.MDBX_DBG_LEGACY_OVERLAP
 )
 
+type LogLvl = C.MDBX_log_level_t
+
 const (
 	LogLvlFatal       = C.MDBX_LOG_FATAL
 	LogLvlError       = C.MDBX_LOG_ERROR
@@ -97,6 +99,7 @@ const (
 	OptSpillMaxDenominator          = C.MDBX_opt_spill_max_denominator
 	OptSpillMinDenominator          = C.MDBX_opt_spill_min_denominator
 	OptSpillParent4ChildDenominator = C.MDBX_opt_spill_parent4child_denominator
+	OptMergeThreshold16dot16Percent = C.MDBX_opt_merge_threshold_16dot16_percent
 )
 
 var (
@@ -376,16 +379,16 @@ func (env *Env) Info() (*EnvInfo, error) {
 			Shrink:  uint64(_info.mi_geo.shrink),
 			Grow:    uint64(_info.mi_geo.grow),
 		},
-		//PageOps: EnfInfoPageOps{
-		//	Newly:   uint64(_info.mi_pgop_stat.newly),
-		//	Cow:     uint64(_info.mi_pgop_stat.cow),
-		//	Clone:   uint64(_info.mi_pgop_stat.clone),
-		//	Split:   uint64(_info.mi_pgop_stat.split),
-		//	Merge:   uint64(_info.mi_pgop_stat.merge),
-		//	Spill:   uint64(_info.mi_pgop_stat.spill),
-		//	Unspill: uint64(_info.mi_pgop_stat.unspill),
-		//	Wops:    uint64(_info.mi_pgop_stat.wops),
-		//},
+		PageOps: EnfInfoPageOps{
+			Newly:   uint64(_info.mi_pgop_stat.newly),
+			Cow:     uint64(_info.mi_pgop_stat.cow),
+			Clone:   uint64(_info.mi_pgop_stat.clone),
+			Split:   uint64(_info.mi_pgop_stat.split),
+			Merge:   uint64(_info.mi_pgop_stat.merge),
+			Spill:   uint64(_info.mi_pgop_stat.spill),
+			Unspill: uint64(_info.mi_pgop_stat.unspill),
+			Wops:    uint64(_info.mi_pgop_stat.wops),
+		},
 		LastPNO:        int64(_info.mi_last_pgno),
 		LastTxnID:      int64(_info.mi_recent_txnid),
 		MaxReaders:     uint(_info.mi_maxreaders),
@@ -439,9 +442,9 @@ func (env *Env) Flags() (uint, error) {
 	return uint(_flags), nil
 }
 
-func (env *Env) SetDebug(logLvl int, dbg int, logger *C.MDBX_debug_func) error {
-	ret := C.mdbx_setup_debug(C.MDBX_log_level_t(logLvl), C.MDBX_debug_flags_t(dbg), logger)
-	return operrno("mdbx_setup_debug", ret)
+func (env *Env) SetDebug(logLvl LogLvl, dbg int, logger *C.MDBX_debug_func) error {
+	_ = C.mdbx_setup_debug(C.MDBX_log_level_t(logLvl), C.MDBX_debug_flags_t(dbg), logger)
+	return nil
 }
 
 // Path returns the path argument passed to Open.  Path returns a non-nil error
@@ -465,6 +468,12 @@ func (env *Env) SetOption(option uint, value uint64) error {
 	return operrno("mdbx_env_set_option", ret)
 }
 
+func (env *Env) GetOption(option uint) (uint64, error) {
+	var res C.uint64_t
+	ret := C.mdbx_env_get_option(env._env, C.MDBX_option_t(option), &res)
+	return uint64(res), operrno("mdbx_env_get_option", ret)
+}
+
 func (env *Env) SetGeometry(sizeLower int, sizeNow int, sizeUpper int, growthStep int, shrinkThreshold int, pageSize int) error {
 	ret := C.mdbx_env_set_geometry(env._env,
 		C.intptr_t(sizeLower),
@@ -476,26 +485,6 @@ func (env *Env) SetGeometry(sizeLower int, sizeNow int, sizeUpper int, growthSte
 	return operrno("mdbx_env_set_geometry", ret)
 }
 
-// SetMaxReaders sets the maximum number of reader slots in the environment.
-//
-// See mdbx_env_set_maxreaders.
-func (env *Env) SetMaxReaders(size int) error {
-	if size < 0 {
-		return errNegSize
-	}
-	ret := C.mdbx_env_set_maxreaders(env._env, C.uint(size))
-	return operrno("mdbx_env_set_maxreaders", ret)
-}
-
-// MaxReaders returns the maximum number of reader slots for the environment.
-//
-// See mdbx_env_get_maxreaders.
-func (env *Env) MaxReaders() (int, error) {
-	var max C.uint
-	ret := C.mdbx_env_get_maxreaders(env._env, &max)
-	return int(max), operrno("mdbx_env_get_maxreaders", ret)
-}
-
 // MaxKeySize returns the maximum allowed length for a key.
 //
 // See mdbx_env_get_maxkeysize.
@@ -504,17 +493,6 @@ func (env *Env) MaxKeySize() int {
 		return int(C.mdbx_env_get_maxkeysize_ex(nil, 0))
 	}
 	return int(C.mdbx_env_get_maxkeysize_ex(env._env, 0))
-}
-
-// SetMaxDBs sets the maximum number of named databases for the environment.
-//
-// See mdbx_env_set_maxdbs.
-func (env *Env) SetMaxDBs(size int) error {
-	if size < 0 {
-		return errNegSize
-	}
-	ret := C.mdbx_env_set_maxdbs(env._env, C.MDBX_dbi(size))
-	return operrno("mdbx_env_set_maxdbs", ret)
 }
 
 // BeginTxn is an unsafe, low-level method to initialize a new transaction on
