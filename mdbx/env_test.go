@@ -190,7 +190,7 @@ func TestEnv_SetMaxReader(t *testing.T) {
 	}
 
 	maxreaders := uint64(246)
-	err = env.SetOption(OptMaxReaders,maxreaders)
+	err = env.SetOption(OptMaxReaders, maxreaders)
 	if err != nil {
 		t.Error(err)
 	}
@@ -209,7 +209,7 @@ func TestEnv_SetMaxReader(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = env.SetOption(OptMaxReaders,uint64(126))
+	err = env.SetOption(OptMaxReaders, uint64(126))
 	if !IsErrnoSys(err, syscall.EPERM) {
 		t.Errorf("unexpected error: %v (!= %v)", err, syscall.EPERM)
 	}
@@ -543,16 +543,16 @@ func setupFlags(t T, flags uint) *Env {
 	if err != nil {
 		t.Fatalf("mkdir: %s", path)
 	}
-	err = env.SetOption(OptMaxReaders,1024)
+	err = env.SetOption(OptMaxDB, 1024)
 	if err != nil {
 		t.Fatalf("setmaxdbs: %v", err)
 	}
 	const pageSize = 4096
-	err = env.SetGeometry(-1, -1, 4*1024*pageSize, -1, -1, pageSize)
+	err = env.SetGeometry(-1, -1, 64*1024*pageSize, -1, -1, pageSize)
 	if err != nil {
 		t.Fatalf("setmaxdbs: %v", err)
 	}
-	err = env.Open(Durable, flags, 0664)
+	err = env.Open(path, flags, 0664)
 	if err != nil {
 		t.Fatalf("open: %s", err)
 	}
