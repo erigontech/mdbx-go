@@ -18,7 +18,7 @@ jobs:
         run: echo "::add-path::/c/msys64/mingw64/bin:/c/msys64/usr/bin"
         shell: bash
 
-      - uses: actions/setup-go@v2df
+      - uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go }}
 
