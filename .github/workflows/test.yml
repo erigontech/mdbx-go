@@ -28,7 +28,7 @@ jobs:
           key: go-${{ matrix.os }}-${{ matrix.go }}-${{ hashFiles('**/go.sum') }}
 
       - name: Test
-        run: cc --version && make test
+        run: make test
 
       - name: Race
         run: make race
