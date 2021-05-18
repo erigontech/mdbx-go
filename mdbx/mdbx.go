@@ -131,8 +131,14 @@ details about dealing with such situations.
 package mdbx
 
 /*
-#cgo CFLAGS: -O2 -g -Wno-deprecated-declarations -pthread -W -Wall -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -std=gnu11 -pthread -Wno-error=attributes -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers
-#cgo LDFLAGS: ${SRCDIR}/dist/mdbx-static.o
+//#cgo CFLAGS: -O2 -g -Wno-deprecated-declarations -pthread -W -Wall -Werror -Wextra -Wpedantic -fPIC -fvisibility=hidden -std=gnu11 -pthread -Wno-error=attributes -Wno-implicit-fallthrough -Wno-unused-function -Wno-unused-parameter -Wno-format-extra-args -Wbad-function-cast -Wno-missing-field-initializers
+
+#cgo CFLAGS: -O2 -g -Wno-deprecated-declarations -pthread -W -Wall -Wno-format -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-format-extra-args -Wno-missing-field-initializers
+#cgo windows CFLAGS: -Wno-bad-function-cast -Wno-cast-function-type
+
+#cgo !windows LDFLAGS: ${SRCDIR}/dist/mdbx-static.o
+#cgo windows LDFLAGS: -v -L./dist -L"${SRCDIR}"/dist -llibmdbx
+
 */
 import "C"
 
