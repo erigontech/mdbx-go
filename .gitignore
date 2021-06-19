@@ -1,6 +1,4 @@
-# c repository for updating after each release
-/lmdb/lmdb
-/lmdb/openldap
+.idea
 
 /bin/
 /build

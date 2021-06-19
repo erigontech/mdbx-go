@@ -4,14 +4,13 @@ package mdbx
 #include <stdlib.h>
 #include <stdio.h>
 #include "mdbxgo.h"
-#include "dist/mdbx.h"
 */
 import "C"
 
 import (
 	"unsafe"
 
-	"github.com/torquem-ch/mdbx-go/mdbx/internal/arch"
+	"github.com/torquem-ch/mdbx-go/mdbx/mdbxarch"
 )
 
 // Just for docs:
@@ -32,7 +31,7 @@ import (
 // On 64-bit systems, luckily, the value 2^32-1 coincides with the maximum data
 // size for LMDB (MAXDATASIZE).
 const (
-	valSizeBits = arch.Width64*32 + (1-arch.Width64)*31
+	valSizeBits = mdbxarch.Width64*32 + (1-mdbxarch.Width64)*31
 	valMaxSize  = 1<<valSizeBits - 1
 )
 

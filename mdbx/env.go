@@ -14,9 +14,12 @@ import (
 	"unsafe"
 )
 
-// success is a value returned from the LMDB API to indicate a successful call.
+// success is a value returned from the MDBX API to indicate a successful call.
 // The functions in this API this behavior and its use is not required.
 const success = C.MDBX_SUCCESS
+
+const Major = C.MDBX_VERSION_MAJOR
+const Minor = C.MDBX_VERSION_MINOR
 
 const (
 	// Flags for Env.Open.
@@ -36,10 +39,10 @@ const (
 	SafeNoSync    = C.MDBX_SAFE_NOSYNC
 	Durable       = C.MDBX_SYNC_DURABLE
 	NoTLS         = C.MDBX_NOTLS // Danger zone. When unset reader locktable slots are tied to their thread.
-	//NoLock      = C.MDBX_NOLOCK     // Danger zone. LMDB does not use any locks.
+	//NoLock      = C.MDBX_NOLOCK     // Danger zone. MDBX does not use any locks.
 	NoReadahead = C.MDBX_NORDAHEAD // Disable readahead. Requires OS support.
-	NoMemInit   = C.MDBX_NOMEMINIT // Disable LMDB memory initialization.
-	Exclusive   = C.MDBX_EXCLUSIVE // Disable LMDB memory initialization.
+	NoMemInit   = C.MDBX_NOMEMINIT // Disable MDBX memory initialization.
+	Exclusive   = C.MDBX_EXCLUSIVE // Disable MDBX memory initialization.
 )
 
 const (
@@ -61,6 +64,8 @@ const (
 const (
 	AllowTxOverlap = C.MDBX_DBG_LEGACY_OVERLAP
 )
+
+type LogLvl = C.MDBX_log_level_t
 
 const (
 	LogLvlFatal       = C.MDBX_LOG_FATAL
@@ -97,6 +102,7 @@ const (
 	OptSpillMaxDenominator          = C.MDBX_opt_spill_max_denominator
 	OptSpillMinDenominator          = C.MDBX_opt_spill_min_denominator
 	OptSpillParent4ChildDenominator = C.MDBX_opt_spill_parent4child_denominator
+	OptMergeThreshold16dot16Percent = C.MDBX_opt_merge_threshold_16dot16_percent
 )
 
 var (
@@ -114,13 +120,12 @@ type DBI C.MDBX_dbi
 // See MDBX_env.
 type Env struct {
 	_env *C.MDBX_env
+	ckey *C.MDBX_val
+	cval *C.MDBX_val
 
 	// closeLock is used to allow the Txn finalizer to check if the Env has
 	// been closed, so that it may know if it must abort.
 	closeLock sync.RWMutex
-
-	ckey *C.MDBX_val
-	cval *C.MDBX_val
 }
 
 // NewEnv allocates and initializes a new Env.
@@ -134,8 +139,6 @@ func NewEnv() (*Env, error) {
 	}
 	env.ckey = (*C.MDBX_val)(C.malloc(C.size_t(unsafe.Sizeof(C.MDBX_val{}))))
 	env.cval = (*C.MDBX_val)(C.malloc(C.size_t(unsafe.Sizeof(C.MDBX_val{}))))
-
-	runtime.SetFinalizer(env, (*Env).Close)
 	return env, nil
 }
 
@@ -151,7 +154,6 @@ func (env *Env) Open(path string, flags uint, mode os.FileMode) error {
 }
 
 var errNotOpen = errors.New("enivornment is not open")
-var errNegSize = errors.New("negative size")
 
 // FD returns the open file descriptor (or Windows file handle) for the given
 // environment.  An error is returned if the environment has not been
@@ -159,7 +161,7 @@ var errNegSize = errors.New("negative size")
 //
 // See mdbx_env_get_fd.
 func (env *Env) FD() (uintptr, error) {
-	// fdInvalid is the value -1 as a uintptr, which is used by LMDB in the
+	// fdInvalid is the value -1 as a uintptr, which is used by MDBX in the
 	// case that env has not been opened yet.  the strange construction is done
 	// to avoid constant value overflow errors at compile time.
 	const fdInvalid = ^uintptr(0)
@@ -213,9 +215,13 @@ func (env *Env) ReaderCheck() (int, error) {
 	return int(_dead), operrno("mdbx_reader_check", ret)
 }
 
-func (env *Env) close() bool {
+// Close shuts down the environment, releases the memory map, and clears the
+// finalizer on env.
+//
+// See mdbx_env_close.
+func (env *Env) Close() {
 	if env._env == nil {
-		return false
+		return
 	}
 
 	env.closeLock.Lock()
@@ -227,19 +233,6 @@ func (env *Env) close() bool {
 	C.free(unsafe.Pointer(env.cval))
 	env.ckey = nil
 	env.cval = nil
-	return true
-}
-
-// Close shuts down the environment, releases the memory map, and clears the
-// finalizer on env.
-//
-// See mdbx_env_close.
-func (env *Env) Close() error {
-	if env.close() {
-		runtime.SetFinalizer(env, nil)
-		return nil
-	}
-	return errors.New("environment is already closed")
 }
 
 // CopyFD copies env to the the file descriptor fd.
@@ -376,16 +369,16 @@ func (env *Env) Info() (*EnvInfo, error) {
 			Shrink:  uint64(_info.mi_geo.shrink),
 			Grow:    uint64(_info.mi_geo.grow),
 		},
-		//PageOps: EnfInfoPageOps{
-		//	Newly:   uint64(_info.mi_pgop_stat.newly),
-		//	Cow:     uint64(_info.mi_pgop_stat.cow),
-		//	Clone:   uint64(_info.mi_pgop_stat.clone),
-		//	Split:   uint64(_info.mi_pgop_stat.split),
-		//	Merge:   uint64(_info.mi_pgop_stat.merge),
-		//	Spill:   uint64(_info.mi_pgop_stat.spill),
-		//	Unspill: uint64(_info.mi_pgop_stat.unspill),
-		//	Wops:    uint64(_info.mi_pgop_stat.wops),
-		//},
+		PageOps: EnfInfoPageOps{
+			Newly:   uint64(_info.mi_pgop_stat.newly),
+			Cow:     uint64(_info.mi_pgop_stat.cow),
+			Clone:   uint64(_info.mi_pgop_stat.clone),
+			Split:   uint64(_info.mi_pgop_stat.split),
+			Merge:   uint64(_info.mi_pgop_stat.merge),
+			Spill:   uint64(_info.mi_pgop_stat.spill),
+			Unspill: uint64(_info.mi_pgop_stat.unspill),
+			Wops:    uint64(_info.mi_pgop_stat.wops),
+		},
 		LastPNO:        int64(_info.mi_last_pgno),
 		LastTxnID:      int64(_info.mi_recent_txnid),
 		MaxReaders:     uint(_info.mi_maxreaders),
@@ -439,9 +432,9 @@ func (env *Env) Flags() (uint, error) {
 	return uint(_flags), nil
 }
 
-func (env *Env) SetDebug(logLvl int, dbg int, logger *C.MDBX_debug_func) error {
-	ret := C.mdbx_setup_debug(C.MDBX_log_level_t(logLvl), C.MDBX_debug_flags_t(dbg), logger)
-	return operrno("mdbx_setup_debug", ret)
+func (env *Env) SetDebug(logLvl LogLvl, dbg int, logger *C.MDBX_debug_func) error {
+	_ = C.mdbx_setup_debug(logLvl, C.MDBX_debug_flags_t(dbg), logger)
+	return nil
 }
 
 // Path returns the path argument passed to Open.  Path returns a non-nil error
@@ -465,6 +458,12 @@ func (env *Env) SetOption(option uint, value uint64) error {
 	return operrno("mdbx_env_set_option", ret)
 }
 
+func (env *Env) GetOption(option uint) (uint64, error) {
+	var res C.uint64_t
+	ret := C.mdbx_env_get_option(env._env, C.MDBX_option_t(option), &res)
+	return uint64(res), operrno("mdbx_env_get_option", ret)
+}
+
 func (env *Env) SetGeometry(sizeLower int, sizeNow int, sizeUpper int, growthStep int, shrinkThreshold int, pageSize int) error {
 	ret := C.mdbx_env_set_geometry(env._env,
 		C.intptr_t(sizeLower),
@@ -476,26 +475,6 @@ func (env *Env) SetGeometry(sizeLower int, sizeNow int, sizeUpper int, growthSte
 	return operrno("mdbx_env_set_geometry", ret)
 }
 
-// SetMaxReaders sets the maximum number of reader slots in the environment.
-//
-// See mdbx_env_set_maxreaders.
-func (env *Env) SetMaxReaders(size int) error {
-	if size < 0 {
-		return errNegSize
-	}
-	ret := C.mdbx_env_set_maxreaders(env._env, C.uint(size))
-	return operrno("mdbx_env_set_maxreaders", ret)
-}
-
-// MaxReaders returns the maximum number of reader slots for the environment.
-//
-// See mdbx_env_get_maxreaders.
-func (env *Env) MaxReaders() (int, error) {
-	var max C.uint
-	ret := C.mdbx_env_get_maxreaders(env._env, &max)
-	return int(max), operrno("mdbx_env_get_maxreaders", ret)
-}
-
 // MaxKeySize returns the maximum allowed length for a key.
 //
 // See mdbx_env_get_maxkeysize.
@@ -504,17 +483,6 @@ func (env *Env) MaxKeySize() int {
 		return int(C.mdbx_env_get_maxkeysize_ex(nil, 0))
 	}
 	return int(C.mdbx_env_get_maxkeysize_ex(env._env, 0))
-}
-
-// SetMaxDBs sets the maximum number of named databases for the environment.
-//
-// See mdbx_env_set_maxdbs.
-func (env *Env) SetMaxDBs(size int) error {
-	if size < 0 {
-		return errNegSize
-	}
-	ret := C.mdbx_env_set_maxdbs(env._env, C.MDBX_dbi(size))
-	return operrno("mdbx_env_set_maxdbs", ret)
 }
 
 // BeginTxn is an unsafe, low-level method to initialize a new transaction on

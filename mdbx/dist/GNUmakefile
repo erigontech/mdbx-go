@@ -29,7 +29,8 @@ INSTALL ?= install
 CC      ?= gcc
 CFLAGS_EXTRA ?=
 LD      ?= ld
-MDBX_BUILD_OPTIONS ?= -DNDEBUG=1
+MDBX_BUILD_OPTIONS ?=-DNDEBUG=1
+MDBX_BUILD_TIMESTAMP ?=$(shell date +%Y-%m-%dT%H:%M:%S%z)
 CFLAGS  ?= -std=gnu11 -O2 -g -Wall -Werror -Wextra -Wpedantic -ffunction-sections -fPIC -fvisibility=hidden -pthread -Wno-error=attributes $(CFLAGS_EXTRA)
 # -Wno-tautological-compare
 CXX     ?= g++
@@ -37,7 +38,7 @@ CXX     ?= g++
 CXXSTD  ?= $(eval CXXSTD := $$(shell PROBE=$$$$([ -f mdbx.c++ ] && echo mdbx.c++ || echo src/mdbx.c++); for std in gnu++20 c++20 gnu++2a c++2a gnu++17 c++17 gnu++14 c++14 gnu+11 c++11; do $(CXX) -std=$$$${std} -c $$$${PROBE} -o /dev/null 2>/dev/null >/dev/null && echo "-std=$$$${std}" && exit; done))$(CXXSTD)
 CXXFLAGS = $(CXXSTD) $(filter-out -std=gnu11,$(CFLAGS))
 
-# HINT: Try append '--no-as-needed,-lrt' for ability to built with modern glibc, but then run with the old.
+# TIP: Try append '--no-as-needed,-lrt' for ability to built with modern glibc, but then use with the old.
 LIBS    ?= $(shell uname | grep -qi SunOS && echo "-lkstat") $(shell uname | grep -qi -e Darwin -e OpenBSD || echo "-lrt") $(shell uname | grep -qi Windows && echo "-lntdll")
 
 LDFLAGS ?= $(shell $(LD) --help 2>/dev/null | grep -q -- --gc-sections && echo '-Wl,--gc-sections,-z,relro,-O1')$(shell $(LD) --help 2>/dev/null | grep -q -- -dead_strip && echo '-Wl,-dead_strip')
@@ -102,7 +103,8 @@ help:
 	@echo "  make bench-clean         - remove temp database(s) after benchmark"
 
 show-options:
-	@echo "  MDBX_BUILD_OPTIONS =$(MDBX_BUILD_OPTIONS)"
+	@echo "  MDBX_BUILD_OPTIONS   = $(MDBX_BUILD_OPTIONS)"
+	@echo "  MDBX_BUILD_TIMESTAMP = $(MDBX_BUILD_TIMESTAMP)"
 	@echo '## TIP: Use `make options` to listing available build options.'
 	@echo "  CFLAGS   =$(CFLAGS)"
 	@echo "  CXXFLAGS =$(CXXFLAGS)"
@@ -128,7 +130,8 @@ options:
 	@echo "  EXE_LDFLAGS  =$(EXE_LDFLAGS)"
 	@echo "  LIBS         =$(LIBS)"
 	@echo ""
-	@echo "  MDBX_BUILD_OPTIONS =$(MDBX_BUILD_OPTIONS)"
+	@echo "  MDBX_BUILD_OPTIONS   = $(MDBX_BUILD_OPTIONS)"
+	@echo "  MDBX_BUILD_TIMESTAMP = $(MDBX_BUILD_TIMESTAMP)"
 	@echo ""
 	@echo "## Assortment items for MDBX_BUILD_OPTIONS:"
 	@echo "##   Note that the defaults should already be correct for most platforms;"
@@ -165,7 +168,7 @@ MAN_SRCDIR := man1/
 
 config.h: mdbx.c $(lastword $(MAKEFILE_LIST))
 	@echo '  MAKE $@'
-	$(QUIET)(echo '#define MDBX_BUILD_TIMESTAMP "$(shell date +%Y-%m-%dT%H:%M:%S%z)"' \
+	$(QUIET)(echo '#define MDBX_BUILD_TIMESTAMP "$(MDBX_BUILD_TIMESTAMP)"' \
 	&& echo '#define MDBX_BUILD_FLAGS "$(CXXSTD) $(CFLAGS) $(LDFLAGS) $(LIBS)"' \
 	&& echo '#define MDBX_BUILD_COMPILER "$(shell (LC_ALL=C $(CC) --version || echo 'Please use GCC or CLANG compatible compiler') | head -1)"' \
 	&& echo '#define MDBX_BUILD_TARGET "$(shell set -o pipefail; (LC_ALL=C $(CC) -v 2>&1 | grep -i '^Target:' | cut -d ' ' -f 2- || (LC_ALL=C $(CC) --version | grep -qi e2k && echo E2K) || echo 'Please use GCC or CLANG compatible compiler') | head -1)"' \
@@ -194,11 +197,16 @@ mdbx_%:	mdbx_%.c libmdbx.a
 
 install: $(LIBRARIES) $(TOOLS) $(HEADERS)
 	@echo '  INSTALLING...'
-	$(INSTALL) -D -p $(EXE_INSTALL_FLAGS) -t $(DESTDIR)$(prefix)/bin$(suffix) $(TOOLS) && \
-	$(INSTALL) -D -p $(EXE_INSTALL_FLAGS) -t $(DESTDIR)$(prefix)/lib$(suffix) $(filter-out libmdbx.a,$(LIBRARIES)) && \
-	$(INSTALL) -D -p -t $(DESTDIR)$(prefix)/lib$(suffix) libmdbx.a && \
-	$(INSTALL) -D -p -m 444 -t $(DESTDIR)$(prefix)/include $(HEADERS) && \
-	$(INSTALL) -D -p -m 444 -t $(DESTDIR)$(mandir)/man1 $(addprefix $(MAN_SRCDIR), $(MANPAGES))
+	$(QUIET)mkdir -p $(DESTDIR)$(prefix)/bin$(suffix) && \
+		$(INSTALL) -p $(EXE_INSTALL_FLAGS) $(TOOLS) $(DESTDIR)$(prefix)/bin$(suffix)/ && \
+	mkdir -p $(DESTDIR)$(prefix)/lib$(suffix)/ && \
+		$(INSTALL) -p $(EXE_INSTALL_FLAGS) $(filter-out libmdbx.a,$(LIBRARIES)) $(DESTDIR)$(prefix)/lib$(suffix)/ && \
+	mkdir -p $(DESTDIR)$(prefix)/lib$(suffix)/ && \
+		$(INSTALL) -p libmdbx.a $(DESTDIR)$(prefix)/lib$(suffix)/ && \
+	mkdir -p $(DESTDIR)$(prefix)/include/ && \
+		$(INSTALL) -p -m 444 $(HEADERS) $(DESTDIR)$(prefix)/include/ && \
+	mkdir -p $(DESTDIR)$(mandir)/man1/ && \
+		$(INSTALL) -p -m 444 $(addprefix $(MAN_SRCDIR), $(MANPAGES)) $(DESTDIR)$(mandir)/man1/
 
 install-strip: EXE_INSTALL_FLAGS = -s
 install-strip: install
@@ -219,7 +227,8 @@ uninstall:
 IOARENA ?= $(shell \
   (test -x ../ioarena/@BUILD/src/ioarena && echo ../ioarena/@BUILD/src/ioarena) || \
   (test -x ../../@BUILD/src/ioarena && echo ../../@BUILD/src/ioarena) || \
-  (test -x ../../src/ioarena && echo ../../src/ioarena) || which ioarena)
+  (test -x ../../src/ioarena && echo ../../src/ioarena) || which ioarena 2>&- || \
+  echo '\#\# TIP: Clone and build the https://github.com/pmwkaa/ioarena.git within a neighbouring directory for availability of benchmarking.' >&2)
 NN	?= 25000000
 BENCH_CRUD_MODE ?= nosync
 
