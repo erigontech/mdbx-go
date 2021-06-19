@@ -41,6 +41,8 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
 
+      - run: choco upgrade mingw cmake -y --no-progress
+
       - name: mingw
         run: |
           choco upgrade mingw cmake git -y --no-progress

@@ -433,7 +433,7 @@ func (env *Env) Flags() (uint, error) {
 }
 
 func (env *Env) SetDebug(logLvl LogLvl, dbg int, logger *C.MDBX_debug_func) error {
-	_ = C.mdbx_setup_debug(C.MDBX_log_level_t(logLvl), C.MDBX_debug_flags_t(dbg), logger)
+	_ = C.mdbx_setup_debug(logLvl, C.MDBX_debug_flags_t(dbg), logger)
 	return nil
 }
 

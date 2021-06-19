@@ -13,8 +13,6 @@ linters:
     - errcheck
     - goconst
     - gofmt
-    - golint
-    - interfacer
     - govet
     - structcheck
     - stylecheck
@@ -22,7 +20,6 @@ linters:
 #    - goerr113
     - unconvert
     - unparam
-    - scopelint
     - nakedret
     - prealloc
     - gosimple
@@ -31,7 +28,6 @@ linters:
     - depguard
     - typecheck
     - misspell
-    - maligned
 
 linters-settings:
   gofmt:
