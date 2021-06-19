@@ -21,8 +21,7 @@ jobs:
           path: ~/go/pkg/mod
           key: go-${{ matrix.os }}-${{ matrix.go }}-${{ hashFiles('**/go.sum') }}
 
-      - name: Test
-        run: make test
+      - run: go test -v ./...
 
       - name: Race
         run: make race
@@ -42,9 +41,4 @@ jobs:
           go-version: ${{ matrix.go }}
 
       - run: choco upgrade mingw cmake -y --no-progress
-
-      - name: mingw
-        run: |
-          choco upgrade mingw cmake git -y --no-progress
-          go build .
-          go test -v .
+      - run: go test -v ./...
