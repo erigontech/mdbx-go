@@ -79,7 +79,13 @@ elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" AND
   set(MDBX_AMALGAMATED_SOURCE TRUE)
   set(MDBX_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 else()
-  message(FATAL_ERROR "Please use libmdbx as a git-submodule or the amalgamated source code")
+  message(FATAL_ERROR "\n"
+    "Please don't use tarballs nor zips which are automatically provided by Github!  "
+    "These archives do not contain version information and thus are unfit to build libmdbx.  "
+    "You can vote for ability of disabling auto-creation such unsuitable archives at https://github.community/t/disable-tarball\n"
+    "Instead of above, just clone the git repository, either download a tarball or zip with the properly amalgamated source core.  "
+    "For embedding libmdbx use a git-submodule or the amalgamated source code.\n"
+    "Please, avoid using any other techniques.")
 endif()
 
 if(DEFINED PROJECT_NAME)
@@ -558,7 +564,7 @@ endmacro()
 macro(libmdbx_setup_libs TARGET MODE)
   target_link_libraries(${TARGET} ${MODE} Threads::Threads)
   if(${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
-    target_link_libraries(${TARGET} ${MODE} ntdll.lib)
+    target_link_libraries(${TARGET} ${MODE} ntdll)
     if(MDBX_NTDLL_EXTRA_IMPLIB AND MDBX_WITHOUT_MSVC_CRT)
       target_link_libraries(${TARGET} ${MODE} ntdll_extra)
     endif()
@@ -664,34 +670,34 @@ endif()
 # mdbx-shared-lib installation
 if(NOT DEFINED MDBX_DLL_INSTALL_DESTINATION)
   if(WIN32)
-    set(MDBX_DLL_INSTALL_DESTINATION bin)
+    set(MDBX_DLL_INSTALL_DESTINATION ${CMAKE_INSTALL_BINDIR})
   else()
-    set(MDBX_DLL_INSTALL_DESTINATION lib)
+    set(MDBX_DLL_INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR})
   endif()
 endif()
 if(MDBX_BUILD_SHARED_LIBRARY)
   if(CMAKE_VERSION VERSION_LESS 3.12)
     install(TARGETS mdbx EXPORT libmdbx
       LIBRARY DESTINATION ${MDBX_DLL_INSTALL_DESTINATION} COMPONENT runtime
-      OBJECTS DESTINATION lib COMPONENT devel
-      ARCHIVE DESTINATION lib COMPONENT devel
-      PUBLIC_HEADER DESTINATION include COMPONENT devel
-      INCLUDES DESTINATION include COMPONENT devel)
+      OBJECTS DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT devel
+      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT devel
+      PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT devel
+      INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT devel)
   else()
     install(TARGETS mdbx EXPORT libmdbx
       LIBRARY DESTINATION ${MDBX_DLL_INSTALL_DESTINATION} COMPONENT runtime
       NAMELINK_COMPONENT devel
-      OBJECTS DESTINATION lib COMPONENT devel
-      ARCHIVE DESTINATION lib COMPONENT devel
-      PUBLIC_HEADER DESTINATION include COMPONENT devel
-      INCLUDES DESTINATION include COMPONENT devel)
+      OBJECTS DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT devel
+      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT devel
+      PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT devel
+      INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT devel)
   endif()
 endif(MDBX_BUILD_SHARED_LIBRARY)
 
 # mdbx-tools installation
 if(MDBX_BUILD_TOOLS)
   if(NOT DEFINED MDBX_TOOLS_INSTALL_DESTINATION)
-    set(MDBX_TOOLS_INSTALL_DESTINATION bin)
+    set(MDBX_TOOLS_INSTALL_DESTINATION ${CMAKE_INSTALL_BINDIR})
   endif()
   install(
     TARGETS
@@ -706,7 +712,7 @@ if(MDBX_BUILD_TOOLS)
     COMPONENT runtime)
   if(MDBX_INSTALL_MANPAGES)
     if(NOT DEFINED MDBX_MAN_INSTALL_DESTINATION)
-      set(MDBX_MAN_INSTALL_DESTINATION man/man1)
+      set(MDBX_MAN_INSTALL_DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
     endif()
     install(
       FILES
@@ -725,26 +731,28 @@ endif(MDBX_BUILD_TOOLS)
 if(MDBX_INSTALL_STATIC)
   if(CMAKE_VERSION VERSION_LESS 3.12)
     install(TARGETS mdbx-static EXPORT libmdbx
-      LIBRARY DESTINATION lib COMPONENT devel
-      OBJECTS DESTINATION lib COMPONENT devel
-      ARCHIVE DESTINATION lib COMPONENT devel
-      PUBLIC_HEADER DESTINATION include COMPONENT devel
-      INCLUDES DESTINATION include COMPONENT devel)
+      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT devel
+      OBJECTS DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT devel
+      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT devel
+      PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT devel
+      INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT devel)
   else()
     install(TARGETS mdbx-static EXPORT libmdbx
-      LIBRARY DESTINATION lib COMPONENT devel
+      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT devel
       NAMELINK_COMPONENT devel
-      OBJECTS DESTINATION lib COMPONENT devel
-      ARCHIVE DESTINATION lib COMPONENT devel
-      PUBLIC_HEADER DESTINATION include COMPONENT devel
-      INCLUDES DESTINATION include COMPONENT devel)
+      OBJECTS DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT devel
+      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT devel
+      PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT devel
+      INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT devel)
   endif()
 endif(MDBX_INSTALL_STATIC)
 
 ################################################################################
 
 # collect options & build info
-string(TIMESTAMP MDBX_BUILD_TIMESTAMP UTC)
+if(NOT DEFINED MDBX_BUILD_TIMESTAMP)
+  string(TIMESTAMP MDBX_BUILD_TIMESTAMP UTC)
+endif()
 set(MDBX_BUILD_FLAGS ${CMAKE_C_FLAGS})
 if(MDBX_BUILD_CXX)
   set(MDBX_BUILD_FLAGS ${CMAKE_CXX_FLAGS})
