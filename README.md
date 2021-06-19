@@ -4,7 +4,7 @@ Go bindings to the libmdbx: https://erthink.github.io/libmdbx/
 
 Most of articles in internet about LMDB are applicable to MDBX. But mdbx has more features.
 
-For deeper DB understanding please read through commends in: https://github.com/erthink/libmdbx/blob/master/mdbx.h
+For deeper DB understanding please read through [mdbx.h](https://github.com/erthink/libmdbx/blob/master/mdbx.h)
 
 ## Min Requirements
 
@@ -52,25 +52,10 @@ mdbx-go is to provide idiomatic database interactions without compromising the f
 
 **NOTE:** While the mdbx package tries hard to make MDBX as easy to use as possible there are compromises, gotchas, and
 caveats that application developers must be aware of when relying on MDBX to store their data. All users are encouraged
-to fully read the
-[documentation](https://godoc.org/github.com/torquem-ch/mdbx-go/mdbx) so they are aware of these caveats.
+to fully read the [documentation](https://erthink.github.io/libmdbx/) so they are aware of these caveats. And even
+better if read through [mdbx.h](https://github.com/erthink/libmdbx/blob/master/mdbx.h)
 
-### API coverage
-
-The mdbx-go project aims for complete coverage of the MDBX C API (within reason). Some notable features and
-optimizations that are supported:
-
-- Idiomatic subtransactions ("sub-updates") that allow the batching of updates.
-
-- Batch IO on databases utilizing the `MDB_DUPSORT` and `MDB_DUPFIXED` flags.
-
-- Reserved writes than can save in memory copies converting/buffering into
-  `[]byte`.
-
-For tracking purposes a list of unsupported features is kept in an
-[issue](https://github.com/torquem-ch/mdbx-go/issues/1).
-
-### Zero-copy reads
+### High Performance notices
 
 Applications with high performance requirements can opt-in to fast, zero-copy reads at the cost of runtime safety.
 Zero-copy behavior is specified at the transaction level to reduce instrumentation overhead.
@@ -86,16 +71,15 @@ err := mdbx.View(func(txn *mdbx.Txn) error {
 })
 ```
 
-## MDBX compared to BoltDB
-
-BoltDB is a quality database with a design similar to MDBX. Both store key-value data in a file and provide ACID
-transactions. So there are often questions of why to use one database or the other.
+Use NoReadahead if Data > RAM
 
 ### Advantages of BoltDB
 
 - Nested databases allow for hierarchical data organization.
 
 - Far more databases can be accessed concurrently.
+
+- No `Bucket` object - means less allocations and higher performance
 
 - Operating systems that do not support sparse files do not use up excessive space due to a large pre-allocation of file
   space.
@@ -105,7 +89,8 @@ transactions. So there are often questions of why to use one database or the oth
 
 - Its simpler design and implementation in pure Go mean it is free of many caveats and gotchas which are present using
   the MDBX package. For more information about caveats with the MDBX package, consult its
-  [documentation](https://godoc.org/github.com/torquem-ch/mdbx-go/mdbx).
+  [documentation](https://erthink.github.io/libmdbx/) so they are aware of these caveats. And even better if read
+  through [mdbx.h](https://github.com/erthink/libmdbx/blob/master/mdbx.h).
 
 ### Advantages of MDBX
 
@@ -135,20 +120,11 @@ On FreeBSD 10, you must explicitly set `CC` (otherwise it will fail with a crypt
 
 ## Documentation
 
-### Go doc
-
-The `go doc` documentation available on
-[godoc.org](https://godoc.org/github.com/torquem-ch/mdbx-go) is the primary source of developer documentation for
-mdbx-go. It provides an overview of the API with a lot of usage examples. Where necessary the documentation points out
-differences between the semantics of methods and their C counterparts.
-
-### LMDB
-
-The LMDB [homepage](http://symas.com/mdb/)
-
-### MDBX
-
-The MDBX [homepage](https://github.com/erthink/libmdbx)
+- Examples see in *_test.go files of this repo
+- [The MDBX](https://erthink.github.io/libmdbx/) And even better if read
+  through [mdbx.h](https://github.com/erthink/libmdbx/blob/master/mdbx.h).
+- [godoc.org](https://godoc.org/github.com/torquem-ch/mdbx-go)
+- [The LMDB](http://symas.com/mdb/)
 
 ### Versioning and Stability
 
