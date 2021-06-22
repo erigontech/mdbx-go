@@ -333,17 +333,17 @@ type EnvInfo struct {
 	 * \details Overall statistics of page operations of all (running, completed
 	 * and aborted) transactions in the current multi-process session (since the
 	 * first process opened the database). */
-	PageOps                 EnfInfoPageOps
-	LastTxnID               int64         // ID of the last committed transaction
-	MaxReaders              uint          // maximum number of threads for the environment
-	NumReaders              uint          // maximum number of threads used in the environment
-	PageSize                uint          //
-	SystemPageSize          uint          //
-	AutoSyncThreshold       uint          //
-	SinceSyncSeconds        time.Duration //
-	AutosyncPeriodSeconds   time.Duration //
-	SinceReaderCheckSeconds time.Duration //
-	Flags                   uint          //
+	PageOps           EnfInfoPageOps
+	LastTxnID         int64         // ID of the last committed transaction
+	MaxReaders        uint          // maximum number of threads for the environment
+	NumReaders        uint          // maximum number of threads used in the environment
+	PageSize          uint          //
+	SystemPageSize    uint          //
+	AutoSyncThreshold uint          //
+	SinceSync         time.Duration //
+	AutosyncPeriod    time.Duration //
+	SinceReaderCheck  time.Duration //
+	Flags             uint          //
 }
 
 // Info returns information about the environment.
@@ -387,11 +387,11 @@ func (env *Env) Info() (*EnvInfo, error) {
 		PageSize:       uint(_info.mi_dxb_pagesize),
 		SystemPageSize: uint(_info.mi_sys_pagesize),
 
-		AutoSyncThreshold:       uint(_info.mi_autosync_threshold),
-		SinceSyncSeconds:        toDuration(_info.mi_since_sync_seconds16dot16),
-		AutosyncPeriodSeconds:   toDuration(_info.mi_autosync_period_seconds16dot16),
-		SinceReaderCheckSeconds: toDuration(_info.mi_since_reader_check_seconds16dot16),
-		Flags:                   uint(_info.mi_mode),
+		AutoSyncThreshold: uint(_info.mi_autosync_threshold),
+		SinceSync:         toDuration(_info.mi_since_sync_seconds16dot16),
+		AutosyncPeriod:    toDuration(_info.mi_autosync_period_seconds16dot16),
+		SinceReaderCheck:  toDuration(_info.mi_since_reader_check_seconds16dot16),
+		Flags:             uint(_info.mi_mode),
 	}
 	return &info, nil
 }
