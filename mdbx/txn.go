@@ -684,3 +684,22 @@ func (txn *Txn) Sequence(dbi DBI, increment uint64) (uint64, error) {
 	}
 	return uint64(res), nil
 }
+
+// ListDBI - return all dbi names. they stored as keys of un-named (main) dbi
+func (txn *Txn) ListDBI() (res []string, err error) {
+	root, err := txn.OpenRoot(0)
+	if err != nil {
+		return nil, err
+	}
+	c, err := txn.OpenCursor(root)
+	if err != nil {
+		return nil, err
+	}
+	for k, _, err := c.Get(nil, nil, First); k != nil; k, _, err = c.Get(nil, nil, Next) {
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, string(k))
+	}
+	return res, nil
+}
