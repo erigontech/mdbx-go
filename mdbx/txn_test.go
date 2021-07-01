@@ -982,6 +982,53 @@ func TestSequence(t *testing.T) {
 	}
 }
 
+func TestListDBI(t *testing.T) {
+	env := setup(t)
+
+	if err := env.View(func(txn *Txn) (err error) {
+		v, err := txn.ListDBI()
+		if err != nil {
+			return err
+		}
+		if len(v) != 0 {
+			t.Errorf("unexpected value: %d (expected %d)", len(v), 0)
+		}
+
+		return nil
+	}); err != nil {
+		t.Errorf("%s", err)
+	}
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		_, err = txn.OpenDBISimple("testdb", Create)
+		if err != nil {
+			return err
+		}
+		_, err = txn.OpenDBISimple("testdb2", Create)
+		return err
+	}); err != nil {
+		t.Errorf("%s", err)
+		return
+	}
+
+	if err := env.View(func(txn *Txn) (err error) {
+		v, err := txn.ListDBI()
+		if err != nil {
+			return err
+		}
+		if v == nil {
+			t.Errorf("unexpected nil")
+		}
+		if len(v) != 2 {
+			t.Errorf("unexpected value: %d (expected %d)", len(v), 2)
+		}
+
+		return nil
+	}); err != nil {
+		t.Errorf("%s", err)
+	}
+}
+
 func BenchmarkTxn_abort(b *testing.B) {
 	env := setup(b)
 
