@@ -50,6 +50,8 @@ const (
 // updates and prevent long-lived updates from causing excessive disk
 // utilization.
 type TxnPool struct {
+	env  *mdbx.Env
+	pool sync.Pool
 	// UpdateHandling determines how a TxnPool behaves after updates have been
 	// committed.  It is not safe to modify UpdateHandling if TxnPool is being
 	// used concurrently.
@@ -57,8 +59,6 @@ type TxnPool struct {
 
 	lastid    uintptr
 	idleGuard uintptr
-	env       *mdbx.Env
-	pool      sync.Pool
 }
 
 // NewTxnPool initializes returns a new TxnPool.

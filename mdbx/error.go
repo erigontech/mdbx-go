@@ -16,8 +16,8 @@ import (
 // lmdb-go have type OpError but typically they do.  The Errno field will
 // either have type Errno or syscall.Errno.
 type OpError struct {
-	Op    string
 	Errno error
+	Op    string
 }
 
 // Error implements the error interface.

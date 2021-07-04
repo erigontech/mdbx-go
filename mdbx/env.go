@@ -349,15 +349,18 @@ type EnvInfo struct {
 // Info returns information about the environment.
 //
 // See mdbx_env_info.
-func (env *Env) Info() (*EnvInfo, error) {
-	var _info C.MDBX_envinfo
-	var ret C.int
-	if err := env.View(func(txn *Txn) error {
-		ret = C.mdbx_env_info_ex(env._env, txn._txn, &_info, C.size_t(unsafe.Sizeof(_info)))
-		return nil
-	}); err != nil {
-		return nil, err
+// txn - can be nil
+func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
+	if txn == nil {
+		var err error
+		txn, err = env.BeginTxn(nil, Readonly)
+		if err != nil {
+			return nil, err
+		}
+		defer txn.Abort()
 	}
+	var _info C.MDBX_envinfo
+	ret := C.mdbx_env_info_ex(env._env, txn._txn, &_info, C.size_t(unsafe.Sizeof(_info)))
 	if ret != success {
 		return nil, operrno("mdbx_env_info", ret)
 	}

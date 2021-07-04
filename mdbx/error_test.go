@@ -7,7 +7,7 @@ import (
 )
 
 func TestErrno_Error(t *testing.T) {
-	operr := &OpError{"testop", fmt.Errorf("testmsg")}
+	operr := &OpError{fmt.Errorf("testmsg"), "testop"}
 	msg := operr.Error()
 	if msg != "testop: testmsg" {
 		t.Errorf("message: %q", msg)
@@ -21,7 +21,7 @@ func BenchmarkErrno_Error(b *testing.B) {
 			NotFound,
 			MapFull,
 		} {
-			operr := &OpError{"mdb_testop", errno}
+			operr := &OpError{errno, "mdb_testop"}
 			msg := operr.Error()
 			if msg == "" {
 				b.Fatal("empty message")
