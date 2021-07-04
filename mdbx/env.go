@@ -360,8 +360,7 @@ func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
 		defer txn.Abort()
 	}
 	var _info C.MDBX_envinfo
-	var ret C.int
-	ret = C.mdbx_env_info_ex(env._env, txn._txn, &_info, C.size_t(unsafe.Sizeof(_info)))
+	ret := C.mdbx_env_info_ex(env._env, txn._txn, &_info, C.size_t(unsafe.Sizeof(_info)))
 	if ret != success {
 		return nil, operrno("mdbx_env_info", ret)
 	}
