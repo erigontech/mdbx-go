@@ -352,7 +352,8 @@ type EnvInfo struct {
 // txn - can be nil
 func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
 	if txn == nil {
-		txn, err := env.BeginTxn(nil, Readonly)
+		var err error
+		txn, err = env.BeginTxn(nil, Readonly)
 		if err != nil {
 			return nil, err
 		}
