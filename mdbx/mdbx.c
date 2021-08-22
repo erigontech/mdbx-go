@@ -17222,6 +17222,7 @@ static struct cursor_set_result mdbx_cursor_set(MDBX_cursor *mc, MDBX_val *key,
   ret.exact = false;
   if (unlikely(key->iov_len < mc->mc_dbx->md_klen_min ||
                key->iov_len > mc->mc_dbx->md_klen_max)) {
+                         mdbx_error("alex:%d,%d,%d", key->iov_len,mc->mc_dbx->md_klen_min, mc->mc_dbx->md_klen_max);
     mdbx_cassert(mc, !"Invalid key-size");
     ret.err = MDBX_BAD_VALSIZE;
     return ret;
