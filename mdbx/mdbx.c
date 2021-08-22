@@ -17220,6 +17220,7 @@ static struct cursor_set_result mdbx_cursor_set(MDBX_cursor *mc, MDBX_val *key,
 
   struct cursor_set_result ret;
   ret.exact = false;
+                         mdbx_error("alex:%d,%d,%d", key->iov_len,mc->mc_dbx->md_klen_min, mc->mc_dbx->md_klen_max);
   if (unlikely(key->iov_len < mc->mc_dbx->md_klen_min ||
                key->iov_len > mc->mc_dbx->md_klen_max)) {
                          mdbx_error("alex:%d,%d,%d", key->iov_len,mc->mc_dbx->md_klen_min, mc->mc_dbx->md_klen_max);
