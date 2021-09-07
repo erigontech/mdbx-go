@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 4c0edad9e694f89ccb919dbe9a40cc1c9570bde6d8b72ba610260ffb4f5c608f_v0_10_2_0_g70933d81
+#define MDBX_BUILD_SOURCERY 3917b803f28da617e8accc6ee369d6f4b1eb6353bd8281b3c0f43b8500c5eb92_v0_10_3_1_gc714ee9b
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -15256,59 +15256,58 @@ __cold static int mdbx_setup_dxb(MDBX_env *env, const int lck_rc,
       }
     }
 
-    //------------------------------------------------- setup madvise/readahead
     atomic_store32(&env->me_lck->mti_discarded_tail,
                    bytes2pgno(env, used_aligned2os_bytes), mo_Relaxed);
+  } /* lck exclusive, lck_rc == MDBX_RESULT_TRUE */
+
+  //---------------------------------------------------- setup madvise/readahead
 #if MDBX_ENABLE_MADVISE
-    if (used_aligned2os_bytes < env->me_dxb_mmap.current) {
+  if (used_aligned2os_bytes < env->me_dxb_mmap.current) {
 #if defined(MADV_REMOVE)
-      if ((env->me_flags & MDBX_WRITEMAP) != 0 &&
-          /* not recovery mode */ env->me_stuck_meta < 0) {
-        mdbx_notice("open-MADV_%s %u..%u", "REMOVE (deallocate file space)",
-                    env->me_lck->mti_discarded_tail.weak,
-                    bytes2pgno(env, env->me_dxb_mmap.current));
-        err = madvise(env->me_map + used_aligned2os_bytes,
-                      env->me_dxb_mmap.current - used_aligned2os_bytes,
-                      MADV_REMOVE)
-                  ? ignore_enosys(errno)
-                  : MDBX_SUCCESS;
-        if (unlikely(MDBX_IS_ERROR(err)))
-          return err;
-      }
-#endif /* MADV_REMOVE */
-#if defined(MADV_DONTNEED)
-      mdbx_notice("open-MADV_%s %u..%u", "DONTNEED",
+    if (lck_rc && (env->me_flags & MDBX_WRITEMAP) != 0 &&
+        /* not recovery mode */ env->me_stuck_meta < 0) {
+      mdbx_notice("open-MADV_%s %u..%u", "REMOVE (deallocate file space)",
                   env->me_lck->mti_discarded_tail.weak,
                   bytes2pgno(env, env->me_dxb_mmap.current));
-      err = madvise(env->me_map + used_aligned2os_bytes,
-                    env->me_dxb_mmap.current - used_aligned2os_bytes,
-                    MADV_DONTNEED)
-                ? ignore_enosys(errno)
-                : MDBX_SUCCESS;
+      err =
+          madvise(env->me_map + used_aligned2os_bytes,
+                  env->me_dxb_mmap.current - used_aligned2os_bytes, MADV_REMOVE)
+              ? ignore_enosys(errno)
+              : MDBX_SUCCESS;
       if (unlikely(MDBX_IS_ERROR(err)))
         return err;
-#elif defined(POSIX_MADV_DONTNEED)
-      err = ignore_enosys(
-          posix_madvise(env->me_map + used_aligned2os_bytes,
-                        env->me_dxb_mmap.current - used_aligned2os_bytes,
-                        POSIX_MADV_DONTNEED));
-      if (unlikely(MDBX_IS_ERROR(err)))
-        return err;
-#elif defined(POSIX_FADV_DONTNEED)
-      err = ignore_enosys(
-          posix_fadvise(env->me_lazy_fd, used_aligned2os_bytes,
-                        env->me_dxb_mmap.current - used_aligned2os_bytes,
-                        POSIX_FADV_DONTNEED));
-      if (unlikely(MDBX_IS_ERROR(err)))
-        return err;
-#endif /* MADV_DONTNEED */
     }
-
-    err = mdbx_set_readahead(env, bytes2pgno(env, used_bytes), readahead, true);
-    if (unlikely(err != MDBX_SUCCESS))
+#endif /* MADV_REMOVE */
+#if defined(MADV_DONTNEED)
+    mdbx_notice("open-MADV_%s %u..%u", "DONTNEED",
+                env->me_lck->mti_discarded_tail.weak,
+                bytes2pgno(env, env->me_dxb_mmap.current));
+    err =
+        madvise(env->me_map + used_aligned2os_bytes,
+                env->me_dxb_mmap.current - used_aligned2os_bytes, MADV_DONTNEED)
+            ? ignore_enosys(errno)
+            : MDBX_SUCCESS;
+    if (unlikely(MDBX_IS_ERROR(err)))
       return err;
+#elif defined(POSIX_MADV_DONTNEED)
+    err = ignore_enosys(posix_madvise(
+        env->me_map + used_aligned2os_bytes,
+        env->me_dxb_mmap.current - used_aligned2os_bytes, POSIX_MADV_DONTNEED));
+    if (unlikely(MDBX_IS_ERROR(err)))
+      return err;
+#elif defined(POSIX_FADV_DONTNEED)
+    err = ignore_enosys(posix_fadvise(
+        env->me_lazy_fd, used_aligned2os_bytes,
+        env->me_dxb_mmap.current - used_aligned2os_bytes, POSIX_FADV_DONTNEED));
+    if (unlikely(MDBX_IS_ERROR(err)))
+      return err;
+#endif /* MADV_DONTNEED */
+  }
+
+  err = mdbx_set_readahead(env, bytes2pgno(env, used_bytes), readahead, true);
+  if (unlikely(err != MDBX_SUCCESS))
+    return err;
 #endif /* MDBX_ENABLE_MADVISE */
-  }    /* lck exclusive, lck_rc == MDBX_RESULT_TRUE */
 
   return rc;
 }
@@ -16327,25 +16326,26 @@ static int __hot cmp_int_unaligned(const MDBX_val *a, const MDBX_val *b) {
 /* Compare two items lexically */
 static int __hot cmp_lexical(const MDBX_val *a, const MDBX_val *b) {
   if (a->iov_len == b->iov_len)
-    return memcmp(a->iov_base, b->iov_base, a->iov_len);
+    return a->iov_len ? memcmp(a->iov_base, b->iov_base, a->iov_len) : 0;
 
   const int diff_len = (a->iov_len < b->iov_len) ? -1 : 1;
   const size_t shortest = (a->iov_len < b->iov_len) ? a->iov_len : b->iov_len;
-  int diff_data = memcmp(a->iov_base, b->iov_base, shortest);
+  int diff_data = shortest ? memcmp(a->iov_base, b->iov_base, shortest) : 0;
   return likely(diff_data) ? diff_data : diff_len;
 }
 
 /* Compare two items in reverse byte order */
 static int __hot cmp_reverse(const MDBX_val *a, const MDBX_val *b) {
-  const uint8_t *pa = (const uint8_t *)a->iov_base + a->iov_len;
-  const uint8_t *pb = (const uint8_t *)b->iov_base + b->iov_len;
   const size_t shortest = (a->iov_len < b->iov_len) ? a->iov_len : b->iov_len;
-
-  const uint8_t *const end = pa - shortest;
-  while (pa != end) {
-    int diff = *--pa - *--pb;
-    if (likely(diff))
-      return diff;
+  if (likely(shortest)) {
+    const uint8_t *pa = (const uint8_t *)a->iov_base + a->iov_len;
+    const uint8_t *pb = (const uint8_t *)b->iov_base + b->iov_len;
+    const uint8_t *const end = pa - shortest;
+    do {
+      int diff = *--pa - *--pb;
+      if (likely(diff))
+        return diff;
+    } while (pa != end);
   }
   return CMP2INT(a->iov_len, b->iov_len);
 }
@@ -16353,7 +16353,9 @@ static int __hot cmp_reverse(const MDBX_val *a, const MDBX_val *b) {
 /* Fast non-lexically comparator */
 static int __hot cmp_lenfast(const MDBX_val *a, const MDBX_val *b) {
   int diff = CMP2INT(a->iov_len, b->iov_len);
-  return likely(diff) ? diff : memcmp(a->iov_base, b->iov_base, a->iov_len);
+  return likely(diff || a->iov_len == 0)
+             ? diff
+             : memcmp(a->iov_base, b->iov_base, a->iov_len);
 }
 
 static bool unsure_equal(MDBX_cmp_func cmp, const MDBX_val *a,
@@ -16943,8 +16945,10 @@ int mdbx_get_ex(MDBX_txn *txn, MDBX_dbi dbi, MDBX_val *key, MDBX_val *data,
       MDBX_node *node = page_node(cx.outer.mc_pg[cx.outer.mc_top],
                                   cx.outer.mc_ki[cx.outer.mc_top]);
       if (F_ISSET(node_flags(node), F_DUPDATA)) {
+        // coverity[uninit_use : FALSE]
         mdbx_tassert(txn, cx.outer.mc_xcursor == &cx.inner &&
                               (cx.inner.mx_cursor.mc_flags & C_INITIALIZED));
+        // coverity[uninit_use : FALSE]
         *values_count =
             (sizeof(*values_count) >= sizeof(cx.inner.mx_db.md_entries) ||
              cx.inner.mx_db.md_entries <= PTRDIFF_MAX)
@@ -20692,18 +20696,20 @@ __cold static int mdbx_page_check(MDBX_cursor *const mc,
         break;
       case F_DUPDATA /* short sub-page */:
         if (unlikely(dsize <= PAGEHDRSZ)) {
-          rc = bad_page(mp, "invalid nested-page record size (%zu)\n", dsize);
+          rc = bad_page(mp, "invalid nested/sub-page record size (%zu)\n",
+                        dsize);
           continue;
         } else {
           const MDBX_page *const sp = (MDBX_page *)data;
           const char *const end_of_subpage = data + dsize;
           const int nsubkeys = page_numkeys(sp);
-          switch (sp->mp_flags) {
+          switch (sp->mp_flags & /* ignore legacy P_DIRTY flag */ ~0x10) {
           case P_LEAF | P_SUBP:
           case P_LEAF | P_LEAF2 | P_SUBP:
             break;
           default:
-            rc = bad_page(mp, "invalid nested-page flags (%u)\n", sp->mp_flags);
+            rc = bad_page(mp, "invalid nested/sub-page flags (0x%02x)\n",
+                          sp->mp_flags);
             continue;
           }
 
@@ -23964,7 +23970,7 @@ __cold static int mdbx_walk_tree(mdbx_walk_ctx_t *ctx, const pgno_t pgno,
       size_t subalign_bytes = 0;
       MDBX_page_type_t subtype;
 
-      switch (sp->mp_flags) {
+      switch (sp->mp_flags & /* ignore legacy P_DIRTY flag */ ~0x10) {
       case P_LEAF | P_SUBP:
         subtype = MDBX_subpage_leaf;
         break;
@@ -27547,6 +27553,7 @@ retry_mapview:;
 
   if (limit < map->limit) {
     /* unmap an excess at end of mapping. */
+    // coverity[offset_free : FALSE]
     if (unlikely(munmap(map->dxb + limit, map->limit - limit)))
       return errno;
     map->limit = limit;
@@ -27620,6 +27627,7 @@ retry_mapview:;
     if (unlikely(munmap(map->address, map->limit)))
       return errno;
 
+    // coverity[pass_freed_arg : FALSE]
     ptr = mmap(map->address, limit, mmap_prot,
                (flags & MDBX_MRESIZE_MAY_MOVE)
                    ? mmap_flags
@@ -27629,11 +27637,13 @@ retry_mapview:;
     if (MAP_FIXED_NOREPLACE != 0 && MAP_FIXED_NOREPLACE != MAP_FIXED &&
         unlikely(ptr == MAP_FAILED) && !(flags & MDBX_MRESIZE_MAY_MOVE) &&
         errno == /* kernel don't support MAP_FIXED_NOREPLACE */ EINVAL)
+      // coverity[pass_freed_arg : FALSE]
       ptr = mmap(map->address, limit, mmap_prot, mmap_flags | MAP_FIXED,
                  map->fd, 0);
 
     if (unlikely(ptr == MAP_FAILED)) {
       /* try to restore prev mapping */
+      // coverity[pass_freed_arg : FALSE]
       ptr = mmap(map->address, map->limit, mmap_prot,
                  (flags & MDBX_MRESIZE_MAY_MOVE)
                      ? mmap_flags
@@ -27643,6 +27653,7 @@ retry_mapview:;
       if (MAP_FIXED_NOREPLACE != 0 && MAP_FIXED_NOREPLACE != MAP_FIXED &&
           unlikely(ptr == MAP_FAILED) && !(flags & MDBX_MRESIZE_MAY_MOVE) &&
           errno == /* kernel don't support MAP_FIXED_NOREPLACE */ EINVAL)
+        // coverity[pass_freed_arg : FALSE]
         ptr = mmap(map->address, map->limit, mmap_prot, mmap_flags | MAP_FIXED,
                    map->fd, 0);
       if (unlikely(ptr == MAP_FAILED)) {
@@ -28407,10 +28418,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         10,
-        2,
-        0,
-        {"2021-07-26T05:23:52+03:00", "3db98a1d3d2364d8cb260df82f1150932547e4b9", "70933d81a86128d6a6f14d7102a9544e4f1807b2",
-         "v0.10.2-0-g70933d81"},
+        3,
+        1,
+        {"2021-09-03T23:10:22+03:00", "65f29a1cfa62516b31ebf0595fdccb5c5069dc31", "c714ee9b555e03d5892ff57c8c0d460d06950ddb",
+         "v0.10.3-1-gc714ee9b"},
         sourcery};
 
 __dll_export
