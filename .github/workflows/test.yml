@@ -21,7 +21,7 @@ jobs:
           path: ~/go/pkg/mod
           key: go-${{ matrix.os }}-${{ matrix.go }}-${{ hashFiles('**/go.sum') }}
 
-      - run: go test -v ./...
+      - run: GODEBUG=cgocheck=2 go test -race -gcflags=all=-d=checkptr -v ./...
 
       - name: Race
         run: make race
