@@ -73,7 +73,7 @@ type Txn struct {
 	// The value of Txn.ID() is cached so that the cost of cgo does not have to
 	// be paid.  The id of a Txn cannot change over its life, even if it is
 	// reset/renewed
-	id uintptr
+	id uint64
 }
 
 // beginTxn does not lock the OS thread which is a prerequisite for creating a
@@ -118,7 +118,7 @@ func beginTxn(env *Env, parent *Txn, flags uint) (*Txn, error) {
 // view transactions.
 //
 // See mdbx_txn_id.
-func (txn *Txn) ID() uintptr {
+func (txn *Txn) ID() uint64 {
 	// It is possible for a txn to legitimately have ID 0 if it a readonly txn
 	// created before any updates.  In practice this does not really happen
 	// because an application typically must do an initial update to initialize
@@ -131,8 +131,8 @@ func (txn *Txn) ID() uintptr {
 	return txn.id
 }
 
-func (txn *Txn) getID() uintptr {
-	return uintptr(C.mdbx_txn_id(txn._txn))
+func (txn *Txn) getID() uint64 {
+	return uint64(C.mdbx_txn_id(txn._txn))
 }
 
 // RunOp executes fn with txn as an argument.  During the execution of fn no

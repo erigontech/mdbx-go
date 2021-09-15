@@ -57,8 +57,8 @@ type TxnPool struct {
 	// used concurrently.
 	UpdateHandling UpdateHandling
 
-	lastid    uintptr
-	idleGuard uintptr
+	lastid    uint64
+	idleGuard uint64
 }
 
 // NewTxnPool initializes returns a new TxnPool.
@@ -187,8 +187,8 @@ func (p *TxnPool) handleReadonly(txn *mdbx.Txn, condition UpdateHandling) (renew
 // getLastID safely retrieves the value of p.lastid so routines operating on
 // the sync.Pool know if a transaction can continue to be used without bloating
 // the database.
-func (p *TxnPool) getLastID() uintptr {
-	return atomic.LoadUintptr(&p.lastid)
+func (p *TxnPool) getLastID() uint64 {
+	return atomic.LoadUint64(&p.lastid)
 }
 
 // CommitID sets the TxnPool's last-known transaction id to invalidate
@@ -196,7 +196,7 @@ func (p *TxnPool) getLastID() uintptr {
 //
 // CommitID should only be called if p is not used to create/commit update
 // transactions.
-func (p *TxnPool) CommitID(id uintptr) {
+func (p *TxnPool) CommitID(id uint64) {
 	if !p.handlesUpdates() {
 		return
 	}
@@ -205,13 +205,13 @@ func (p *TxnPool) CommitID(id uintptr) {
 
 	// As long as we think we are holding a newer id than lastid we keep trying
 	// to CAS until we see a newer id or the CAS succeeds.
-	lastid := atomic.LoadUintptr(&p.lastid)
+	lastid := atomic.LoadUint64(&p.lastid)
 	for lastid < id {
-		if atomic.CompareAndSwapUintptr(&p.lastid, lastid, id) {
+		if atomic.CompareAndSwapUint64(&p.lastid, lastid, id) {
 			updated = true
 			break
 		}
-		lastid = atomic.LoadUintptr(&p.lastid)
+		lastid = atomic.LoadUint64(&p.lastid)
 	}
 
 	if updated && p.UpdateHandling&HandleIdle != 0 {
@@ -239,12 +239,12 @@ func (p *TxnPool) handleIdle() {
 	// one will probably do the work of the waiting one.  So we just attempt to
 	// CAS a guarding value and continue if the we succeeded (ensuring that we
 	// reset the value with defer).
-	if !atomic.CompareAndSwapUintptr(&p.idleGuard, 0, 1) {
+	if !atomic.CompareAndSwapUint64(&p.idleGuard, 0, 1) {
 		return
 	}
 	// Don't CAS when we reset.  Just reset.  It will make sure that handleIdle
 	// can run again.
-	defer atomic.StoreUintptr(&p.idleGuard, 0)
+	defer atomic.StoreUint64(&p.idleGuard, 0)
 
 	var txnPutBack *mdbx.Txn
 	for {
@@ -301,7 +301,7 @@ func (p *TxnPool) Abort(txn *mdbx.Txn) {
 
 // Update is analogous to the Update method on mdbx.Env.
 func (p *TxnPool) Update(fn mdbx.TxnOp) error {
-	var id uintptr
+	var id uint64
 	err := p.env.Update(func(txn *mdbx.Txn) (err error) {
 		err = fn(txn)
 		if err != nil {

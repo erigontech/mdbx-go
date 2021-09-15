@@ -13,7 +13,7 @@ import (
 func TestTxn_ID(t *testing.T) {
 	env := setup(t)
 
-	var id0, id1, id2, id3 uintptr
+	var id0, id1, id2, id3 uint64
 	var txnInvalid *Txn
 	err := env.View(func(txn *Txn) (err error) {
 		id0 = txn.ID()
