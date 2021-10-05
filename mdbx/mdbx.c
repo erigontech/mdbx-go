@@ -10800,7 +10800,7 @@ static int mdbx_txn_renew0(MDBX_txn *txn, const unsigned flags) {
 
   const uintptr_t tid = mdbx_thread_self();
   if (flags & MDBX_TXN_RDONLY) {
-    mdbx_warning("alex before %z", mdbx_osal_monotime());
+    mdbx_warning("alex before %u", mdbx_osal_monotime());
 
     mdbx_assert(env, (flags & ~(MDBX_TXN_RO_BEGIN_FLAGS | MDBX_WRITEMAP)) == 0);
     txn->mt_flags =
@@ -10889,7 +10889,7 @@ static int mdbx_txn_renew0(MDBX_txn *txn, const unsigned flags) {
           break;
         }
       }
-          mdbx_warning("alex after %z", mdbx_osal_monotime());
+          mdbx_warning("alex after %u", mdbx_osal_monotime());
     } else {
       /* r/o recovery mode */
       MDBX_meta *const meta = METAPAGE(env, env->me_stuck_meta);
