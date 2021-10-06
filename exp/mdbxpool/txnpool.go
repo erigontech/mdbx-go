@@ -111,7 +111,7 @@ func (p *TxnPool) beginReadonly() (*mdbx.Txn, error) {
 
 		// Nothing we can do with txn now other than destroy it.
 		txn.Abort()
-		fmt.Printf("renew error")
+
 		// For now it's not clear what better handling of a renew error would
 		// entail so we just try to create a new transaction.  It is assumed
 		// that it will fail with the same error... But maybe not?

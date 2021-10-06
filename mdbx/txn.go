@@ -8,7 +8,6 @@ package mdbx
 import "C"
 
 import (
-	"fmt"
 	"log"
 	"time"
 	"unsafe"
@@ -311,12 +310,7 @@ func (txn *Txn) Renew() error {
 }
 
 func (txn *Txn) renew() error {
-	t := time.Now()
 	ret := C.mdbx_txn_renew(txn._txn)
-	took := time.Since(t)
-	if took > 100*time.Millisecond {
-		fmt.Printf("renew took %s\n", took)
-	}
 
 	// mdbx_txn_renew causes txn._txn to pick up a new transaction ID.  It's
 	// slightly confusing in the LMDB docs.  Txn ID corresponds to database
