@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY c1ddf5ac03e647338fa2a0f0cf8d1c6c2314af6323ae683c5ff750411947e812_v0_10_3_0_gbf603bdf
+#define MDBX_BUILD_SOURCERY fc1465eefd1446af5026674d101336e7f2ef9316385670edd0edeb1c15e680cf_v0_10_4_0_g590b225f
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2195,7 +2195,7 @@ typedef uint16_t indx_t;
 
 /*----------------------------------------------------------------------------*/
 /* Core structures for database and shared memory (i.e. format definition) */
-#pragma pack(push, 1)
+#pragma pack(push, 4)
 
 /* Information about a single database in the environment. */
 typedef struct MDBX_db {
@@ -8267,8 +8267,8 @@ status_done:
    * могла быть выделена, а затем пролита в одной из родительских
    * транзакций. Поэтому пока помещаем её в retired-список, который будет
    * фильтроваться относительно dirty- и spilled-списков родительских
-   * транзакций при коммите
-   * дочерних транзакций, либо же будет записан в GC в неизменном виде. */
+   * транзакций при коммите дочерних транзакций, либо же будет записан
+   * в GC в неизменном виде. */
   goto retire;
 }
 
@@ -12101,7 +12101,7 @@ retry_noaccount:
                mdbx_pnl_check4assert(txn->tw.reclaimed_pglist,
                                      txn->mt_next_pgno - MDBX_ENABLE_REFUND));
   mdbx_tassert(txn, mdbx_dirtylist_check(txn));
-  if (unlikely(/* paranoia */ loop > ((MDBX_DEBUG > 0) ? 9 : 99))) {
+  if (unlikely(/* paranoia */ loop > ((MDBX_DEBUG > 0) ? 12 : 42))) {
     mdbx_error("too more loops %u, bailout", loop);
     rc = MDBX_PROBLEM;
     goto bailout;
@@ -12162,8 +12162,6 @@ retry_noaccount:
       /* If using records from GC which we have not yet deleted,
        * now delete them and any we reserved for tw.reclaimed_pglist. */
       while (cleaned_gc_id <= txn->tw.last_reclaimed) {
-        gc_rid = cleaned_gc_id;
-        settled = 0;
         rc = mdbx_cursor_first(&couple.outer, &key, NULL);
         if (unlikely(rc != MDBX_SUCCESS)) {
           if (rc == MDBX_NOTFOUND)
@@ -12175,6 +12173,9 @@ retry_noaccount:
           rc = MDBX_CORRUPTED;
           goto bailout;
         }
+        gc_rid = cleaned_gc_id;
+        settled = 0;
+        reused_gc_slot = 0;
         cleaned_gc_id = unaligned_peek_u64(4, key.iov_base);
         if (!MDBX_DISABLE_PAGECHECKS &&
             unlikely(cleaned_gc_id < MIN_TXNID || cleaned_gc_id > MAX_TXNID)) {
@@ -12540,6 +12541,7 @@ retry_noaccount:
         } else if (rc != MDBX_NOTFOUND)
           goto bailout;
         txn->tw.last_reclaimed = gc_rid;
+        cleaned_gc_id = gc_rid + 1;
       }
       reservation_gc_id = gc_rid--;
       mdbx_trace("%s: take @%" PRIaTXN " from head-gc-id", dbg_prefix_mode,
@@ -12617,7 +12619,7 @@ retry_noaccount:
     key.iov_len = sizeof(reservation_gc_id);
     key.iov_base = &reservation_gc_id;
     data.iov_len = (chunk + 1) * sizeof(pgno_t);
-    mdbx_trace("%s.reserve: %u [%u...%u] @%" PRIaTXN, dbg_prefix_mode, chunk,
+    mdbx_trace("%s.reserve: %u [%u...%u) @%" PRIaTXN, dbg_prefix_mode, chunk,
                settled + 1, settled + chunk + 1, reservation_gc_id);
     mdbx_prep_backlog(txn, &couple.outer, data.iov_len);
     rc = mdbx_cursor_put(&couple.outer, &key, &data,
@@ -12793,14 +12795,20 @@ retry_noaccount:
   }
 
   mdbx_tassert(txn, rc == MDBX_SUCCESS);
-  if (unlikely(txn->tw.loose_count != 0 ||
-               filled_gc_slot !=
-                   (txn->tw.lifo_reclaimed
-                        ? (unsigned)MDBX_PNL_SIZE(txn->tw.lifo_reclaimed)
-                        : 0))) {
-    mdbx_notice("** restart: reserve excess (filled-slot %u, loose-count %u)",
-                filled_gc_slot, txn->tw.loose_count);
+  if (unlikely(txn->tw.loose_count != 0)) {
+    mdbx_notice("** restart: got %u loose pages", txn->tw.loose_count);
     goto retry;
+  }
+  if (unlikely(filled_gc_slot !=
+               (txn->tw.lifo_reclaimed
+                    ? (unsigned)MDBX_PNL_SIZE(txn->tw.lifo_reclaimed)
+                    : 0))) {
+
+    const bool will_retry = loop < 9;
+    mdbx_notice("** %s: reserve excess (filled-slot %u, loop %u)",
+                will_retry ? "restart" : "ignore", filled_gc_slot, loop);
+    if (will_retry)
+      goto retry;
   }
 
   mdbx_tassert(txn,
@@ -14469,11 +14477,12 @@ mdbx_env_set_geometry(MDBX_env *env, intptr_t size_lower, intptr_t size_now,
       (env->me_txn0 && env->me_txn0->mt_owner == mdbx_thread_self());
 
 #if MDBX_DEBUG
-  if (growth_step < 0)
+  if (growth_step < 0) {
     growth_step = 1;
-  if (shrink_threshold < 0)
-    shrink_threshold = 1;
-#endif
+    if (shrink_threshold < 0)
+      shrink_threshold = 1;
+  }
+#endif /* MDBX_DEBUG */
 
   intptr_t reasonable_maxsize = 0;
   bool need_unlock = false;
@@ -28418,10 +28427,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         10,
-        3,
+        4,
         0,
-        {"2021-08-27T22:47:12+03:00", "89059f5e31a893b0739257a1df03e3d9fcc6d74d", "bf603bdffc22c00d393b7614c1f11f3ebe4efb25",
-         "v0.10.3-0-gbf603bdf"},
+        {"2021-10-10T13:31:33+03:00", "d384e69c0451da1014d323427304b89bf8b85cbf", "590b225fccc3f80595268bcfd022ae8636e5b2a6",
+         "v0.10.4-0-g590b225f"},
         sourcery};
 
 __dll_export
