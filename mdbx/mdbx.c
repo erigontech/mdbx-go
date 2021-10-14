@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY fc1465eefd1446af5026674d101336e7f2ef9316385670edd0edeb1c15e680cf_v0_10_4_0_g590b225f
+#define MDBX_BUILD_SOURCERY 783046896c7a0ed430a0f65b28d3632edc41f69d227ca12ff88eeb6719dcc72f_v0_10_5_0_gedda9515
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2274,6 +2274,8 @@ typedef struct MDBX_meta {
   bin128_t mm_bootid;
 
 } MDBX_meta;
+
+#pragma pack(1)
 
 /* Common header for all page types. The page type depends on mp_flags.
  *
@@ -13476,9 +13478,6 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
   ts_3 = latency ? mdbx_osal_monotime() : 0;
 
   if (likely(rc == MDBX_SUCCESS)) {
-    if (txn->mt_dbs[MAIN_DBI].md_flags & DBI_DIRTY)
-      txn->mt_dbs[MAIN_DBI].md_mod_txnid = txn->mt_txnid;
-    txn->mt_dbs[FREE_DBI].md_mod_txnid = txn->mt_txnid;
 
     MDBX_meta meta, *head = mdbx_meta_head(env);
     memcpy(meta.mm_magic_and_version, head->mm_magic_and_version, 8);
@@ -13491,7 +13490,15 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
 
     meta.mm_geo = txn->mt_geo;
     meta.mm_dbs[FREE_DBI] = txn->mt_dbs[FREE_DBI];
+    meta.mm_dbs[FREE_DBI].md_mod_txnid =
+        (txn->mt_dbistate[FREE_DBI] & DBI_DIRTY)
+            ? txn->mt_txnid
+            : txn->mt_dbs[FREE_DBI].md_mod_txnid;
     meta.mm_dbs[MAIN_DBI] = txn->mt_dbs[MAIN_DBI];
+    meta.mm_dbs[MAIN_DBI].md_mod_txnid =
+        (txn->mt_dbistate[MAIN_DBI] & DBI_DIRTY)
+            ? txn->mt_txnid
+            : txn->mt_dbs[MAIN_DBI].md_mod_txnid;
     meta.mm_canary = txn->mt_canary;
     mdbx_meta_set_txnid(env, &meta, txn->mt_txnid);
 
@@ -13850,10 +13857,9 @@ __cold static int mdbx_read_header(MDBX_env *env, MDBX_meta *dest,
   }
 
   if (dest->mm_psize == 0 ||
-      ((env->me_stuck_meta < 0)
-           ? (!META_IS_STEADY(dest) &&
-              !meta_weak_acceptable(env, dest, lck_exclusive))
-           : false)) {
+      (env->me_stuck_meta < 0 &&
+       !(META_IS_STEADY(dest) ||
+         meta_weak_acceptable(env, dest, lck_exclusive)))) {
     mdbx_error("%s", "no usable meta-pages, database is corrupted");
     if (rc == MDBX_SUCCESS) {
       /* TODO: try to restore the database by fully checking b-tree structure
@@ -13902,8 +13908,8 @@ __cold static MDBX_page *mdbx_meta_model(const MDBX_env *env, MDBX_page *model,
                        pages2pv(pv2pages(model_meta->mm_geo.shrink_pv)));
 
   model_meta->mm_psize = env->me_psize;
-  model_meta->mm_flags = (uint16_t)env->me_flags;
-  model_meta->mm_flags |=
+  model_meta->mm_flags = (uint16_t)env->me_flags & DB_PERSISTENT_FLAGS;
+  model_meta->mm_flags =
       MDBX_INTEGERKEY; /* this is mm_dbs[FREE_DBI].md_flags */
   model_meta->mm_dbs[FREE_DBI].md_root = P_INVALID;
   model_meta->mm_dbs[MAIN_DBI].md_root = P_INVALID;
@@ -15127,65 +15133,80 @@ __cold static int mdbx_setup_dxb(MDBX_env *env, const int lck_rc,
       mdbx_assert(env, lck_rc == MDBX_RESULT_TRUE);
       /* exclusive mode */
 
+      MDBX_meta clone;
       MDBX_meta const *const steady = mdbx_meta_steady(env);
-      const txnid_t steady_txnid = mdbx_meta_txnid_fluid(env, steady);
-      MDBX_meta steady_clone;
-      err = mdbx_validate_meta_copy(env, steady, &steady_clone);
-      if (unlikely(err != MDBX_SUCCESS)) {
-        mdbx_error("meta[%u] with %s txnid %" PRIaTXN
-                   " is corrupted, %s needed",
-                   bytes2pgno(env, (uint8_t *)steady - env->me_map), "steady",
-                   steady_txnid, "manual recovery");
-        return MDBX_CORRUPTED;
-      }
-
       MDBX_meta const *const head = mdbx_meta_head(env);
-      if (steady == head)
-        break;
+      const txnid_t steady_txnid = mdbx_meta_txnid_fluid(env, steady);
+      if (META_IS_STEADY(steady)) {
+        err = mdbx_validate_meta_copy(env, steady, &clone);
+        if (unlikely(err != MDBX_SUCCESS)) {
+          mdbx_error("meta[%u] with %s txnid %" PRIaTXN
+                     " is corrupted, %s needed",
+                     bytes2pgno(env, (uint8_t *)steady - env->me_map), "steady",
+                     steady_txnid, "manual recovery");
+          return MDBX_CORRUPTED;
+        }
+        if (steady == head)
+          break;
+      }
 
       const pgno_t pgno = bytes2pgno(env, (uint8_t *)head - env->me_map);
       const txnid_t head_txnid = mdbx_meta_txnid_fluid(env, head);
-      MDBX_meta head_clone;
       const bool head_valid =
-          mdbx_validate_meta_copy(env, head, &head_clone) == MDBX_SUCCESS;
+          mdbx_validate_meta_copy(env, head, &clone) == MDBX_SUCCESS;
+      mdbx_assert(env, !META_IS_STEADY(steady) || head_txnid != steady_txnid);
       if (unlikely(!head_valid)) {
-        mdbx_error("meta[%u] with %s txnid %" PRIaTXN
-                   " is corrupted, %s needed",
-                   pgno, "last", head_txnid, "rollback");
+        if (unlikely(!META_IS_STEADY(steady))) {
+          mdbx_error("%s for open or automatic rollback, %s",
+                     "there are no suitable meta-pages",
+                     "manual recovery is required");
+          return MDBX_CORRUPTED;
+        }
+        mdbx_warning("meta[%u] with last txnid %" PRIaTXN
+                     " is corrupted, rollback needed",
+                     pgno, head_txnid);
         goto purge_meta_head;
       }
 
-      mdbx_assert(env, head_txnid != head_txnid);
-      if (head_txnid == steady_txnid)
-        break;
-
-      mdbx_assert(env, META_IS_STEADY(steady) && !META_IS_STEADY(head));
       if (meta_bootid_match(head)) {
-        mdbx_warning(
-            "opening after an unclean shutdown, but boot-id(%016" PRIx64
-            "-%016" PRIx64
-            ") is MATCH: rollback NOT needed, steady-sync NEEDED%s",
-            bootid.x, bootid.y,
-            (env->me_flags & MDBX_RDONLY) ? ", but unable in read-only mode"
-                                          : "");
-        if (env->me_flags & MDBX_RDONLY)
+        if (env->me_flags & MDBX_RDONLY) {
+          mdbx_error("%s, but boot-id(%016" PRIx64 "-%016" PRIx64 ") is MATCH: "
+                     "rollback NOT needed, steady-sync NEEDED%s",
+                     "opening after an unclean shutdown", bootid.x, bootid.y,
+                     ", but unable in read-only mode");
           return MDBX_WANNA_RECOVERY;
-        meta = head_clone;
+        }
+        mdbx_warning("%s, but boot-id(%016" PRIx64 "-%016" PRIx64 ") is MATCH: "
+                     "rollback NOT needed, steady-sync NEEDED%s",
+                     "opening after an unclean shutdown", bootid.x, bootid.y,
+                     "");
+        meta = clone;
         atomic_store32(&env->me_lck->mti_unsynced_pages, meta.mm_geo.next,
                        mo_Relaxed);
         break;
       }
+      if (unlikely(!META_IS_STEADY(steady))) {
+        mdbx_error("%s, but %s for automatic rollback: %s",
+                   "opening after an unclean shutdown",
+                   "there are no suitable meta-pages",
+                   "manual recovery is required");
+        return MDBX_CORRUPTED;
+      }
       if (env->me_flags & MDBX_RDONLY) {
-        mdbx_error("rollback needed: (from head %" PRIaTXN
-                   " to steady %" PRIaTXN "), but unable in read-only mode",
-                   head_txnid, steady_txnid);
+        mdbx_error("%s and rollback needed: (from head %" PRIaTXN
+                   " to steady %" PRIaTXN ")%s",
+                   "opening after an unclean shutdown", head_txnid,
+                   steady_txnid, ", but unable in read-only mode");
         return MDBX_WANNA_RECOVERY;
       }
 
     purge_meta_head:
-      mdbx_notice("rollback: purge%s meta[%u] with%s txnid %" PRIaTXN,
+      mdbx_notice("%s and doing automatic rollback: "
+                  "purge%s meta[%u] with%s txnid %" PRIaTXN,
+                  "opening after an unclean shutdown",
                   head_valid ? "" : " invalid", pgno, head_valid ? " weak" : "",
                   head_txnid);
+      mdbx_ensure(env, META_IS_STEADY(steady));
       err = mdbx_override_meta(env, pgno, 0, head_valid ? head : steady);
       if (err) {
         mdbx_error("rollback: overwrite meta[%u] with txnid %" PRIaTXN
@@ -15654,7 +15675,7 @@ __cold int mdbx_env_turn_for_recovery(MDBX_env *env, unsigned target) {
     } else {
       txnid_t txnid = mdbx_meta_txnid_stable(env, &meta);
       if (new_txnid <= txnid)
-        safe64_txnid_next(new_txnid);
+        new_txnid = safe64_txnid_next(txnid);
     }
   }
 
@@ -16569,7 +16590,7 @@ dirty:
   }
 
   if (unlikely(ret.page->mp_txnid > front) &&
-      (ret.page->mp_txnid > txn->mt_front || front < txn->mt_txnid)) {
+      unlikely(ret.page->mp_txnid > txn->mt_front || front < txn->mt_txnid)) {
     bad_page(ret.page,
              "invalid page txnid (%" PRIaTXN ") for %s' txnid (%" PRIaTXN ")\n",
              ret.page->mp_txnid,
@@ -16823,11 +16844,13 @@ __hot static int mdbx_page_search(MDBX_cursor *mc, const MDBX_val *key,
                    : mc->mc_txn->mt_txnid;
     MDBX_txn *scan = mc->mc_txn;
     do
-      if (scan->mt_dbistate[mc->mc_dbi] & DBI_DIRTY) {
+      if ((scan->mt_flags & MDBX_TXN_DIRTY) &&
+          (mc->mc_dbi == MAIN_DBI ||
+           (scan->mt_dbistate[mc->mc_dbi] & DBI_DIRTY))) {
         pp_txnid = scan->mt_front;
         break;
       }
-    while ((scan = scan->mt_parent) != nullptr);
+    while (unlikely((scan = scan->mt_parent) != nullptr));
     if (unlikely((rc = mdbx_page_get(mc, root, &mc->mc_pg[0], pp_txnid) != 0)))
       return rc;
   }
@@ -22668,7 +22691,7 @@ __cold int mdbx_dbi_dupsort_depthmask(MDBX_txn *txn, MDBX_dbi dbi,
       break;
     case F_DUPDATA | F_SUBDATA:
       /* sub-tree */
-      *mask |= 1 << unaligned_peek_u16(1, &db->md_depth);
+      *mask |= 1 << UNALIGNED_PEEK_16(db, MDBX_db, md_depth);
       break;
     default:
       mdbx_error("wrong node-flags %u", flags);
@@ -23114,7 +23137,7 @@ static int dbi_open(MDBX_txn *txn, const char *table_name, unsigned user_flags,
 
   /* Got info, register DBI in this txn */
   memset(txn->mt_dbxs + slot, 0, sizeof(MDBX_dbx));
-  txn->mt_dbs[slot] = *(MDBX_db *)data.iov_base;
+  memcpy(&txn->mt_dbs[slot], data.iov_base, sizeof(MDBX_db));
   env->me_dbflags[slot] = 0;
   rc = mdbx_dbi_bind(txn, slot, user_flags, keycmp, datacmp);
   if (unlikely(rc != MDBX_SUCCESS)) {
@@ -28427,10 +28450,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         10,
-        4,
+        5,
         0,
-        {"2021-10-10T13:31:33+03:00", "d384e69c0451da1014d323427304b89bf8b85cbf", "590b225fccc3f80595268bcfd022ae8636e5b2a6",
-         "v0.10.4-0-g590b225f"},
+        {"2021-10-13T16:35:26+03:00", "31713895aac05dd55b3ebc8cadd419f96b38de54", "edda9515d67b4e6d3a6b1e95f1a7f7a20b462038",
+         "v0.10.5-0-gedda9515"},
         sourcery};
 
 __dll_export
