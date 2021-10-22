@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 783046896c7a0ed430a0f65b28d3632edc41f69d227ca12ff88eeb6719dcc72f_v0_10_5_0_gedda9515
+#define MDBX_BUILD_SOURCERY 268e19480a95f8af62408394a79062c88b08bf4199e0200629bf1c06b484c27c_v0_11_0_0_gfcb8cd21
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2142,7 +2142,7 @@ MDBX_MAYBE_UNUSED static
 #define MDBX_MAGIC UINT64_C(/* 56-bit prime */ 0x59659DBDEF4C11)
 
 /* FROZEN: The version number for a database's datafile format. */
-#define MDBX_DATA_VERSION 2
+#define MDBX_DATA_VERSION 3
 /* The version number for a database's lockfile format. */
 #define MDBX_LOCK_VERSION 4
 
@@ -2547,7 +2547,11 @@ typedef struct MDBX_lockinfo {
 
 #define MDBX_DATA_MAGIC                                                        \
   ((MDBX_MAGIC << 8) + MDBX_PNL_ASCENDING * 64 + MDBX_DATA_VERSION)
-#define MDBX_DATA_MAGIC_DEVEL ((MDBX_MAGIC << 8) + 255)
+
+#define MDBX_DATA_MAGIC_LEGACY_COMPAT                                          \
+  ((MDBX_MAGIC << 8) + MDBX_PNL_ASCENDING * 64 + 2)
+
+#define MDBX_DATA_MAGIC_LEGACY_DEVEL ((MDBX_MAGIC << 8) + 255)
 
 #define MDBX_LOCK_MAGIC ((MDBX_MAGIC << 8) + MDBX_LOCK_VERSION)
 
@@ -13545,7 +13549,8 @@ static int mdbx_validate_meta(MDBX_env *env, MDBX_meta *const meta,
   const uint64_t magic_and_version =
       unaligned_peek_u64(4, &meta->mm_magic_and_version);
   if (unlikely(magic_and_version != MDBX_DATA_MAGIC &&
-               magic_and_version != MDBX_DATA_MAGIC_DEVEL)) {
+               magic_and_version != MDBX_DATA_MAGIC_LEGACY_COMPAT &&
+               magic_and_version != MDBX_DATA_MAGIC_LEGACY_DEVEL)) {
     mdbx_error("meta[%u] has invalid magic/version %" PRIx64, meta_number,
                magic_and_version);
     return ((magic_and_version >> 8) != MDBX_MAGIC) ? MDBX_INVALID
@@ -16537,10 +16542,11 @@ mdbx_page_get_ex(MDBX_cursor *const mc, const pgno_t pgno,
   mdbx_tassert(txn, front <= txn->mt_front);
   if (unlikely(pgno >= txn->mt_next_pgno)) {
     mdbx_error("page #%" PRIaPGNO " beyond next-pgno", pgno);
+  notfound:
     ret.page = nullptr;
-  corrupted:
-    mc->mc_txn->mt_flags |= MDBX_TXN_ERROR;
     ret.err = MDBX_PAGE_NOTFOUND;
+  bailout:
+    mc->mc_txn->mt_flags |= MDBX_TXN_ERROR;
     return ret;
   }
 
@@ -16580,33 +16586,36 @@ dirty:
              "mismatch actual pgno (%" PRIaPGNO ") != expected (%" PRIaPGNO
              ")\n",
              ret.page->mp_pgno, pgno);
-    goto corrupted;
+    goto notfound;
   }
 
 #if !MDBX_DISABLE_PAGECHECKS
   if (unlikely(ret.page->mp_flags & P_ILL_BITS)) {
-    bad_page(ret.page, "invalid page's flags (%u)\n", ret.page->mp_flags);
-    goto corrupted;
+    ret.err =
+        bad_page(ret.page, "invalid page's flags (%u)\n", ret.page->mp_flags);
+    goto bailout;
   }
 
   if (unlikely(ret.page->mp_txnid > front) &&
       unlikely(ret.page->mp_txnid > txn->mt_front || front < txn->mt_txnid)) {
-    bad_page(ret.page,
-             "invalid page txnid (%" PRIaTXN ") for %s' txnid (%" PRIaTXN ")\n",
-             ret.page->mp_txnid,
-             (front == txn->mt_front && front != txn->mt_txnid) ? "front-txn"
-                                                                : "parent-page",
-             front);
-    goto corrupted;
+    ret.err = bad_page(
+        ret.page,
+        "invalid page txnid (%" PRIaTXN ") for %s' txnid (%" PRIaTXN ")\n",
+        ret.page->mp_txnid,
+        (front == txn->mt_front && front != txn->mt_txnid) ? "front-txn"
+                                                           : "parent-page",
+        front);
+    goto bailout;
   }
 
   if (unlikely((ret.page->mp_upper < ret.page->mp_lower ||
                 ((ret.page->mp_lower | ret.page->mp_upper) & 1) ||
                 PAGEHDRSZ + ret.page->mp_upper > env->me_psize) &&
                !IS_OVERFLOW(ret.page))) {
-    bad_page(ret.page, "invalid page lower(%u)/upper(%u) with limit (%u)\n",
-             ret.page->mp_lower, ret.page->mp_upper, page_space(env));
-    goto corrupted;
+    ret.err =
+        bad_page(ret.page, "invalid page lower(%u)/upper(%u) with limit (%u)\n",
+                 ret.page->mp_lower, ret.page->mp_upper, page_space(env));
+    goto bailout;
   }
 #endif /* !MDBX_DISABLE_PAGECHECKS */
 
@@ -16851,7 +16860,7 @@ __hot static int mdbx_page_search(MDBX_cursor *mc, const MDBX_val *key,
         break;
       }
     while (unlikely((scan = scan->mt_parent) != nullptr));
-    if (unlikely((rc = mdbx_page_get(mc, root, &mc->mc_pg[0], pp_txnid) != 0)))
+    if (unlikely((rc = mdbx_page_get(mc, root, &mc->mc_pg[0], pp_txnid)) != 0))
       return rc;
   }
 
@@ -28429,7 +28438,7 @@ __cold int mdbx_get_sysraminfo(intptr_t *page_size, intptr_t *total_pages,
 
 
 #if MDBX_VERSION_MAJOR != 0 ||                             \
-    MDBX_VERSION_MINOR != 10
+    MDBX_VERSION_MINOR != 11
 #error "API version mismatch! Had `git fetch --tags` done?"
 #endif
 
@@ -28449,11 +28458,11 @@ __dll_export
 #endif
     const struct MDBX_version_info mdbx_version = {
         0,
-        10,
-        5,
+        11,
         0,
-        {"2021-10-13T16:35:26+03:00", "31713895aac05dd55b3ebc8cadd419f96b38de54", "edda9515d67b4e6d3a6b1e95f1a7f7a20b462038",
-         "v0.10.5-0-gedda9515"},
+        0,
+        {"2021-10-21T15:17:18+03:00", "7faddaf52d678a2afcb4cf2ca87075b8aaaa9e0e", "fcb8cd214591f37d2738b83fd9f23f3630844774",
+         "v0.11.0-0-gfcb8cd21"},
         sourcery};
 
 __dll_export
