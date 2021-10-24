@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 268e19480a95f8af62408394a79062c88b08bf4199e0200629bf1c06b484c27c_v0_11_0_0_gfcb8cd21
+#define MDBX_BUILD_SOURCERY e5282b30d89e877fff2a5d79d89fc4ade5841a57bccc0bd61d79cbb4e8cf271f_v0_11_1_0_g113162b6
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -68,7 +68,7 @@
 #endif
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
-#endif
+#endif /* _CRT_SECURE_NO_WARNINGS */
 #if _MSC_VER > 1800
 #pragma warning(disable : 4464) /* relative include path contains '..' */
 #endif
@@ -551,7 +551,7 @@ extern "C" {
 #if defined(_WIN32) || defined(_WIN64)
 #if !defined(_CRT_SECURE_NO_WARNINGS)
 #define _CRT_SECURE_NO_WARNINGS
-#endif
+#endif /* _CRT_SECURE_NO_WARNINGS */
 #if !defined(_NO_CRT_STDIO_INLINE) && MDBX_BUILD_SHARED_LIBRARY &&             \
     !defined(xMDBX_TOOLS) && MDBX_WITHOUT_MSVC_CRT
 #define _NO_CRT_STDIO_INLINE
@@ -15293,6 +15293,26 @@ __cold static int mdbx_setup_dxb(MDBX_env *env, const int lck_rc,
 
     atomic_store32(&env->me_lck->mti_discarded_tail,
                    bytes2pgno(env, used_aligned2os_bytes), mo_Relaxed);
+
+    if ((env->me_flags & MDBX_RDONLY) == 0 && env->me_stuck_meta < 0) {
+      for (int n = 0; n < 3; ++n) {
+        MDBX_meta *const meta = METAPAGE(env, n);
+        if (unlikely(unaligned_peek_u64(4, &meta->mm_magic_and_version) !=
+                     MDBX_DATA_MAGIC)) {
+          const txnid_t txnid = mdbx_meta_txnid_fluid(env, meta);
+          mdbx_notice("%s %s"
+                      "meta[%u], txnid %" PRIaTXN,
+                      "updating db-format signature for",
+                      META_IS_STEADY(meta) ? "stead-" : "weak-", n, txnid);
+          err = mdbx_override_meta(env, n, txnid, meta);
+          if (unlikely(err != MDBX_SUCCESS)) {
+            mdbx_error("%s meta[%u], txnid %" PRIaTXN ", error %d",
+                       "updating db-format signature for", n, txnid, err);
+            return err;
+          }
+        }
+      }
+    }
   } /* lck exclusive, lck_rc == MDBX_RESULT_TRUE */
 
   //---------------------------------------------------- setup madvise/readahead
@@ -28459,10 +28479,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         11,
+        1,
         0,
-        0,
-        {"2021-10-21T15:17:18+03:00", "7faddaf52d678a2afcb4cf2ca87075b8aaaa9e0e", "fcb8cd214591f37d2738b83fd9f23f3630844774",
-         "v0.11.0-0-gfcb8cd21"},
+        {"2021-10-23T20:15:50+03:00", "d2935a94c0f91ab07ba6a941dd01f58965a0a8f7", "113162b6511e1de791599ac87914930a1f6b02ee",
+         "v0.11.1-0-g113162b6"},
         sourcery};
 
 __dll_export
