@@ -12277,7 +12277,7 @@ retry_noaccount:
         MDBX_PNL_SIZE(loose) = count;
         mdbx_pnl_sort(loose);
         mdbx_pnl_xmerge(txn->tw.reclaimed_pglist, loose);
-        mdbx_warning("%s: append %u loose-pages to reclaimed-pages",
+        mdbx_trace("%s: append %u loose-pages to reclaimed-pages",
                    dbg_prefix_mode, txn->tw.loose_count);
       }
 
@@ -12343,7 +12343,7 @@ retry_noaccount:
       mdbx_assert(env, data.iov_len == MDBX_PNL_SIZEOF(txn->tw.retired_pages));
       memcpy(data.iov_base, txn->tw.retired_pages, data.iov_len);
 
-      mdbx_warning("%s.put-retired #%u @ %" PRIaTXN, dbg_prefix_mode,
+      mdbx_trace("%s.put-retired #%u @ %" PRIaTXN, dbg_prefix_mode,
                  retired_stored, txn->mt_txnid);
 
       if (mdbx_log_enabled(MDBX_LOG_EXTRA)) {
@@ -12371,14 +12371,14 @@ retry_noaccount:
                                        txn->mt_next_pgno - MDBX_ENABLE_REFUND));
     mdbx_tassert(txn, txn->tw.loose_count == 0);
 
-    mdbx_trace("%s", " >> reserving");
+    mdbx_warn("%s", " >> reserving");
     if (mdbx_audit_enabled()) {
       rc = mdbx_audit_ex(txn, retired_stored, false);
       if (unlikely(rc != MDBX_SUCCESS))
         goto bailout;
     }
     const unsigned left = amount - settled;
-    mdbx_trace("%s: amount %u, settled %d, left %d, lifo-reclaimed-slots %u, "
+    mdbx_warn("%s: amount %u, settled %d, left %d, lifo-reclaimed-slots %u, "
                "reused-gc-slots %u",
                dbg_prefix_mode, amount, settled, (int)left,
                txn->tw.lifo_reclaimed
