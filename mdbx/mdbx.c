@@ -13436,7 +13436,7 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
     goto done;
   }
 
-  mdbx_warn("committing txn %" PRIaTXN " %p on mdbenv %p, root page %" PRIaPGNO
+  mdbx_warning("committing txn %" PRIaTXN " %p on mdbenv %p, root page %" PRIaPGNO
              "/%" PRIaPGNO,
              txn->mt_txnid, (void *)txn, (void *)env,
              txn->mt_dbs[MAIN_DBI].md_root, txn->mt_dbs[FREE_DBI].md_root);
