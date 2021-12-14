@@ -12371,14 +12371,14 @@ retry_noaccount:
                                        txn->mt_next_pgno - MDBX_ENABLE_REFUND));
     mdbx_tassert(txn, txn->tw.loose_count == 0);
 
-    mdbx_warning("%s", " >> reserving");
+    mdbx_trace("%s", " >> reserving");
     if (mdbx_audit_enabled()) {
       rc = mdbx_audit_ex(txn, retired_stored, false);
       if (unlikely(rc != MDBX_SUCCESS))
         goto bailout;
     }
     const unsigned left = amount - settled;
-    mdbx_warning("%s: amount %u, settled %d, left %d, lifo-reclaimed-slots %u, "
+    mdbx_trace("%s: amount %u, settled %d, left %d, lifo-reclaimed-slots %u, "
                "reused-gc-slots %u",
                dbg_prefix_mode, amount, settled, (int)left,
                txn->tw.lifo_reclaimed
@@ -12622,7 +12622,7 @@ retry_noaccount:
                "%" PRIaTXN,
                dbg_prefix_mode, gc_rid, reused_gc_slot, reservation_gc_id);
 
-    mdbx_warning("%s: chunk %u, gc-per-ovpage %u", dbg_prefix_mode, chunk,
+    mdbx_trace("%s: chunk %u, gc-per-ovpage %u", dbg_prefix_mode, chunk,
                env->me_maxgc_ov1page);
 
     mdbx_tassert(txn, reservation_gc_id < env->me_lck->mti_oldest_reader.weak);
