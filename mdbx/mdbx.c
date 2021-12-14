@@ -12378,7 +12378,7 @@ retry_noaccount:
         goto bailout;
     }
     const unsigned left = amount - settled;
-    mdbx_warning("%s: amount %u, settled %d, left %d, lifo-reclaimed-slots %u, "
+    mdbx_trace("%s: amount %u, settled %d, left %d, lifo-reclaimed-slots %u, "
                "reused-gc-slots %u",
                dbg_prefix_mode, amount, settled, (int)left,
                txn->tw.lifo_reclaimed
@@ -12639,7 +12639,7 @@ retry_noaccount:
     key.iov_len = sizeof(reservation_gc_id);
     key.iov_base = &reservation_gc_id;
     data.iov_len = (chunk + 1) * sizeof(pgno_t);
-    mdbx_warning("%s.reserve: %u [%u...%u) @%" PRIaTXN, dbg_prefix_mode, chunk,
+    mdbx_trace("%s.reserve: %u [%u...%u) @%" PRIaTXN, dbg_prefix_mode, chunk,
                settled + 1, settled + chunk + 1, reservation_gc_id);
     mdbx_prep_backlog(txn, &couple.outer, data.iov_len);
     rc = mdbx_cursor_put(&couple.outer, &key, &data,
@@ -13436,7 +13436,7 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
     goto done;
   }
 
-  mdbx_debug("committing txn %" PRIaTXN " %p on mdbenv %p, root page %" PRIaPGNO
+  mdbx_warn("committing txn %" PRIaTXN " %p on mdbenv %p, root page %" PRIaPGNO
              "/%" PRIaPGNO,
              txn->mt_txnid, (void *)txn, (void *)env,
              txn->mt_dbs[MAIN_DBI].md_root, txn->mt_dbs[FREE_DBI].md_root);
