@@ -12211,7 +12211,7 @@ retry_noaccount:
         }
         mdbx_tassert(txn, cleaned_gc_id <= txn->tw.last_reclaimed);
         mdbx_tassert(txn, cleaned_gc_id < env->me_lck->mti_oldest_reader.weak);
-        mdbx_warning("%s.cleanup-reclaimed-id %" PRIaTXN, dbg_prefix_mode,
+        mdbx_trace("%s.cleanup-reclaimed-id %" PRIaTXN, dbg_prefix_mode,
                    cleaned_gc_id);
         mdbx_tassert(txn, *txn->tw.cursors == &couple.outer);
         rc = mdbx_cursor_del(&couple.outer, 0);
