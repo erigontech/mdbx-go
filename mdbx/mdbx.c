@@ -12705,7 +12705,7 @@ retry_noaccount:
         mdbx_tassert(txn, lifo == 0);
         fill_gc_id = unaligned_peek_u64(4, key.iov_base);
         if (filled_gc_slot-- == 0 || fill_gc_id > txn->tw.last_reclaimed) {
-          mdbx_notice(
+          mdbx_warning(
               "** restart: reserve depleted (filled_slot %u, fill_id %" PRIaTXN
               " > last_reclaimed %" PRIaTXN,
               filled_gc_slot, fill_gc_id, txn->tw.last_reclaimed);
@@ -12770,7 +12770,7 @@ retry_noaccount:
       if (unlikely(txn->tw.lifo_reclaimed
                        ? cleaned_gc_slot < MDBX_PNL_SIZE(txn->tw.lifo_reclaimed)
                        : cleaned_gc_id < txn->tw.last_reclaimed)) {
-        mdbx_notice("%s", "** restart: reclaimed-slots changed");
+        mdbx_warning("%s", "** restart: reclaimed-slots changed");
         goto retry;
       }
       if (unlikely(retired_stored != MDBX_PNL_SIZE(txn->tw.retired_pages))) {
