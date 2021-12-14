@@ -12461,7 +12461,7 @@ retry_noaccount:
           if (unlikely(gc_rid < 2)) {
             if (unlikely(MDBX_PNL_SIZE(txn->tw.lifo_reclaimed) <=
                          reused_gc_slot)) {
-              mdbx_notice("** restart: reserve depleted (reused_gc_slot %u >= "
+              mdbx_warning("** restart: reserve depleted (reused_gc_slot %u >= "
                           "lifo_reclaimed %u" PRIaTXN,
                           reused_gc_slot,
                           (unsigned)MDBX_PNL_SIZE(txn->tw.lifo_reclaimed));
@@ -12657,7 +12657,7 @@ retry_noaccount:
 
     if (txn->tw.lifo_reclaimed &&
         unlikely(amount < MDBX_PNL_SIZE(txn->tw.reclaimed_pglist))) {
-      mdbx_notice("** restart: reclaimed-list growth %u -> %u", amount,
+      mdbx_warning("** restart: reclaimed-list growth %u -> %u", amount,
                   (unsigned)MDBX_PNL_SIZE(txn->tw.reclaimed_pglist));
       goto retry_noaccount;
     }
@@ -12715,7 +12715,7 @@ retry_noaccount:
         mdbx_tassert(txn, lifo != 0);
         if (++filled_gc_slot >
             (unsigned)MDBX_PNL_SIZE(txn->tw.lifo_reclaimed)) {
-          mdbx_notice("** restart: reserve depleted (filled_gc_slot %u > "
+          mdbx_warning("** restart: reserve depleted (filled_gc_slot %u > "
                       "lifo_reclaimed %u" PRIaTXN,
                       filled_gc_slot,
                       (unsigned)MDBX_PNL_SIZE(txn->tw.lifo_reclaimed));
@@ -12762,7 +12762,7 @@ retry_noaccount:
 
       if (unlikely(txn->tw.loose_count ||
                    amount != MDBX_PNL_SIZE(txn->tw.reclaimed_pglist))) {
-        mdbx_notice("** restart: reclaimed-list growth (%u -> %u, loose +%u)",
+        mdbx_warning("** restart: reclaimed-list growth (%u -> %u, loose +%u)",
                     amount, MDBX_PNL_SIZE(txn->tw.reclaimed_pglist),
                     txn->tw.loose_count);
         goto retry;
@@ -12776,7 +12776,7 @@ retry_noaccount:
       if (unlikely(retired_stored != MDBX_PNL_SIZE(txn->tw.retired_pages))) {
         mdbx_tassert(txn,
                      retired_stored < MDBX_PNL_SIZE(txn->tw.retired_pages));
-        mdbx_notice("** restart: retired-list growth (%u -> %u)",
+        mdbx_warning("** restart: retired-list growth (%u -> %u)",
                     retired_stored, MDBX_PNL_SIZE(txn->tw.retired_pages));
         goto retry;
       }
@@ -12816,7 +12816,7 @@ retry_noaccount:
 
   mdbx_tassert(txn, rc == MDBX_SUCCESS);
   if (unlikely(txn->tw.loose_count != 0)) {
-    mdbx_notice("** restart: got %u loose pages", txn->tw.loose_count);
+    mdbx_warning("** restart: got %u loose pages", txn->tw.loose_count);
     goto retry;
   }
   if (unlikely(filled_gc_slot !=
