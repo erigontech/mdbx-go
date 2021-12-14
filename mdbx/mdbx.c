@@ -12138,7 +12138,7 @@ retry_noaccount:
   while (true) {
     /* Come back here after each Put() in case retired-list changed */
     MDBX_val key, data;
-    mdbx_warning("%s", " >> continue");
+    mdbx_trace("%s", " >> continue");
 
     mdbx_tassert(txn,
                  mdbx_pnl_check4assert(txn->tw.reclaimed_pglist,
@@ -12371,7 +12371,7 @@ retry_noaccount:
                                        txn->mt_next_pgno - MDBX_ENABLE_REFUND));
     mdbx_tassert(txn, txn->tw.loose_count == 0);
 
-    mdbx_warning("%s", " >> reserving");
+    mdbx_trace("%s", " >> reserving");
     if (mdbx_audit_enabled()) {
       rc = mdbx_audit_ex(txn, retired_stored, false);
       if (unlikely(rc != MDBX_SUCCESS))
@@ -12564,7 +12564,7 @@ retry_noaccount:
         cleaned_gc_id = gc_rid + 1;
       }
       reservation_gc_id = gc_rid--;
-      mdbx_warning("%s: take @%" PRIaTXN " from head-gc-id", dbg_prefix_mode,
+      mdbx_trace("%s: take @%" PRIaTXN " from head-gc-id", dbg_prefix_mode,
                  reservation_gc_id);
     }
     ++reused_gc_slot;
@@ -12618,7 +12618,7 @@ retry_noaccount:
     }
     mdbx_tassert(txn, chunk > 0);
 
-    mdbx_warning("%s: gc_rid %" PRIaTXN ", reused_gc_slot %u, reservation-id "
+    mdbx_trace("%s: gc_rid %" PRIaTXN ", reused_gc_slot %u, reservation-id "
                "%" PRIaTXN,
                dbg_prefix_mode, gc_rid, reused_gc_slot, reservation_gc_id);
 
@@ -12652,7 +12652,7 @@ retry_noaccount:
 
     clean_reserved_gc_pnl(env, data);
     settled += chunk;
-    mdbx_warning("%s.settled %u (+%u), continue", dbg_prefix_mode, settled,
+    mdbx_trace("%s.settled %u (+%u), continue", dbg_prefix_mode, settled,
                chunk);
 
     if (txn->tw.lifo_reclaimed &&
