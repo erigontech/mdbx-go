@@ -12371,14 +12371,14 @@ retry_noaccount:
                                        txn->mt_next_pgno - MDBX_ENABLE_REFUND));
     mdbx_tassert(txn, txn->tw.loose_count == 0);
 
-    mdbx_warn("%s", " >> reserving");
+    mdbx_warning("%s", " >> reserving");
     if (mdbx_audit_enabled()) {
       rc = mdbx_audit_ex(txn, retired_stored, false);
       if (unlikely(rc != MDBX_SUCCESS))
         goto bailout;
     }
     const unsigned left = amount - settled;
-    mdbx_warn("%s: amount %u, settled %d, left %d, lifo-reclaimed-slots %u, "
+    mdbx_warning("%s: amount %u, settled %d, left %d, lifo-reclaimed-slots %u, "
                "reused-gc-slots %u",
                dbg_prefix_mode, amount, settled, (int)left,
                txn->tw.lifo_reclaimed
