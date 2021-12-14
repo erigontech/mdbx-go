@@ -12622,7 +12622,7 @@ retry_noaccount:
                "%" PRIaTXN,
                dbg_prefix_mode, gc_rid, reused_gc_slot, reservation_gc_id);
 
-    mdbx_trace("%s: chunk %u, gc-per-ovpage %u", dbg_prefix_mode, chunk,
+    mdbx_warn("%s: chunk %u, gc-per-ovpage %u", dbg_prefix_mode, chunk,
                env->me_maxgc_ov1page);
 
     mdbx_tassert(txn, reservation_gc_id < env->me_lck->mti_oldest_reader.weak);
