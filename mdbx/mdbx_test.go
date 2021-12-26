@@ -2,7 +2,9 @@ package mdbx
 
 import (
 	"fmt"
+	"os"
 	"testing"
+	"time"
 )
 
 func TestTest1(t *testing.T) {
@@ -102,6 +104,94 @@ func TestTest1(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func Test1(t *testing.T) {
+	env, err1 := NewEnv()
+	if err1 != nil {
+		t.Fatalf("Cannot create environment: %s", err1)
+	}
+	err1 = env.SetGeometry(-1, -1, 100*1024*1024*1024, -1, -1, 256)
+	if err1 != nil {
+		t.Fatalf("Cannot set mapsize: %s", err1)
+	}
+	path := "/Users/alex.sharov/data/remove_me/"
+	os.MkdirAll(path, 0755)
+	err1 = env.Open(path, NoReadahead|Coalesce|NoMetaSync|UtterlyNoSync, 0664)
+	defer env.Close()
+	if err1 != nil {
+		t.Fatalf("Cannot open environment: %s", err1)
+	}
+	val := make([]byte, 200*1024*1024)
+	var dbi DBI
+	if err := env.Update(func(txn *Txn) error {
+		var err error
+		dbi, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for i := 0; i < 100; i++ {
+			if err := txn.Put(dbi, []byte{byte(i)}, val, 0); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		panic(err)
+	}
+	if err := env.Update(func(txn *Txn) error {
+		for i := 0; i < 100; i++ {
+			if err := txn.Del(dbi, []byte{byte(i)}, val); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		panic(err)
+	}
+	env.Close()
+}
+
+func Test2(t *testing.T) {
+	env, err1 := NewEnv()
+	if err1 != nil {
+		t.Fatalf("Cannot create environment: %s", err1)
+	}
+	err := env.SetDebug(LogLvlTrace, DbgDoNotChange, LoggerDoNotChange) // temporary disable error, because it works if call it 1 time, but returns error if call it twice in same process (what often happening in tests)
+	if err != nil {
+		panic(err)
+	}
+	err1 = env.SetGeometry(-1, -1, 100*1024*1024*1024, -1, -1, 256)
+	if err1 != nil {
+		t.Fatalf("Cannot set mapsize: %s", err1)
+	}
+	err1 = env.Open("/Users/alex.sharov/data/remove_me/", NoReadahead|Coalesce|NoMetaSync|UtterlyNoSync, 0664)
+	defer env.Close()
+	if err1 != nil {
+		t.Fatalf("Cannot open environment: %s", err1)
+	}
+	val := make([]byte, 1*1024*1024)
+	var dbi DBI
+	for i := 0; i < 10_000; i++ {
+		t := time.Now()
+		if err := env.Update(func(txn *Txn) error {
+			dbi, err = txn.OpenRoot(0)
+			for i := 0; i < 200; i++ {
+				if err := txn.Put(dbi, []byte{byte(i)}, val, 0); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			panic(err)
+		}
+
+		took := time.Since(t)
+		if took > 10*time.Millisecond {
+			fmt.Printf("mdbx_test.go:173: %s\n", time.Since(t))
+		}
+	}
+	env.Close()
 }
 
 //func TestVersion(t *testing.T) {
