@@ -65,6 +65,10 @@ func TestTest1(t *testing.T) {
 			cursor.Close()
 			return fmt.Errorf("cursor: %v", err)
 		}
+		_, _, err = cursor.Get(nil, nil, First)
+		if err != nil {
+			panic(err)
+		}
 		var bkey, bval []byte
 		var bNumVal int
 		for {
