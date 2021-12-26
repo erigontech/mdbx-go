@@ -106,6 +106,9 @@ func TestTest1(t *testing.T) {
 	}
 }
 
+const pt = "/home/alex/data/remove_me/"
+
+//const pt ="/Users/alex.sharov/data/remove_me/"
 func Test1(t *testing.T) {
 	env, err1 := NewEnv()
 	if err1 != nil {
@@ -115,7 +118,7 @@ func Test1(t *testing.T) {
 	if err1 != nil {
 		t.Fatalf("Cannot set mapsize: %s", err1)
 	}
-	path := "/Users/alex.sharov/data/remove_me/"
+	path := pt
 	os.MkdirAll(path, 0755)
 	err1 = env.Open(path, NoReadahead|Coalesce|NoMetaSync|UtterlyNoSync, 0664)
 	defer env.Close()
@@ -165,7 +168,7 @@ func Test2(t *testing.T) {
 	if err1 != nil {
 		t.Fatalf("Cannot set mapsize: %s", err1)
 	}
-	err1 = env.Open("/Users/alex.sharov/data/remove_me/", NoReadahead|Coalesce|NoMetaSync|UtterlyNoSync, 0664)
+	err1 = env.Open(pt, NoReadahead|Coalesce|NoMetaSync|UtterlyNoSync, 0664)
 	defer env.Close()
 	if err1 != nil {
 		t.Fatalf("Cannot open environment: %s", err1)
