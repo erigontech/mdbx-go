@@ -2,9 +2,7 @@ package mdbx
 
 import (
 	"fmt"
-	"os"
 	"testing"
-	"time"
 )
 
 func TestTest1(t *testing.T) {
