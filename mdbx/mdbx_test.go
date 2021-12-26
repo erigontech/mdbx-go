@@ -106,9 +106,10 @@ func TestTest1(t *testing.T) {
 	}
 }
 
-const pt = "/home/alex/data/remove_me/"
+const pt = "/Users/alex.sharov/data/remove_me/"
 
-//const pt ="/Users/alex.sharov/data/remove_me/"
+//const pt = "/home/alex/data/remove_me/"
+
 func Test1(t *testing.T) {
 	env, err1 := NewEnv()
 	if err1 != nil {
@@ -160,10 +161,11 @@ func Test2(t *testing.T) {
 	if err1 != nil {
 		t.Fatalf("Cannot create environment: %s", err1)
 	}
-	err := env.SetDebug(LogLvlTrace, DbgDoNotChange, LoggerDoNotChange) // temporary disable error, because it works if call it 1 time, but returns error if call it twice in same process (what often happening in tests)
+	err := env.SetDebug(LogLvlWarn, DbgDoNotChange, LoggerDoNotChange) // temporary disable error, because it works if call it 1 time, but returns error if call it twice in same process (what often happening in tests)
 	if err != nil {
 		panic(err)
 	}
+
 	err1 = env.SetGeometry(-1, -1, 100*1024*1024*1024, -1, -1, 256)
 	if err1 != nil {
 		t.Fatalf("Cannot set mapsize: %s", err1)
@@ -188,7 +190,6 @@ func Test2(t *testing.T) {
 		}); err != nil {
 			panic(err)
 		}
-
 		took := time.Since(t)
 		if took > 10*time.Millisecond {
 			fmt.Printf("mdbx_test.go:173: %s\n", time.Since(t))
