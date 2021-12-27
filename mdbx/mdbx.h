@@ -1754,11 +1754,7 @@ enum MDBX_error_t {
   MDBX_ENOFILE = ERROR_FILE_NOT_FOUND,
   MDBX_EREMOTE = ERROR_REMOTE_STORAGE_MEDIA_ERROR
 #else /* Windows */
-#ifdef ENODATA
-  MDBX_ENODATA = ENODATA,
-#else
-  MDBX_ENODATA = 9919 /* for compatibility with LLVM's C++ libraries/headers */,
-#endif /* ENODATA */
+  MDBX_ENODATA = -30798,
   MDBX_EINVAL = EINVAL,
   MDBX_EACCESS = EACCES,
   MDBX_ENOMEM = ENOMEM,
