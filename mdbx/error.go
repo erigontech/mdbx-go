@@ -68,6 +68,7 @@ const (
 	BadValSize      Errno = C.MDBX_BAD_VALSIZE
 	BadDBI          Errno = C.MDBX_BAD_DBI
 	Perm            Errno = C.MDBX_EPERM
+	NoDATA          Errno = C.MDBX_ENODATA
 	//TLSFull       Errno = C.MDBX_TLS_FULL
 	//MapResized    Errno = C.MDBX_MAP_RESIZED
 )
@@ -89,7 +90,7 @@ func _operrno(op string, ret int) error {
 // not exist or if the Cursor reached the end of the database without locating
 // a value (EOF).
 func IsNotFound(err error) bool {
-	return IsErrno(err, NotFound)
+	return IsErrno(err, NotFound) || IsErrno(err, NoDATA)
 }
 
 func IsKeyExists(err error) bool {
