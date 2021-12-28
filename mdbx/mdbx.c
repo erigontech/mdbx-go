@@ -12146,7 +12146,7 @@ static int mdbx_update_gc(MDBX_txn *txn) {
 
 retry:
   ++loop;
-  mdbx_warn("%s", " >> restart");
+  mdbx_warning("%s", " >> restart");
   mdbx_tassert(txn,
                mdbx_pnl_check4assert(txn->tw.reclaimed_pglist,
                                      txn->mt_next_pgno - MDBX_ENABLE_REFUND));
