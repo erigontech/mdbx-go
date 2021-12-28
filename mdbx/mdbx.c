@@ -12146,7 +12146,7 @@ static int mdbx_update_gc(MDBX_txn *txn) {
 
 retry:
   ++loop;
-  mdbx_trace("%s", " >> restart");
+  mdbx_warn("%s", " >> restart");
   mdbx_tassert(txn,
                mdbx_pnl_check4assert(txn->tw.reclaimed_pglist,
                                      txn->mt_next_pgno - MDBX_ENABLE_REFUND));
@@ -12391,7 +12391,7 @@ retry:
       }
       if (unlikely(amount != MDBX_PNL_SIZE(txn->tw.reclaimed_pglist) &&
                    settled)) {
-        mdbx_trace("%s: reclaimed-list changed %u -> %u, retry",
+        mdbx_warn("%s: reclaimed-list changed %u -> %u, retry",
                    dbg_prefix_mode, amount,
                    (unsigned)MDBX_PNL_SIZE(txn->tw.reclaimed_pglist));
         goto retry /* rare case, but avoids GC fragmentation
