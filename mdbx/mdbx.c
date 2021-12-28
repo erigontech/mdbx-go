@@ -12391,7 +12391,7 @@ retry:
       }
       if (unlikely(amount != MDBX_PNL_SIZE(txn->tw.reclaimed_pglist) &&
                    settled)) {
-        mdbx_warn("%s: reclaimed-list changed %u -> %u, retry",
+        mdbx_warning("%s: reclaimed-list changed %u -> %u, retry",
                    dbg_prefix_mode, amount,
                    (unsigned)MDBX_PNL_SIZE(txn->tw.reclaimed_pglist));
         goto retry /* rare case, but avoids GC fragmentation
