@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 8ab23618f0b9ccb52c7661531964df44dc131311014dd99f63ce23291328aa63_v0_11_2_30_g5cafc7f2
+#define MDBX_BUILD_SOURCERY 8b765c84d8bac3e24bfa79492ceccdfde317c18b306d47006d6286e343468cbd_v0_11_2_31_gf4eeee83
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -12146,7 +12146,7 @@ static int mdbx_update_gc(MDBX_txn *txn) {
 
 retry:
   ++loop;
-  mdbx_warning("%s", " >> restart");
+  mdbx_trace("%s", " >> restart");
   mdbx_tassert(txn,
                mdbx_pnl_check4assert(txn->tw.reclaimed_pglist,
                                      txn->mt_next_pgno - MDBX_ENABLE_REFUND));
@@ -12155,6 +12155,14 @@ retry:
     mdbx_error("too more loops %u, bailout", loop);
     rc = MDBX_PROBLEM;
     goto bailout;
+  }
+
+  if (unlikely(dense_gc) && retired_stored) {
+    rc = mdbx_prep_backlog(txn, &couple.outer,
+                           MDBX_PNL_SIZEOF(txn->tw.retired_pages),
+                           &retired_stored);
+    if (unlikely(rc != MDBX_SUCCESS))
+      goto bailout;
   }
 
   unsigned settled = 0, cleaned_gc_slot = 0, reused_gc_slot = 0,
@@ -12198,9 +12206,11 @@ retry:
             continue;
           if (unlikely(rc != MDBX_SUCCESS))
             goto bailout;
-          rc = mdbx_prep_backlog(txn, &couple.outer, 0, nullptr);
-          if (unlikely(rc != MDBX_SUCCESS))
-            goto bailout;
+          if (likely(!dense_gc)) {
+            rc = mdbx_prep_backlog(txn, &couple.outer, 0, nullptr);
+            if (unlikely(rc != MDBX_SUCCESS))
+              goto bailout;
+          }
           mdbx_tassert(txn,
                        cleaned_gc_id < env->me_lck->mti_oldest_reader.weak);
           mdbx_trace("%s: cleanup-reclaimed-id [%u]%" PRIaTXN, dbg_prefix_mode,
@@ -12238,7 +12248,7 @@ retry:
         }
         if (cleaned_gc_id > txn->tw.last_reclaimed)
           break;
-        if (cleaned_gc_id < txn->tw.last_reclaimed) {
+        if (likely(!dense_gc) && cleaned_gc_id < txn->tw.last_reclaimed) {
           rc = mdbx_prep_backlog(txn, &couple.outer, 0, nullptr);
           if (unlikely(rc != MDBX_SUCCESS))
             goto bailout;
@@ -12391,7 +12401,7 @@ retry:
       }
       if (unlikely(amount != MDBX_PNL_SIZE(txn->tw.reclaimed_pglist) &&
                    settled)) {
-        mdbx_warning("%s: reclaimed-list changed %u -> %u, retry",
+        mdbx_trace("%s: reclaimed-list changed %u -> %u, retry",
                    dbg_prefix_mode, amount,
                    (unsigned)MDBX_PNL_SIZE(txn->tw.reclaimed_pglist));
         goto retry /* rare case, but avoids GC fragmentation
@@ -12543,6 +12553,7 @@ retry:
             gc_rid = gc_first - 1;
           }
 
+          mdbx_assert(env, !dense_gc);
           rc = mdbx_txl_append(&txn->tw.lifo_reclaimed, gc_rid);
           if (unlikely(rc != MDBX_SUCCESS))
             goto bailout;
@@ -12561,9 +12572,11 @@ retry:
         }
 
         if (need_cleanup || dense_gc) {
+          if (cleaned_gc_slot)
+            mdbx_trace(
+                "%s: restart inner-loop to clear and re-create GC entries",
+                dbg_prefix_mode);
           cleaned_gc_slot = 0;
-          mdbx_trace("%s: restart inner-loop to clear and re-create GC entries",
-                     dbg_prefix_mode);
           continue;
         }
       }
@@ -12697,7 +12710,9 @@ retry:
                chunk);
 
     if (txn->tw.lifo_reclaimed &&
-        unlikely(amount < MDBX_PNL_SIZE(txn->tw.reclaimed_pglist))) {
+        unlikely(amount < MDBX_PNL_SIZE(txn->tw.reclaimed_pglist)) &&
+        (loop < 5 || MDBX_PNL_SIZE(txn->tw.reclaimed_pglist) - amount >
+                         env->me_maxgc_ov1page)) {
       mdbx_notice("** restart: reclaimed-list growth %u -> %u", amount,
                   (unsigned)MDBX_PNL_SIZE(txn->tw.reclaimed_pglist));
       goto retry;
@@ -28696,9 +28711,9 @@ __dll_export
         0,
         11,
         2,
-        30,
-        {"2021-12-28T03:56:55+03:00", "e8d3bea20c203cff5f7f866cdd3d37f4740cf7eb", "5cafc7f2d2eb5286e3364c7ba7a0d42008e7fd99",
-         "v0.11.2-30-g5cafc7f2"},
+        31,
+        {"2021-12-28T14:33:46+03:00", "7fea1c3e4fd2949f6ea898bdbed568bb3bdfa858", "f4eeee837686f036bca21449fffb9ce6dd37a58e",
+         "v0.11.2-31-gf4eeee83"},
         sourcery};
 
 __dll_export
