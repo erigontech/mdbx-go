@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY a24e7985547bdef9d0b060534ecd407f6ea5666c9fa6e1eda45b992e43a4250d_v0_11_3_4_g96e806db
+#define MDBX_BUILD_SOURCERY 02fd7a5a647efe5cb35f6881469a9f6d759b96552fef11e69d512f0a0b87b642_v0_11_3_6_gf29b2ef1
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -9642,6 +9642,48 @@ __cold static int mdbx_wipe_steady(MDBX_env *env, const txnid_t last_steady) {
 #define MDBX_ALLOC_SLOT 8
 #define MDBX_ALLOC_ALL (MDBX_ALLOC_CACHE | MDBX_ALLOC_GC | MDBX_ALLOC_NEW)
 
+#if defined(__GNUC__) && !defined(__LCC__)
+
+#pragma push_macro("mdbx_trace")
+#pragma push_macro("mdbx_debug")
+#pragma push_macro("mdbx_verbose")
+#pragma push_macro("mdbx_notice")
+#pragma push_macro("mdbx_warning")
+#pragma push_macro("mdbx_error")
+#pragma push_macro("mdbx_assert")
+
+#undef mdbx_trace
+#define mdbx_trace(fmt, ...)                                                   \
+  mdbx_debug_log(MDBX_LOG_TRACE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef mdbx_debug
+#define mdbx_debug(fmt, ...)                                                   \
+  mdbx_debug_log(MDBX_LOG_DEBUG, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef mdbx_verbose
+#define mdbx_verbose(fmt, ...)                                                 \
+  mdbx_debug_log(MDBX_LOG_VERBOSE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef mdbx_notice
+#define mdbx_notice(fmt, ...)                                                  \
+  mdbx_debug_log(MDBX_LOG_NOTICE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef mdbx_warning
+#define mdbx_warning(fmt, ...)                                                 \
+  mdbx_debug_log(MDBX_LOG_WARN, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef mdbx_error
+#define mdbx_error(fmt, ...)                                                   \
+  mdbx_debug_log(MDBX_LOG_ERROR, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef mdbx_assert
+#define mdbx_assert(env, expr) mdbx_ensure(env, expr)
+
+#if !defined(__clang__)
+#pragma GCC optimize("-O0")
+#endif
+
+#endif /* GCC only */
 
 __hot static struct page_result mdbx_page_alloc(MDBX_cursor *mc,
                                                 const unsigned num, int flags) {
@@ -10147,6 +10189,21 @@ done:
   return ret;
 }
 
+#if defined(__GNUC__) && !defined(__LCC__)
+
+#pragma pop_macro("mdbx_trace")
+#pragma pop_macro("mdbx_debug")
+#pragma pop_macro("mdbx_verbose")
+#pragma pop_macro("mdbx_notice")
+#pragma pop_macro("mdbx_warning")
+#pragma pop_macro("mdbx_error")
+#pragma pop_macro("mdbx_assert")
+
+#if !defined(__clang__)
+#pragma GCC reset_options
+#endif
+
+#endif /* GCC only */
 
 /* Copy the used portions of a non-overflow page. */
 __hot static void mdbx_page_copy(MDBX_page *dst, const MDBX_page *src,
@@ -12059,6 +12116,48 @@ static __always_inline unsigned backlog_size(MDBX_txn *txn) {
   return MDBX_PNL_SIZE(txn->tw.reclaimed_pglist) + txn->tw.loose_count;
 }
 
+#if defined(__GNUC__) && !defined(__LCC__)
+
+#pragma push_macro("mdbx_trace")
+#pragma push_macro("mdbx_debug")
+#pragma push_macro("mdbx_verbose")
+#pragma push_macro("mdbx_notice")
+#pragma push_macro("mdbx_warning")
+#pragma push_macro("mdbx_error")
+#pragma push_macro("mdbx_assert")
+
+#undef mdbx_trace
+#define mdbx_trace(fmt, ...)                                                   \
+  mdbx_debug_log(MDBX_LOG_TRACE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef mdbx_debug
+#define mdbx_debug(fmt, ...)                                                   \
+  mdbx_debug_log(MDBX_LOG_DEBUG, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef mdbx_verbose
+#define mdbx_verbose(fmt, ...)                                                 \
+  mdbx_debug_log(MDBX_LOG_VERBOSE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef mdbx_notice
+#define mdbx_notice(fmt, ...)                                                  \
+  mdbx_debug_log(MDBX_LOG_NOTICE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef mdbx_warning
+#define mdbx_warning(fmt, ...)                                                 \
+  mdbx_debug_log(MDBX_LOG_WARN, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef mdbx_error
+#define mdbx_error(fmt, ...)                                                   \
+  mdbx_debug_log(MDBX_LOG_ERROR, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef mdbx_assert
+#define mdbx_assert(env, expr) mdbx_ensure(env, expr)
+
+#if !defined(__clang__)
+#pragma GCC optimize("-O0")
+#endif
+
+#endif /* GCC only */
 
 /* LY: Prepare a backlog of pages to modify GC itself,
  * while reclaiming is prohibited. It should be enough to prevent search
@@ -12913,6 +13012,21 @@ bailout_notracking:
   return rc;
 }
 
+#if defined(__GNUC__) && !defined(__LCC__)
+
+#pragma pop_macro("mdbx_trace")
+#pragma pop_macro("mdbx_debug")
+#pragma pop_macro("mdbx_verbose")
+#pragma pop_macro("mdbx_notice")
+#pragma pop_macro("mdbx_warning")
+#pragma pop_macro("mdbx_error")
+#pragma pop_macro("mdbx_assert")
+
+#if !defined(__clang__)
+#pragma GCC reset_options
+#endif
+
+#endif /* GCC only */
 
 static int mdbx_txn_write(MDBX_txn *txn, struct mdbx_iov_ctx *ctx) {
   MDBX_dpl *const dl =
@@ -14097,8 +14211,8 @@ static int mdbx_sync_locked(MDBX_env *env, unsigned flags,
         atomic_load32(&env->me_lck->mti_discarded_tail, mo_Relaxed);
     if (prev_discarded_pgno >=
         discard_edge_pgno + bytes2pgno(env, madvise_threshold)) {
-      mdbx_notice("open-MADV_%s %u..%u", "DONTNEED", prev_discarded_pgno,
-                  largest_pgno);
+      mdbx_notice("open-MADV_%s %u..%u", "DONTNEED",
+                  largest_pgno, prev_discarded_pgno);
       atomic_store32(&env->me_lck->mti_discarded_tail, discard_edge_pgno,
                      mo_Relaxed);
       const size_t prev_discarded_bytes =
@@ -28724,9 +28838,9 @@ __dll_export
         0,
         11,
         3,
-        4,
-        {"2022-01-04T14:11:00+03:00", "b419cb27cf668fe05f4863faa844378ca7bc327a", "96e806dbd91c9057dfa0d96d2039a25716a6af5d",
-         "v0.11.3-4-g96e806db"},
+        6,
+        {"2022-01-04T18:41:53+03:00", "9cd1a6bd3e88e0fc695c7e858905b7f657945b3c", "f29b2ef1d9bc84650c930767488a44eef5cbe955",
+         "v0.11.3-6-gf29b2ef1"},
         sourcery};
 
 __dll_export
