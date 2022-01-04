@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 600bbbf1c32c4b11be806fa80b2ca333cd6df379935ce234ab13aaa0a8c82472_v0_11_3_3_gf54a060b
+#define MDBX_BUILD_SOURCERY a24e7985547bdef9d0b060534ecd407f6ea5666c9fa6e1eda45b992e43a4250d_v0_11_3_4_g96e806db
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -9863,8 +9863,8 @@ no_loose:
         goto fail;
       }
       const unsigned gc_len = MDBX_PNL_SIZE(gc_pnl);
-      if (unlikely(/* resulting list is tool long */ gc_len +
-                       MDBX_PNL_SIZE(txn->tw.reclaimed_pglist) >
+      if (unlikely(/* list is too long already */ MDBX_PNL_SIZE(
+                       txn->tw.reclaimed_pglist) >
                    env->me_options.rp_augment_limit) &&
           ((/* not a slot-request from gc-update */
             (flags & MDBX_ALLOC_SLOT) == 0 &&
@@ -12541,7 +12541,7 @@ retry:
             ++gc_rid;
             rc = mdbx_cursor_get(&couple.outer, &key, &data, MDBX_FIRST);
             if (rc == MDBX_NOTFOUND) {
-              mdbx_debug("%s: GC is empty (goin dense-mode)", dbg_prefix_mode);
+              mdbx_debug("%s: GC is empty (going dense-mode)", dbg_prefix_mode);
               dense_gc = true;
               break;
             }
@@ -12558,7 +12558,7 @@ retry:
             }
             if (gc_first <= MIN_TXNID) {
               mdbx_debug("%s: no free GC's id(s) less than %" PRIaTXN
-                         " (goin dense-mode)",
+                         " (going dense-mode)",
                          dbg_prefix_mode, gc_rid);
               dense_gc = true;
               break;
@@ -12620,7 +12620,7 @@ retry:
           if (gc_rid >= gc_first)
             gc_rid = gc_first - 1;
           if (unlikely(gc_rid == 0)) {
-            mdbx_error("%s", "** no GC tail-space to store (goin dense-mode)");
+            mdbx_error("%s", "** no GC tail-space to store (going dense-mode)");
             dense_gc = true;
             goto retry;
           }
@@ -28724,9 +28724,9 @@ __dll_export
         0,
         11,
         3,
-        3,
-        {"2022-01-03T20:07:05+03:00", "40982af45dc0f10bd02e567f38843c643495d4d5", "f54a060b3891a5e7e8013edc46936ee4c5950517",
-         "v0.11.3-3-gf54a060b"},
+        4,
+        {"2022-01-04T14:11:00+03:00", "b419cb27cf668fe05f4863faa844378ca7bc327a", "96e806dbd91c9057dfa0d96d2039a25716a6af5d",
+         "v0.11.3-4-g96e806db"},
         sourcery};
 
 __dll_export
