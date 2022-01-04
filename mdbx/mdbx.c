@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 59120524744c77ccd4c7c21ad3510c59f0423955a118e4e27b9fc1cd684d9dd8_v0_11_2_30_g6866fa3e
+#define MDBX_BUILD_SOURCERY 600bbbf1c32c4b11be806fa80b2ca333cd6df379935ce234ab13aaa0a8c82472_v0_11_3_3_gf54a060b
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -9642,6 +9642,7 @@ __cold static int mdbx_wipe_steady(MDBX_env *env, const txnid_t last_steady) {
 #define MDBX_ALLOC_SLOT 8
 #define MDBX_ALLOC_ALL (MDBX_ALLOC_CACHE | MDBX_ALLOC_GC | MDBX_ALLOC_NEW)
 
+
 __hot static struct page_result mdbx_page_alloc(MDBX_cursor *mc,
                                                 const unsigned num, int flags) {
   struct page_result ret;
@@ -9682,8 +9683,8 @@ __hot static struct page_result mdbx_page_alloc(MDBX_cursor *mc,
       ret.page = txn->tw.loose_pages;
       txn->tw.loose_pages = ret.page->mp_next;
       txn->tw.loose_count--;
-      mdbx_debug("db %d use loose page %" PRIaPGNO, DDBI(mc),
-                 ret.page->mp_pgno);
+      mdbx_debug_extra("db %d use loose page %" PRIaPGNO, DDBI(mc),
+                       ret.page->mp_pgno);
       mdbx_tassert(txn, ret.page->mp_pgno < txn->mt_next_pgno);
       mdbx_ensure(env, ret.page->mp_pgno >= NUM_METAS);
       VALGRIND_MAKE_MEM_UNDEFINED(page_data(ret.page), page_space(txn->mt_env));
@@ -9865,11 +9866,8 @@ no_loose:
       if (unlikely(/* resulting list is tool long */ gc_len +
                        MDBX_PNL_SIZE(txn->tw.reclaimed_pglist) >
                    env->me_options.rp_augment_limit) &&
-          (((/* not a slot-request from gc-update */
-             (flags & MDBX_ALLOC_SLOT) == 0 ||
-             (flags & MDBX_LIFORECLAIM) == 0 ||
-             (txn->tw.lifo_reclaimed &&
-              MDBX_PNL_SIZE(txn->tw.lifo_reclaimed))) &&
+          ((/* not a slot-request from gc-update */
+            (flags & MDBX_ALLOC_SLOT) == 0 &&
             /* have enough unallocated space */ pgno_add(
                 txn->mt_next_pgno, num) <= txn->mt_geo.upper) ||
            gc_len + MDBX_PNL_SIZE(txn->tw.reclaimed_pglist) >=
@@ -9877,10 +9875,10 @@ no_loose:
         /* Stop reclaiming to avoid overflow the page list.
          * This is a rare case while search for a continuously multi-page region
          * in a large database. https://github.com/erthink/libmdbx/issues/123 */
-        mdbx_debug("stop reclaiming to avoid PNL overflow: %u (current) + %u "
-                   "(chunk) -> %u",
-                   MDBX_PNL_SIZE(txn->tw.reclaimed_pglist), gc_len,
-                   gc_len + MDBX_PNL_SIZE(txn->tw.reclaimed_pglist));
+        mdbx_notice("stop reclaiming to avoid PNL overflow: %u (current) + %u "
+                    "(chunk) -> %u",
+                    MDBX_PNL_SIZE(txn->tw.reclaimed_pglist), gc_len,
+                    gc_len + MDBX_PNL_SIZE(txn->tw.reclaimed_pglist));
         flags &= ~(MDBX_ALLOC_GC | MDBX_COALESCE);
         break;
       }
@@ -9929,6 +9927,7 @@ no_loose:
 
       /* Done for a kick-reclaim mode, actually no page needed */
       if (unlikely(num == 0)) {
+        mdbx_debug("early-return NULL-page for %s mode", "MDBX_ALLOC_SLOT");
         mdbx_assert(env, flags & MDBX_ALLOC_SLOT);
         ret.err = MDBX_SUCCESS;
         ret.page = NULL;
@@ -9936,14 +9935,20 @@ no_loose:
       }
 
       /* Don't try to coalesce too much. */
-      if (re_len /* current size */ > coalesce_threshold ||
-          (re_len > prev_re_len && re_len - prev_re_len /* delta from prev */ >=
-                                       coalesce_threshold / 2))
-        flags &= ~MDBX_COALESCE;
+      if (flags & MDBX_COALESCE) {
+        if (re_len /* current size */ > coalesce_threshold ||
+            (re_len > prev_re_len &&
+             re_len - prev_re_len /* delta from prev */ >=
+                 coalesce_threshold / 2)) {
+          mdbx_trace("clear %s %s", "MDBX_COALESCE", "since got threshold");
+          flags &= ~MDBX_COALESCE;
+        }
+      }
     }
 
     if (F_ISSET(flags, MDBX_COALESCE | MDBX_ALLOC_CACHE)) {
-      flags -= MDBX_COALESCE;
+      mdbx_trace("clear %s and continue", "MDBX_COALESCE");
+      flags &= ~MDBX_COALESCE;
       continue;
     }
 
@@ -10067,6 +10072,12 @@ no_loose:
                                        txn->mt_next_pgno - MDBX_ENABLE_REFUND));
     if (likely(!(flags & MDBX_ALLOC_SLOT)))
       txn->mt_flags |= MDBX_TXN_ERROR;
+    if (num != 1 || ret.err != MDBX_NOTFOUND)
+      mdbx_notice("alloc %u pages failed, flags 0x%x, errcode %d", num, flags,
+                  ret.err);
+    else
+      mdbx_trace("alloc %u pages failed, flags 0x%x, errcode %d", num, flags,
+                 ret.err);
     mdbx_assert(env, ret.err != MDBX_SUCCESS);
     ret.page = NULL;
     return ret;
@@ -10075,6 +10086,7 @@ no_loose:
 done:
   ret.page = NULL;
   if (unlikely(flags & MDBX_ALLOC_SLOT)) {
+    mdbx_debug("return NULL-page for %s mode", "MDBX_ALLOC_SLOT");
     ret.err = MDBX_SUCCESS;
     return ret;
   }
@@ -10134,6 +10146,7 @@ done:
                                      txn->mt_next_pgno - MDBX_ENABLE_REFUND));
   return ret;
 }
+
 
 /* Copy the used portions of a non-overflow page. */
 __hot static void mdbx_page_copy(MDBX_page *dst, const MDBX_page *src,
@@ -12046,6 +12059,7 @@ static __always_inline unsigned backlog_size(MDBX_txn *txn) {
   return MDBX_PNL_SIZE(txn->tw.reclaimed_pglist) + txn->tw.loose_count;
 }
 
+
 /* LY: Prepare a backlog of pages to modify GC itself,
  * while reclaiming is prohibited. It should be enough to prevent search
  * in mdbx_page_alloc() during a deleting, when GC tree is unbalanced. */
@@ -12150,7 +12164,7 @@ retry:
                mdbx_pnl_check4assert(txn->tw.reclaimed_pglist,
                                      txn->mt_next_pgno - MDBX_ENABLE_REFUND));
   mdbx_tassert(txn, mdbx_dirtylist_check(txn));
-  if (unlikely(/* paranoia */ loop > ((MDBX_DEBUG > 0) ? 12 : 42))) {
+  if (unlikely(/* paranoia */ loop > ((MDBX_DEBUG > 0 || 1) ? 12 : 42))) {
     mdbx_error("too more loops %u, bailout", loop);
     rc = MDBX_PROBLEM;
     goto bailout;
@@ -12449,7 +12463,6 @@ retry:
                   reused_gc_slot) *
                      env->me_maxgc_ov1page &&
           !dense_gc) {
-
         /* LY: need just a txn-id for save page list. */
         bool need_cleanup = false;
         txnid_t snap_oldest;
@@ -12528,7 +12541,7 @@ retry:
             ++gc_rid;
             rc = mdbx_cursor_get(&couple.outer, &key, &data, MDBX_FIRST);
             if (rc == MDBX_NOTFOUND) {
-              mdbx_debug("%s: GC is empty", dbg_prefix_mode);
+              mdbx_debug("%s: GC is empty (goin dense-mode)", dbg_prefix_mode);
               dense_gc = true;
               break;
             }
@@ -12544,7 +12557,8 @@ retry:
               goto bailout;
             }
             if (gc_first <= MIN_TXNID) {
-              mdbx_debug("%s: no free GC's id(s) less than %" PRIaTXN,
+              mdbx_debug("%s: no free GC's id(s) less than %" PRIaTXN
+                         " (goin dense-mode)",
                          dbg_prefix_mode, gc_rid);
               dense_gc = true;
               break;
@@ -12606,7 +12620,7 @@ retry:
           if (gc_rid >= gc_first)
             gc_rid = gc_first - 1;
           if (unlikely(gc_rid == 0)) {
-            mdbx_error("%s", "** no GC tail-space to store");
+            mdbx_error("%s", "** no GC tail-space to store (goin dense-mode)");
             dense_gc = true;
             goto retry;
           }
@@ -12898,6 +12912,7 @@ bailout_notracking:
   mdbx_trace("<<< %u loops, rc = %d", loop, rc);
   return rc;
 }
+
 
 static int mdbx_txn_write(MDBX_txn *txn, struct mdbx_iov_ctx *ctx) {
   MDBX_dpl *const dl =
@@ -28708,10 +28723,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         11,
-        2,
-        30,
-        {"2021-12-30T22:12:04+03:00", "02d226c1cff9cc35a0c985f01496dd1ad69891a3", "6866fa3eaaaa8d5159f373ab525c261b8ced5f61",
-         "v0.11.2-30-g6866fa3e"},
+        3,
+        3,
+        {"2022-01-03T20:07:05+03:00", "40982af45dc0f10bd02e567f38843c643495d4d5", "f54a060b3891a5e7e8013edc46936ee4c5950517",
+         "v0.11.3-3-gf54a060b"},
         sourcery};
 
 __dll_export
