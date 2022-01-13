@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 3e4103b449385a20e36fc6dcf148887de2530f966c7c13c4d341c1ff702a56ab_v0_11_3_15_g30b3cc34
+#define MDBX_BUILD_SOURCERY 757bd998673c73fdeb90a6847e17887827be1ee88ca2d374585ec38fbae859af_v0_11_3_17_g1813bf9e
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -6360,7 +6360,8 @@ static __hot int __must_check_result mdbx_pnl_insert_range(MDBX_PNL *ppl,
   return MDBX_SUCCESS;
 }
 
-static bool mdbx_pnl_check(const MDBX_PNL pl, const pgno_t limit) {
+static bool mdbx_pnl_check(const MDBX_PNL pl, const size_t limit) {
+  assert(limit >= MIN_PAGENO - MDBX_ENABLE_REFUND);
   if (likely(MDBX_PNL_SIZE(pl))) {
     assert(MDBX_PNL_LEAST(pl) >= MIN_PAGENO);
     assert(MDBX_PNL_MOST(pl) < limit);
@@ -6383,7 +6384,7 @@ static bool mdbx_pnl_check(const MDBX_PNL pl, const pgno_t limit) {
 }
 
 static __always_inline bool mdbx_pnl_check4assert(const MDBX_PNL pl,
-                                                  const pgno_t limit) {
+                                                  const size_t limit) {
   if (unlikely(pl == nullptr))
     return true;
   assert(MDBX_PNL_ALLOCLEN(pl) >= MDBX_PNL_SIZE(pl));
@@ -11664,7 +11665,8 @@ static void dbi_update(MDBX_txn *txn, int keep) {
 static void mdbx_dpl_sift(MDBX_txn *const txn, MDBX_PNL pl,
                           const bool spilled) {
   if (MDBX_PNL_SIZE(pl) && txn->tw.dirtylist->length) {
-    mdbx_tassert(txn, mdbx_pnl_check4assert(pl, txn->mt_next_pgno << spilled));
+    mdbx_tassert(
+        txn, mdbx_pnl_check4assert(pl, (size_t)txn->mt_next_pgno << spilled));
     MDBX_dpl *dl = mdbx_dpl_sort(txn);
 
     /* Scanning in ascend order */
@@ -13076,7 +13078,8 @@ static __inline void mdbx_txn_merge(MDBX_txn *const parent, MDBX_txn *const txn,
         memmove(sl + 1, sl + 1 + i, len * sizeof(sl[0]));
 #endif
       }
-      mdbx_tassert(txn, mdbx_pnl_check4assert(sl, parent->mt_next_pgno << 1));
+      mdbx_tassert(
+          txn, mdbx_pnl_check4assert(sl, (size_t)parent->mt_next_pgno << 1));
 
       /* Remove reclaimed pages from parent's spill list */
       s = MDBX_PNL_SIZE(sl), r = MDBX_PNL_SIZE(reclaimed_list);
@@ -13138,7 +13141,7 @@ static __inline void mdbx_txn_merge(MDBX_txn *const parent, MDBX_txn *const txn,
   /* Remove anything in our spill list from parent's dirty list */
   if (txn->tw.spill_pages) {
     mdbx_tassert(txn, mdbx_pnl_check4assert(txn->tw.spill_pages,
-                                            parent->mt_next_pgno << 1));
+                                            (size_t)parent->mt_next_pgno << 1));
     mdbx_dpl_sift(parent, txn->tw.spill_pages, true);
     mdbx_tassert(parent,
                  parent->tw.dirtyroom + parent->tw.dirtylist->length ==
@@ -13302,7 +13305,7 @@ static __inline void mdbx_txn_merge(MDBX_txn *const parent, MDBX_txn *const txn,
   parent->mt_flags &= ~MDBX_TXN_HAS_CHILD;
   if (parent->tw.spill_pages) {
     assert(mdbx_pnl_check4assert(parent->tw.spill_pages,
-                                 parent->mt_next_pgno << 1));
+                                 (size_t)parent->mt_next_pgno << 1));
     if (MDBX_PNL_SIZE(parent->tw.spill_pages))
       parent->mt_flags |= MDBX_TXN_SPILLS;
   }
@@ -28741,9 +28744,9 @@ __dll_export
         0,
         11,
         3,
-        15,
-        {"2022-01-08T20:22:04+03:00", "597720099e5b61e478f088703ecd43b59b469024", "30b3cc3407b20f348d350acce97079f98a2761ea",
-         "v0.11.3-15-g30b3cc34"},
+        17,
+        {"2022-01-13T15:42:00+03:00", "1daeefdde8269df153b21a534f9868e095d7f45a", "1813bf9e53f9683b4674f8c2625eb30e8a974ee2",
+         "v0.11.3-17-g1813bf9e"},
         sourcery};
 
 __dll_export
