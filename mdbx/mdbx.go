@@ -137,13 +137,16 @@ package mdbx
 #cgo windows LDFLAGS: -lntdll
 #cgo linux LDFLAGS: -lrt
 */
-// to change build flags do:
-// CGO_CFLAGS="${CGO_CFLAGS} -DMDBX_DEBUG=1" make erigon
-// or
-// CGO_CFLAGS="${CGO_CFLAGS} -DMDBX_DEBUG=1 -DMDBX_FORCE_ASSERTIONS=1" go run ./cmd/erigon
-// can add -v to see CC output
-// CGO_CFLAGS="${CGO_CFLAGS} -DMDBX_DEBUG=1 -DMDBX_FORCE_ASSERTIONS=1 -v" go run ./cmd/erigon
 import "C"
+
+/*
+to change build flags do:
+CGO_CFLAGS="${CGO_CFLAGS} -DMDBX_DEBUG=1" make erigon
+or
+CGO_CFLAGS="${CGO_CFLAGS} -DMDBX_DEBUG=1 -DMDBX_FORCE_ASSERTIONS=1" go run ./cmd/erigon
+can add -v to see CC output
+CGO_CFLAGS="${CGO_CFLAGS} -DMDBX_DEBUG=1 -DMDBX_FORCE_ASSERTIONS=1 -v" go run ./cmd/erigon
+*/
 
 // Version return the major, minor, and patch version numbers of the LMDB C
 // library and a string representation of the version.
