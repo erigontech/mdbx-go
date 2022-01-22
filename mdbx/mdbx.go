@@ -131,12 +131,18 @@ details about dealing with such situations.
 package mdbx
 
 /*
-#cgo !windows CFLAGS: -O2 -g -DMDBX_BUILD_FLAGS='' -DMDBX_DEBUG=0 -DNDEBUG=1 -std=gnu11 -fvisibility=hidden -ffast-math  -fPIC -pthread -Wno-error=attributes -W -Wall -Werror -Wextra -Wpedantic -Wno-deprecated-declarations -Wno-format -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-format-extra-args -Wno-missing-field-initializers
-#cgo windows CFLAGS:  -O2 -g -DMDBX_BUILD_FLAGS='' -DMDBX_DEBUG=0 -DNDEBUG=1 -std=gnu11 -fvisibility=hidden -ffast-math -fexceptions -fno-common -W -Wno-deprecated-declarations -Wno-bad-function-cast -Wno-cast-function-type -Wall -Wno-format -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-format-extra-args -Wno-missing-field-initializers
+#cgo !windows CFLAGS: -O2 -g -DMDBX_BUILD_FLAGS='' -DNDEBUG=1 -std=gnu11 -fvisibility=hidden -ffast-math  -fPIC -pthread -Wno-error=attributes -W -Wall -Werror -Wextra -Wpedantic -Wno-deprecated-declarations -Wno-format -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-format-extra-args -Wno-missing-field-initializers
+#cgo windows CFLAGS:  -O2 -g -DMDBX_BUILD_FLAGS='' -DNDEBUG=1 -std=gnu11 -fvisibility=hidden -ffast-math -fexceptions -fno-common -W -Wno-deprecated-declarations -Wno-bad-function-cast -Wno-cast-function-type -Wall -Wno-format -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-format-extra-args -Wno-missing-field-initializers
 
 #cgo windows LDFLAGS: -lntdll
 #cgo linux LDFLAGS: -lrt
 */
+// to change build flags do:
+// CGO_CFLAGS="${CGO_CFLAGS} -DMDBX_DEBUG=1 -DMDBX_FORCE_ASSERTIONS=1" make erigon
+// or
+// CGO_CFLAGS="${CGO_CFLAGS} -DMDBX_DEBUG=1 -DMDBX_FORCE_ASSERTIONS=1" go run ./cmd/erigon
+// can add -v to see CC output
+// CGO_CFLAGS="${CGO_CFLAGS} -DMDBX_DEBUG=1 -DMDBX_FORCE_ASSERTIONS=1 -v" go run ./cmd/erigon
 import "C"
 
 // Version return the major, minor, and patch version numbers of the LMDB C
