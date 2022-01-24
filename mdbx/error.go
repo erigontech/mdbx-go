@@ -76,7 +76,16 @@ const (
 // other values may still be produced.
 const minErrno, maxErrno C.int = C.MDBX_KEYEXIST, C.MDBX_LAST_ADDED_ERRCODE
 
+const hardwareRecommendations = "Likely because hardware failure. Before creating issue please use tools like https://www.memtest86.com to test RAM and tools like https://www.smartmontools.org to test Disk. To handle hardware risks: use ECC RAM, use RAID of disks, do backups, test backups restore. If hardware checks passed - check FS settings - 'fsync' and 'flock' must be enabled. Otherwise - likely it's our bug - please create issue."
+const coredumpRecommendations = "Otherwise - likely it's our bug - please create issue." // with backtrace or coredump. To create coredump set compile option 'MDBX_FORCE_ASSERTIONS=1' and env variable 'GOTRACEBACK=crash'."
+const recoveryRecommendations = "On default DURABLE mode, power outage can't cause this error. On other modes - power outage may break last transaction and mdbx_chk can recover db in this case, see '-t' and '-0|1|2' options."
+
 func (e Errno) Error() string {
+	if e == Corrupted {
+		return "MDBX_CORRUPTED: " + hardwareRecommendations + " " + coredumpRecommendations + " " + recoveryRecommendations
+	} else if e == Panic {
+		return "MDBX_PANIC: " + hardwareRecommendations + " " + coredumpRecommendations + " " + recoveryRecommendations
+	}
 	return C.GoString(C.mdbx_strerror(C.int(e)))
 }
 
