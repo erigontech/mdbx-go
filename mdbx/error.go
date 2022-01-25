@@ -76,7 +76,7 @@ const (
 // other values may still be produced.
 const minErrno, maxErrno C.int = C.MDBX_KEYEXIST, C.MDBX_LAST_ADDED_ERRCODE
 
-const hardwareRecommendations = "Likely because hardware failure. Before creating issue please use tools like https://www.memtest86.com to test RAM and tools like https://www.smartmontools.org to test Disk. To handle hardware risks: use ECC RAM, use RAID of disks, do backups, test backups restore. If hardware checks passed - check FS settings - 'fsync' and 'flock' must be enabled. "
+const hardwareRecommendations = "Likely because hardware failure. Before creating issue please use tools like https://www.memtest86.com to test RAM and tools like https://www.smartmontools.org to test Disk. To handle hardware risks: use ECC RAM, use RAID of disks, run multiple application instances (or do backups). If hardware checks passed - check FS settings - 'fsync' and 'flock' must be enabled. "
 const coredumpRecommendations = "Otherwise - please create issue in Application repo." // with backtrace or coredump. To create coredump set compile option 'MDBX_FORCE_ASSERTIONS=1' and env variable 'GOTRACEBACK=crash'."
 const recoveryRecommendations = "On default DURABLE mode, power outage can't cause this error. On other modes - power outage may break last transaction and mdbx_chk can recover db in this case, see '-t' and '-0|1|2' options."
 
