@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY d90ed39370dcf87c2583ee526adaaa73117ae769f1726faabd25fc6b4e8c02ee_v0_11_4_8_g72bc655e
+#define MDBX_BUILD_SOURCERY 3324942d7515f285b94e56d8c726b0c94ac72f7402a20327c6e0e366d722c26e_v0_11_4_11_g77f236db
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2993,25 +2993,21 @@ MDBX_INTERNAL_FUNC void mdbx_debug_log_va(int level, const char *function,
                                           int line, const char *fmt,
                                           va_list args);
 
-#define mdbx_log_enabled(msg) unlikely(msg <= mdbx_loglevel)
-
 #if MDBX_DEBUG
-
-#define mdbx_assert_enabled() unlikely(mdbx_runtime_flags &MDBX_DBG_ASSERT)
-
-#define mdbx_audit_enabled() unlikely(mdbx_runtime_flags &MDBX_DBG_AUDIT)
-
+#define mdbx_log_enabled(msg) unlikely(msg <= mdbx_loglevel)
+#define mdbx_audit_enabled() unlikely((mdbx_runtime_flags & MDBX_DBG_AUDIT))
 #else /* MDBX_DEBUG */
-
+#define mdbx_log_enabled(msg) (msg < MDBX_LOG_VERBOSE && msg <= mdbx_loglevel)
 #define mdbx_audit_enabled() (0)
+#endif /* MDBX_DEBUG */
 
-#if !defined(NDEBUG) || MDBX_FORCE_ASSERTIONS
+#if MDBX_FORCE_ASSERTIONS
 #define mdbx_assert_enabled() (1)
+#elif MDBX_DEBUG
+#define mdbx_assert_enabled() likely((mdbx_runtime_flags & MDBX_DBG_ASSERT))
 #else
 #define mdbx_assert_enabled() (0)
-#endif /* NDEBUG */
-
-#endif /* MDBX_DEBUG */
+#endif /* assertions */
 
 #if !MDBX_DEBUG && defined(__ANDROID_API__)
 #define mdbx_assert_fail(env, msg, func, line)                                 \
@@ -3023,33 +3019,33 @@ void mdbx_assert_fail(const MDBX_env *env, const char *msg, const char *func,
 
 #define mdbx_debug_extra(fmt, ...)                                             \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_EXTRA))                        \
+    if (mdbx_log_enabled(MDBX_LOG_EXTRA))                                      \
       mdbx_debug_log(MDBX_LOG_EXTRA, __func__, __LINE__, fmt, __VA_ARGS__);    \
   } while (0)
 
 #define mdbx_debug_extra_print(fmt, ...)                                       \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_EXTRA))                        \
+    if (mdbx_log_enabled(MDBX_LOG_EXTRA))                                      \
       mdbx_debug_log(MDBX_LOG_EXTRA, NULL, 0, fmt, __VA_ARGS__);               \
   } while (0)
 
 #define mdbx_trace(fmt, ...)                                                   \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_TRACE))                        \
+    if (mdbx_log_enabled(MDBX_LOG_TRACE))                                      \
       mdbx_debug_log(MDBX_LOG_TRACE, __func__, __LINE__, fmt "\n",             \
                      __VA_ARGS__);                                             \
   } while (0)
 
 #define mdbx_debug(fmt, ...)                                                   \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_DEBUG))                        \
+    if (mdbx_log_enabled(MDBX_LOG_DEBUG))                                      \
       mdbx_debug_log(MDBX_LOG_DEBUG, __func__, __LINE__, fmt "\n",             \
                      __VA_ARGS__);                                             \
   } while (0)
 
 #define mdbx_verbose(fmt, ...)                                                 \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_VERBOSE))                      \
+    if (mdbx_log_enabled(MDBX_LOG_VERBOSE))                                    \
       mdbx_debug_log(MDBX_LOG_VERBOSE, __func__, __LINE__, fmt "\n",           \
                      __VA_ARGS__);                                             \
   } while (0)
@@ -10159,8 +10155,8 @@ no_loose:
         mdbx_error("unable growth datafile to %zu pages (+%zu), errcode %d",
                    aligned, aligned - txn->mt_end_pgno, ret.err);
       } else {
-        mdbx_debug("gc-alloc: next %zu > upper %" PRIaPGNO, next,
-                   txn->mt_geo.upper);
+        mdbx_notice("gc-alloc: next %zu > upper %" PRIaPGNO, next,
+                    txn->mt_geo.upper);
       }
     }
 
@@ -12183,7 +12179,7 @@ static int mdbx_prep_backlog(MDBX_txn *txn, MDBX_cursor *gc_cursor,
 
   MDBX_val gc_key, fake_val;
   int err;
-  if (linear4list < 2) {
+  if (unlikely(linear4list > 2)) {
     gc_key.iov_base = fake_val.iov_base = nullptr;
     gc_key.iov_len = sizeof(txnid_t);
     fake_val.iov_len = pnl_bytes;
@@ -12196,7 +12192,7 @@ static int mdbx_prep_backlog(MDBX_txn *txn, MDBX_cursor *gc_cursor,
   err = mdbx_cursor_touch(gc_cursor);
   mdbx_trace("== after-touch, backlog %u, err %d", backlog_size(txn), err);
 
-  if (linear4list > 1 && err == MDBX_SUCCESS) {
+  if (unlikely(linear4list > 1) && err == MDBX_SUCCESS) {
     if (retired_stored) {
       gc_key.iov_base = &txn->mt_txnid;
       gc_key.iov_len = sizeof(txn->mt_txnid);
@@ -12371,7 +12367,7 @@ retry:
         }
         if (cleaned_gc_id > txn->tw.last_reclaimed)
           break;
-        if (likely(!dense_gc) && cleaned_gc_id < txn->tw.last_reclaimed) {
+        if (likely(!dense_gc)) {
           rc = mdbx_prep_backlog(txn, &couple.outer, 0, nullptr);
           if (unlikely(rc != MDBX_SUCCESS))
             goto bailout;
@@ -24181,8 +24177,8 @@ __cold static txnid_t mdbx_kick_longlived_readers(MDBX_env *env,
     const uint64_t head_retired =
         unaligned_peek_u64(4, head_meta->mm_pages_retired);
     const size_t space =
-        (oldest_retired > head_retired)
-            ? pgno2bytes(env, (pgno_t)(oldest_retired - head_retired))
+        (head_retired > oldest_retired)
+            ? pgno2bytes(env, (pgno_t)(head_retired - oldest_retired))
             : 0;
     int rc = env->me_hsr_callback(
         env, env->me_txn, pid, (mdbx_tid_t)tid, laggard,
@@ -28888,9 +28884,9 @@ __dll_export
         0,
         11,
         4,
-        8,
-        {"2022-02-15T18:11:31+03:00", "e71f57a11e1e941b7dd0ffee74027348c081fa76", "72bc655eceed2e530ecd800ec0644cc7c9b60bdc",
-         "v0.11.4-8-g72bc655e"},
+        11,
+        {"2022-02-17T02:30:16+03:00", "008e5a591967669fc00b482b06f86c145cd4984f", "77f236db2a25cd38956478b73072b703128fb4e3",
+         "v0.11.4-11-g77f236db"},
         sourcery};
 
 __dll_export
