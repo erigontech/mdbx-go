@@ -784,36 +784,51 @@ enum MDBX_constants {
  * \note Most of debug feature enabled only when libmdbx builded with
  * \ref MDBX_DEBUG build option. @{ */
 
-/** Log level (requires build libmdbx with \ref MDBX_DEBUG option) */
+/** Log level
+ * \note Levels detailed than (great than) \ref MDBX_LOG_NOTICE
+ * requires build libmdbx with \ref MDBX_DEBUG option. */
 enum MDBX_log_level_t {
-  /** Critical conditions, i.e. assertion failures */
+  /** Critical conditions, i.e. assertion failures.
+   * \note libmdbx always produces such messages regardless
+   * of \ref MDBX_DEBUG build option. */
   MDBX_LOG_FATAL = 0,
 
-  /** Enables logging for error conditions and \ref MDBX_LOG_FATAL */
+  /** Enables logging for error conditions
+   * and \ref MDBX_LOG_FATAL.
+   * \note libmdbx always produces such messages regardless
+   * of \ref MDBX_DEBUG build option. */
   MDBX_LOG_ERROR = 1,
 
-  /** Enables logging for warning conditions and \ref MDBX_LOG_ERROR ...
-      \ref MDBX_LOG_FATAL */
+  /** Enables logging for warning conditions
+   * and \ref MDBX_LOG_ERROR ... \ref MDBX_LOG_FATAL.
+   * \note libmdbx always produces such messages regardless
+   * of \ref MDBX_DEBUG build option. */
   MDBX_LOG_WARN = 2,
 
-  /** Enables logging for normal but significant condition and
-      \ref MDBX_LOG_WARN ... \ref MDBX_LOG_FATAL */
+  /** Enables logging for normal but significant condition
+   * and \ref MDBX_LOG_WARN ... \ref MDBX_LOG_FATAL.
+   * \note libmdbx always produces such messages regardless
+   * of \ref MDBX_DEBUG build option. */
   MDBX_LOG_NOTICE = 3,
 
-  /** Enables logging for verbose informational and \ref MDBX_LOG_NOTICE ...
-      \ref MDBX_LOG_FATAL */
+  /** Enables logging for verbose informational
+   * and \ref MDBX_LOG_NOTICE ... \ref MDBX_LOG_FATAL.
+   * \note Requires build libmdbx with \ref MDBX_DEBUG option. */
   MDBX_LOG_VERBOSE = 4,
 
-  /** Enables logging for debug-level messages and \ref MDBX_LOG_VERBOSE ...
-      \ref MDBX_LOG_FATAL */
+  /** Enables logging for debug-level messages
+   * and \ref MDBX_LOG_VERBOSE ... \ref MDBX_LOG_FATAL.
+   * \note Requires build libmdbx with \ref MDBX_DEBUG option. */
   MDBX_LOG_DEBUG = 5,
 
-  /** Enables logging for trace debug-level messages and \ref MDBX_LOG_DEBUG ...
-      \ref MDBX_LOG_FATAL */
+  /** Enables logging for trace debug-level messages
+   * and \ref MDBX_LOG_DEBUG ... \ref MDBX_LOG_FATAL.
+   * \note Requires build libmdbx with \ref MDBX_DEBUG option. */
   MDBX_LOG_TRACE = 6,
 
   /** Enables extra debug-level messages (dump pgno lists)
-      and all other log-messages */
+   * and all other log-messages.
+   * \note Requires build libmdbx with \ref MDBX_DEBUG option. */
   MDBX_LOG_EXTRA = 7,
 
 #ifdef ENABLE_UBSAN
@@ -836,15 +851,16 @@ enum MDBX_debug_flags_t {
   MDBX_DBG_NONE = 0,
 
   /** Enable assertion checks.
-   * Requires build with \ref MDBX_DEBUG > 0 */
+   * \note Always enabled for builds with `MDBX_FORCE_ASSERTIONS` option,
+   * otherwise requires build with \ref MDBX_DEBUG > 0 */
   MDBX_DBG_ASSERT = 1,
 
   /** Enable pages usage audit at commit transactions.
-   * Requires build with \ref MDBX_DEBUG > 0 */
+   * \note Requires build with \ref MDBX_DEBUG > 0 */
   MDBX_DBG_AUDIT = 2,
 
   /** Enable small random delays in critical points.
-   * Requires build with \ref MDBX_DEBUG > 0 */
+   * \note Requires build with \ref MDBX_DEBUG > 0 */
   MDBX_DBG_JITTER = 4,
 
   /** Include or not meta-pages in coredump files.
@@ -2690,17 +2706,18 @@ LIBMDBX_API int mdbx_env_get_fd(const MDBX_env *env, mdbx_filehandle_t *fd);
  * it is reasonable to know some details in order to make optimal decisions
  * when choosing parameters.
  *
- * Both \ref mdbx_env_info_ex() and legacy \ref mdbx_env_info() are inapplicable
- * to read-only opened environment.
+ * Both \ref mdbx_env_set_geometry() and legacy \ref mdbx_env_set_mapsize() are
+ * inapplicable to read-only opened environment.
  *
- * Both \ref mdbx_env_info_ex() and legacy \ref mdbx_env_info() could be called
- * either before or after \ref mdbx_env_open(), either within the write
- * transaction running by current thread or not:
+ * Both \ref mdbx_env_set_geometry() and legacy \ref mdbx_env_set_mapsize()
+ * could be called either before or after \ref mdbx_env_open(), either within
+ * the write transaction running by current thread or not:
  *
- *  - In case \ref mdbx_env_info_ex() or legacy \ref mdbx_env_info() was called
- *    BEFORE \ref mdbx_env_open(), i.e. for closed environment, then the
- *    specified parameters will be used for new database creation, or will be
- *    applied during opening if database exists and no other process using it.
+ *  - In case \ref mdbx_env_set_geometry() or legacy \ref mdbx_env_set_mapsize()
+ *    was called BEFORE \ref mdbx_env_open(), i.e. for closed environment, then
+ *    the specified parameters will be used for new database creation,
+ *    or will be applied during opening if database exists and no other process
+ *    using it.
  *
  *    If the database is already exist, opened with \ref MDBX_EXCLUSIVE or not
  *    used by any other process, and parameters specified by
@@ -2713,64 +2730,65 @@ LIBMDBX_API int mdbx_env_get_fd(const MDBX_env *env, mdbx_filehandle_t *fd);
  *    silently discarded (open the database with \ref MDBX_EXCLUSIVE flag
  *    to avoid this).
  *
- *  - In case \ref mdbx_env_info_ex() or legacy \ref mdbx_env_info() was called
- *    after \ref mdbx_env_open() WITHIN the write transaction running by current
- *    thread, then specified parameters will be applied as a part of write
- *    transaction, i.e. will not be visible to any others processes until the
- *    current write transaction has been committed by the current process.
- *    However, if transaction will be aborted, then the database file will be
- *    reverted to the previous size not immediately, but when a next transaction
- *    will be committed or when the database will be opened next time.
+ *  - In case \ref mdbx_env_set_geometry() or legacy \ref mdbx_env_set_mapsize()
+ *    was called after \ref mdbx_env_open() WITHIN the write transaction running
+ *    by current thread, then specified parameters will be applied as a part of
+ *    write transaction, i.e. will not be completely visible to any others
+ *    processes until the current write transaction has been committed by the
+ *    current process. However, if transaction will be aborted, then the
+ *    database file will be reverted to the previous size not immediately, but
+ *    when a next transaction will be committed or when the database will be
+ *    opened next time.
  *
- *  - In case \ref mdbx_env_info_ex() or legacy \ref mdbx_env_info() was called
- *    after \ref mdbx_env_open() but OUTSIDE a write transaction, then MDBX will
- *    execute internal pseudo-transaction to apply new parameters (but only if
- *    anything has been changed), and changes be visible to any others processes
- *    immediately after succesful completion of function.
+ *  - In case \ref mdbx_env_set_geometry() or legacy \ref mdbx_env_set_mapsize()
+ *    was called after \ref mdbx_env_open() but OUTSIDE a write transaction,
+ *    then MDBX will execute internal pseudo-transaction to apply new parameters
+ *    (but only if anything has been changed), and changes be visible to any
+ *    others processes immediately after succesful completion of function.
  *
  * Essentially a concept of "automatic size management" is simple and useful:
- *  - There are the lower and upper bound of the database file size;
+ *  - There are the lower and upper bounds of the database file size;
  *  - There is the growth step by which the database file will be increased,
- *    in case of lack of space.
+ *    in case of lack of space;
  *  - There is the threshold for unused space, beyond which the database file
- *    will be shrunk.
- *  - The size of the memory map is also the maximum size of the database.
+ *    will be shrunk;
+ *  - The size of the memory map is also the maximum size of the database;
  *  - MDBX will automatically manage both the size of the database and the size
  *    of memory map, according to the given parameters.
  *
  * So, there some considerations about choosing these parameters:
- *  - The lower bound allows you to prevent database shrinking below some
- *    rational size to avoid unnecessary resizing costs.
- *  - The upper bound allows you to prevent database growth above some rational
- *    size. Besides, the upper bound defines the linear address space
+ *  - The lower bound allows you to prevent database shrinking below certain
+ *    reasonable size to avoid unnecessary resizing costs.
+ *  - The upper bound allows you to prevent database growth above certain
+ *    reasonable size. Besides, the upper bound defines the linear address space
  *    reservation in each process that opens the database. Therefore changing
  *    the upper bound is costly and may be required reopening environment in
  *    case of \ref MDBX_UNABLE_EXTEND_MAPSIZE errors, and so on. Therefore, this
- *    value should be chosen reasonable as large as possible, to accommodate
- *    future growth of the database.
+ *    value should be chosen reasonable large, to accommodate future growth of
+ *    the database.
  *  - The growth step must be greater than zero to allow the database to grow,
  *    but also reasonable not too small, since increasing the size by little
  *    steps will result a large overhead.
  *  - The shrink threshold must be greater than zero to allow the database
  *    to shrink but also reasonable not too small (to avoid extra overhead) and
  *    not less than growth step to avoid up-and-down flouncing.
- *  - The current size (i.e. size_now argument) is an auxiliary parameter for
+ *  - The current size (i.e. `size_now` argument) is an auxiliary parameter for
  *    simulation legacy \ref mdbx_env_set_mapsize() and as workaround Windows
  *    issues (see below).
  *
- * Unfortunately, Windows has is a several issues
+ * Unfortunately, Windows has is a several issue
  * with resizing of memory-mapped file:
  *  - Windows unable shrinking a memory-mapped file (i.e memory-mapped section)
  *    in any way except unmapping file entirely and then map again. Moreover,
- *    it is impossible in any way if a memory-mapped file is used more than
+ *    it is impossible in any way when a memory-mapped file is used more than
  *    one process.
  *  - Windows does not provide the usual API to augment a memory-mapped file
- *    (that is, a memory-mapped partition), but only by using "Native API"
+ *    (i.e. a memory-mapped partition), but only by using "Native API"
  *    in an undocumented way.
  *
  * MDBX bypasses all Windows issues, but at a cost:
  *  - Ability to resize database on the fly requires an additional lock
- *    and release `SlimReadWriteLock during` each read-only transaction.
+ *    and release `SlimReadWriteLock` during each read-only transaction.
  *  - During resize all in-process threads should be paused and then resumed.
  *  - Shrinking of database file is performed only when it used by single
  *    process, i.e. when a database closes by the last process or opened
@@ -2781,7 +2799,7 @@ LIBMDBX_API int mdbx_env_get_fd(const MDBX_env *env, mdbx_filehandle_t *fd);
  *
  * For create a new database with particular parameters, including the page
  * size, \ref mdbx_env_set_geometry() should be called after
- * \ref mdbx_env_create() and before mdbx_env_open(). Once the database is
+ * \ref mdbx_env_create() and before \ref mdbx_env_open(). Once the database is
  * created, the page size cannot be changed. If you do not specify all or some
  * of the parameters, the corresponding default values will be used. For
  * instance, the default for database size is 10485760 bytes.
@@ -4896,7 +4914,9 @@ LIBMDBX_API int mdbx_thread_unregister(const MDBX_env *env);
  * is not enough space in the database (i.e. before increasing the database size
  * or before \ref MDBX_MAP_FULL error) and thus can be used to resolve issues
  * with a "long-lived" read transactions.
- * \see long-lived-read
+ * \see mdbx_env_set_hsr()
+ * \see mdbx_env_get_hsr()
+ * \see <a href="intro.html#long-lived-read">Long-lived read transactions</a>
  *
  * Using this callback you can choose how to resolve the situation:
  *   - abort the write transaction with an error;
@@ -4954,8 +4974,6 @@ LIBMDBX_API int mdbx_thread_unregister(const MDBX_env *env);
  *
  * \retval 2 or great  The reader process was terminated or killed,
  *                     and libmdbx should entirely reset reader registration.
- *
- * \see mdbx_env_set_hsr() \see mdbx_env_get_hsr()
  */
 typedef int(MDBX_hsr_func)(const MDBX_env *env, const MDBX_txn *txn,
                            mdbx_pid_t pid, mdbx_tid_t tid, uint64_t laggard,
@@ -4969,8 +4987,9 @@ typedef int(MDBX_hsr_func)(const MDBX_env *env, const MDBX_txn *txn,
  * The callback will only be triggered when the database is full due to a
  * reader(s) prevents the old data from being recycled.
  *
+ * \see MDBX_hsr_func
  * \see mdbx_env_get_hsr()
- * \see long-lived-read
+ * \see <a href="intro.html#long-lived-read">Long-lived read transactions</a>
  *
  * \param [in] env             An environment handle returned
  *                             by \ref mdbx_env_create().
@@ -4983,7 +5002,9 @@ LIBMDBX_API int mdbx_env_set_hsr(MDBX_env *env, MDBX_hsr_func *hsr_callback);
 /** \brief Gets current Handle-Slow-Readers callback used to resolve database
  * full/overflow issue due to a reader(s) which prevents the old data from being
  * recycled.
+ * \see MDBX_hsr_func
  * \see mdbx_env_set_hsr()
+ * \see <a href="intro.html#long-lived-read">Long-lived read transactions</a>
  *
  * \param [in] env   An environment handle returned by \ref mdbx_env_create().
  *
