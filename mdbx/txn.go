@@ -208,10 +208,6 @@ type CommitLatency struct {
 	Whole       time.Duration
 }
 
-func toDuration(seconds16dot16 C.uint32_t) time.Duration {
-	return time.Duration((uint64(1000000000)*uint64(seconds16dot16) + 32768) >> 16)
-}
-
 func (txn *Txn) commit() (CommitLatency, error) {
 	var _stat C.MDBX_commit_latency
 	ret := C.mdbx_txn_commit_ex(txn._txn, &_stat)
