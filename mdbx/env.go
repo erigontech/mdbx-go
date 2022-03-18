@@ -156,6 +156,8 @@ func (env *Env) Open(path string, flags uint, mode os.FileMode) error {
 
 var errNotOpen = errors.New("enivornment is not open")
 
+/* TODO: fix error: cannot convert *mf (variable of type _Ctype_HANDLE) to type uintptr
+
 // FD returns the open file descriptor (or Windows file handle) for the given
 // environment.  An error is returned if the environment has not been
 // successfully Opened (where C API just retruns an invalid handle).
@@ -180,6 +182,7 @@ func (env *Env) FD() (uintptr, error) {
 	}
 	return fd, nil
 }
+*/
 
 // ReaderList dumps the contents of the reader lock table as text.  Readers
 // start on the second line as space-delimited fields described by the first
