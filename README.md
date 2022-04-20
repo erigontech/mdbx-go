@@ -124,7 +124,7 @@ On FreeBSD 10, you must explicitly set `CC` (otherwise it will fail with a crypt
 - [The MDBX](https://erthink.github.io/libmdbx/) And even better if read
   through [mdbx.h](https://github.com/erthink/libmdbx/blob/master/mdbx.h).
 - [godoc.org](https://godoc.org/github.com/torquem-ch/mdbx-go)
-- [The LMDB](http://symas.com/mdb/)
+- [The LMDB](http://symas.com/lmdb/)
 
 ### Versioning and Stability
 
