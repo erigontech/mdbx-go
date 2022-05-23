@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 39b6071ad8f7f400fb54fb892606c3b7f175d5ff9dfc5c2dd5c90e65e5de03b8_v0_11_7_24_g9230201c
+#define MDBX_BUILD_SOURCERY c765adc8e5de10743dab736fccb2a4737b3b120f5937e54c41f80b5ab18e0c80_v0_11_7_35_g5d2eb580
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -144,8 +144,6 @@
  * <http://www.OpenLDAP.org/license.html>.
  */
 
-/* *INDENT-OFF* */
-/* clang-format off */
 
 #ifndef __GNUC_PREREQ
 #   if defined(__GNUC__) && defined(__GNUC_MINOR__)
@@ -479,8 +477,6 @@
 #   define STATIC_ASSERT(expr) STATIC_ASSERT_MSG(expr, #expr)
 #endif
 
-/* *INDENT-ON* */
-/* clang-format on */
 
 #if defined(__GNUC__) && !__GNUC_PREREQ(4, 2)
 /* Actually libmdbx was not tested with compilers older than GCC 4.2.
@@ -727,12 +723,8 @@ typedef struct {
 typedef CRITICAL_SECTION mdbx_fastmutex_t;
 
 #if !defined(_MSC_VER) && !defined(__try)
-/* *INDENT-OFF* */
-/* clang-format off */
 #define __try
 #define __except(COND) if(false)
-/* *INDENT-ON* */
-/* clang-format on */
 #endif /* stub for MSVC's __try/__except */
 
 #if MDBX_WITHOUT_MSVC_CRT
@@ -827,8 +819,6 @@ typedef pthread_mutex_t mdbx_fastmutex_t;
 #endif
 #endif /* Android */
 
-/* *INDENT-OFF* */
-/* clang-format off */
 #if defined(HAVE_SYS_STAT_H) || __has_include(<sys/stat.h>)
 #include <sys/stat.h>
 #endif
@@ -838,8 +828,6 @@ typedef pthread_mutex_t mdbx_fastmutex_t;
 #if defined(HAVE_SYS_FILE_H) || __has_include(<sys/file.h>)
 #include <sys/file.h>
 #endif
-/* *INDENT-ON* */
-/* clang-format on */
 
 #ifndef SSIZE_MAX
 #define SSIZE_MAX INTPTR_MAX
@@ -933,8 +921,6 @@ typedef pthread_mutex_t mdbx_fastmutex_t;
 #if !defined(__BYTE_ORDER__) || !defined(__ORDER_LITTLE_ENDIAN__) ||           \
     !defined(__ORDER_BIG_ENDIAN__)
 
-/* *INDENT-OFF* */
-/* clang-format off */
 #if defined(__GLIBC__) || defined(__GNU_LIBRARY__) || defined(__ANDROID_API__) ||  \
     defined(HAVE_ENDIAN_H) || __has_include(<endian.h>)
 #include <endian.h>
@@ -952,8 +938,6 @@ typedef pthread_mutex_t mdbx_fastmutex_t;
     defined(HAVE_SYS_PARAM_H) || __has_include(<sys/param.h>)
 #include <sys/param.h>
 #endif /* OS */
-/* *INDENT-ON* */
-/* clang-format on */
 
 #if defined(__BYTE_ORDER) && defined(__LITTLE_ENDIAN) && defined(__BIG_ENDIAN)
 #define __ORDER_LITTLE_ENDIAN__ __LITTLE_ENDIAN
@@ -3220,7 +3204,7 @@ MDBX_INTERNAL_FUNC void mdbx_rthc_thread_dtor(void *ptr);
 #define F_ISSET(w, f) (((w) & (f)) == (f))
 
 /* Round n up to an even number. */
-#define EVEN(n) (((n) + 1U) & -2) /* sign-extending -2 to match n+1U */
+#define EVEN(n) (((n) + 1UL) & -2L) /* sign-extending -2 to match n+1U */
 
 /* Default size of memory map.
  * This is certainly too small for any actual applications. Apps should
@@ -5711,8 +5695,6 @@ static int lcklist_detach_locked(MDBX_env *env) {
     SORT_CMP_SWAP(TYPE, CMP, begin[5], begin[6]);                              \
   } while (0)
 
-/* *INDENT-OFF* */
-/* clang-format off */
 
 //  51 comparators, 10 parallel operations
 //  o--^--^-----^-----------^-----------------------------------------------------------o
@@ -5754,8 +5736,6 @@ static int lcklist_detach_locked(MDBX_env *env) {
 //  [[3,4],[5,6],[7,8],[9,10],[11,12]]
 //  [[6,7],[8,9]]
 
-/* *INDENT-ON* */
-/* clang-format on */
 
 #define SORT_NETWORK_14(TYPE, CMP, begin)                                      \
   do {                                                                         \
@@ -5812,8 +5792,6 @@ static int lcklist_detach_locked(MDBX_env *env) {
     SORT_CMP_SWAP(TYPE, CMP, begin[8], begin[9]);                              \
   } while (0)
 
-/* *INDENT-OFF* */
-/* clang-format off */
 
 //  56 comparators, 10 parallel operations
 //  o--^--^-----^-----------^--------------------------------------------------------------o
@@ -5857,8 +5835,6 @@ static int lcklist_detach_locked(MDBX_env *env) {
 //  [[3,4],[5,6],[7,8],[9,10],[11,12]]
 //  [[6,7],[8,9]]
 
-/* *INDENT-ON* */
-/* clang-format on */
 
 #define SORT_NETWORK_15(TYPE, CMP, begin)                                      \
   do {                                                                         \
@@ -5920,8 +5896,6 @@ static int lcklist_detach_locked(MDBX_env *env) {
     SORT_CMP_SWAP(TYPE, CMP, begin[8], begin[9]);                              \
   } while (0)
 
-/* *INDENT-OFF* */
-/* clang-format off */
 
 //  60 comparators, 10 parallel operations
 //  o--^--^-----^-----------^-----------------------------------------------------------------o
@@ -5967,8 +5941,6 @@ static int lcklist_detach_locked(MDBX_env *env) {
 //  [[3,4],[5,6],[7,8],[9,10],[11,12]]
 //  [[6,7],[8,9]]
 
-/* *INDENT-ON* */
-/* clang-format on */
 
 #define SORT_NETWORK_16(TYPE, CMP, begin)                                      \
   do {                                                                         \
@@ -9215,8 +9187,10 @@ static txnid_t mdbx_find_oldest(const MDBX_txn *txn) {
   mdbx_tassert(txn, edge <= txn->mt_txnid);
 
   MDBX_lockinfo *const lck = env->me_lck_mmap.lck;
-  if (unlikely(lck == NULL /* exclusive mode */))
-    return atomic_store64(&lck->mti_oldest_reader, edge, mo_Relaxed);
+  if (unlikely(lck == NULL /* exclusive mode */)) {
+    mdbx_assert(env, env->me_lck == (void *)&env->x_lckless_stub);
+    return env->me_lck->mti_oldest_reader.weak = edge;
+  }
 
   const txnid_t last_oldest =
       atomic_load64(&lck->mti_oldest_reader, mo_AcquireRelease);
@@ -9428,7 +9402,10 @@ __cold static int mdbx_set_readahead(MDBX_env *env, const pgno_t edge,
 #if defined(F_RDADVISE)
       struct radvisory hint;
       hint.ra_offset = offset;
-      hint.ra_count = length;
+      hint.ra_count =
+          unlikely(length > INT_MAX && sizeof(length) > sizeof(hint.ra_count))
+              ? INT_MAX
+              : (int)length;
       (void)/* Ignore ENOTTY for DB on the ram-disk and so on */ fcntl(
           env->me_lazy_fd, F_RDADVISE, &hint);
 #elif defined(MADV_WILLNEED)
@@ -10233,14 +10210,24 @@ no_loose:
     mdbx_assert(env,
                 mdbx_pnl_check4assert(txn->tw.reclaimed_pglist,
                                       txn->mt_next_pgno - MDBX_ENABLE_REFUND));
-    if (likely(!(flags & MDBX_ALLOC_FAKE)))
+    int level;
+    const char *what;
+    if (likely(!(flags & MDBX_ALLOC_FAKE))) {
       txn->mt_flags |= MDBX_TXN_ERROR;
-    if (num != 1 || ret.err != MDBX_NOTFOUND)
-      mdbx_notice("alloc %u pages failed, flags 0x%x, errcode %d", num, flags,
-                  ret.err);
-    else
-      mdbx_trace("alloc %u pages failed, flags 0x%x, errcode %d", num, flags,
-                 ret.err);
+      level = MDBX_LOG_ERROR;
+      what = "pages";
+    } else if (flags & MDBX_ALLOC_SLOT) {
+      level = MDBX_LOG_NOTICE;
+      what = "gc-slot/backlog";
+    } else {
+      level = MDBX_LOG_NOTICE;
+      what = "backlog-pages";
+    }
+    if (mdbx_log_enabled(level))
+      mdbx_debug_log(level, __func__, __LINE__,
+                     "unable alloc %u %s, flags 0x%x, errcode %d\n", num, what,
+                     flags, ret.err);
+
     mdbx_assert(env, ret.err != MDBX_SUCCESS);
     ret.page = NULL;
     return ret;
@@ -10250,8 +10237,8 @@ done:
   mdbx_assert(env, !(flags & MDBX_ALLOC_SLOT));
   mdbx_ensure(env, pgno >= NUM_METAS);
   if (unlikely(flags & MDBX_ALLOC_FAKE)) {
-    mdbx_debug("return NULL-page for %u pages of %s mode", num,
-               "MDBX_ALLOC_FAKE");
+    mdbx_debug("return NULL-page for %u pages %s allocation", num,
+               "gc-slot/backlog");
     ret.page = NULL;
     ret.err = MDBX_SUCCESS;
     return ret;
@@ -13805,8 +13792,15 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
       (txn->mt_flags & (MDBX_TXN_DIRTY | MDBX_TXN_SPILLS)) == 0) {
     for (int i = txn->mt_numdbs; --i >= 0;)
       mdbx_tassert(txn, (txn->mt_dbistate[i] & DBI_DIRTY) == 0);
-    rc = MDBX_SUCCESS;
+#if defined(MDBX_NOSUCCESS_EMPTY_COMMIT) && MDBX_NOSUCCESS_EMPTY_COMMIT
+    rc = mdbx_txn_end(txn, end_mode);
+    if (unlikely(rc != MDBX_SUCCESS))
+      goto fail;
+    rc = MDBX_RESULT_TRUE;
+    goto provide_latency;
+#else
     goto done;
+#endif /* MDBX_NOSUCCESS_EMPTY_COMMIT */
   }
 
   mdbx_debug("committing txn %" PRIaTXN " %p on mdbenv %p, root page %" PRIaPGNO
@@ -17236,7 +17230,7 @@ static int mdbx_setup_dbx(MDBX_dbx *const dbx, const MDBX_db *const db,
 static int mdbx_fetch_sdb(MDBX_txn *txn, MDBX_dbi dbi) {
   MDBX_cursor_couple couple;
   if (unlikely(TXN_DBI_CHANGED(txn, dbi))) {
-    mdbx_notice("dbi %u was changed", dbi);
+    mdbx_notice("dbi %u was changed for txn %" PRIaTXN, dbi, txn->mt_txnid);
     return MDBX_BAD_DBI;
   }
   int rc = mdbx_cursor_init(&couple.outer, txn, MAIN_DBI);
@@ -17246,16 +17240,25 @@ static int mdbx_fetch_sdb(MDBX_txn *txn, MDBX_dbi dbi) {
   MDBX_dbx *const dbx = &txn->mt_dbxs[dbi];
   rc = mdbx_page_search(&couple.outer, &dbx->md_name, 0);
   if (unlikely(rc != MDBX_SUCCESS)) {
-    mdbx_notice("dbi %u refs to inaccessible subDB (err %d)", dbi, rc);
+  notfound:
+    mdbx_notice("dbi %u refs to inaccessible subDB `%*s` for txn %" PRIaTXN
+                " (err %d)",
+                dbi, (int)dbx->md_name.iov_len,
+                (const char *)dbx->md_name.iov_base, txn->mt_txnid, rc);
     return (rc == MDBX_NOTFOUND) ? MDBX_BAD_DBI : rc;
   }
 
   MDBX_val data;
   struct node_result nsr = mdbx_node_search(&couple.outer, &dbx->md_name);
-  if (unlikely(!nsr.exact))
-    return MDBX_BAD_DBI;
+  if (unlikely(!nsr.exact)) {
+    rc = MDBX_NOTFOUND;
+    goto notfound;
+  }
   if (unlikely((node_flags(nsr.node) & (F_DUPDATA | F_SUBDATA)) != F_SUBDATA)) {
-    mdbx_notice("dbi %u refs to not a named subDB (%s)", dbi, "wrong flags");
+    mdbx_notice(
+        "dbi %u refs to not a named subDB `%*s` for txn %" PRIaTXN " (%s)", dbi,
+        (int)dbx->md_name.iov_len, (const char *)dbx->md_name.iov_base,
+        txn->mt_txnid, "wrong flags");
     return MDBX_INCOMPATIBLE; /* not a named DB */
   }
 
@@ -17266,7 +17269,10 @@ static int mdbx_fetch_sdb(MDBX_txn *txn, MDBX_dbi dbi) {
     return rc;
 
   if (unlikely(data.iov_len != sizeof(MDBX_db))) {
-    mdbx_notice("dbi %u refs to not a named subDB (%s)", dbi, "wrong rec-size");
+    mdbx_notice(
+        "dbi %u refs to not a named subDB `%*s` for txn %" PRIaTXN " (%s)", dbi,
+        (int)dbx->md_name.iov_len, (const char *)dbx->md_name.iov_base,
+        txn->mt_txnid, "wrong rec-size");
     return MDBX_INCOMPATIBLE; /* not a named DB */
   }
 
@@ -17275,9 +17281,11 @@ static int mdbx_fetch_sdb(MDBX_txn *txn, MDBX_dbi dbi) {
    * have dropped and recreated the DB with other flags. */
   MDBX_db *const db = &txn->mt_dbs[dbi];
   if (unlikely((db->md_flags & DB_PERSISTENT_FLAGS) != md_flags)) {
-    mdbx_notice("dbi %u refs to the re-created subDB with different flags "
-                "(present 0x%x != wanna 0x%x)",
-                dbi, db->md_flags & DB_PERSISTENT_FLAGS, md_flags);
+    mdbx_notice("dbi %u refs to the re-created subDB `%*s` for txn %" PRIaTXN
+                " with different flags (present 0x%X != wanna 0x%X)",
+                dbi, (int)dbx->md_name.iov_len,
+                (const char *)dbx->md_name.iov_base, txn->mt_txnid,
+                db->md_flags & DB_PERSISTENT_FLAGS, md_flags);
     return MDBX_INCOMPATIBLE;
   }
 
@@ -20303,7 +20311,7 @@ static int mdbx_update_key(MDBX_cursor *mc, const MDBX_val *key) {
   MDBX_node *node;
   char *base;
   size_t len;
-  int delta, ksize, oksize;
+  ptrdiff_t delta, ksize, oksize;
   int ptr, i, nkeys, indx;
   DKBUF_DEBUG;
 
@@ -20329,7 +20337,7 @@ static int mdbx_update_key(MDBX_cursor *mc, const MDBX_val *key) {
   if (delta) {
     if (delta > (int)page_room(mp)) {
       /* not enough space left, do a delete and split */
-      mdbx_debug("Not enough room, delta = %d, splitting...", delta);
+      mdbx_debug("Not enough room, delta = %zd, splitting...", delta);
       pgno_t pgno = node_pgno(node);
       mdbx_node_del(mc, 0);
       int rc = mdbx_page_split(mc, key, NULL, pgno, MDBX_SPLIT_REPLACE);
@@ -26252,8 +26260,6 @@ int mdbx_set_attr(MDBX_txn *txn, MDBX_dbi dbi, MDBX_val *key, MDBX_val *data,
 #endif /* MDBX_NEXENTA_ATTRS */
 
 /******************************************************************************/
-/* *INDENT-OFF* */
-/* clang-format off */
 
 __dll_export
 #ifdef __attribute_used__
@@ -26503,8 +26509,6 @@ LIBMDBX_API __attribute__((__weak__)) const char *__asan_default_options() {
 }
 #endif /* __SANITIZE_ADDRESS__ */
 
-/* *INDENT-ON* */
-/* clang-format on */
 /* https://en.wikipedia.org/wiki/Operating_system_abstraction_layer */
 
 /*
@@ -29161,9 +29165,9 @@ __dll_export
         0,
         11,
         7,
-        24,
-        {"2022-05-03T14:16:19+03:00", "09d082ba082aa945c0b1330750ecc94a3b680f2f", "9230201ca9f0bd383deeb829fa83fe6fd22a7b1c",
-         "v0.11.7-24-g9230201c"},
+        35,
+        {"2022-05-19T13:11:25+03:00", "43e6c3f611860f9ee55106fa7e5cd9cd8d2e6853", "5d2eb580fdd61ccacf00aa93d7ee42e8e53afc8e",
+         "v0.11.7-35-g5d2eb580"},
         sourcery};
 
 __dll_export
@@ -29246,8 +29250,6 @@ static
 }
 
 #if !MDBX_BUILD_SHARED_LIBRARY && !MDBX_MANUAL_MODULE_HANDLER
-/* *INDENT-OFF* */
-/* clang-format off */
 #if defined(_MSC_VER)
 #  pragma const_seg(push)
 #  pragma data_seg(push)
@@ -29281,8 +29283,6 @@ static
 #else
 #  error FIXME
 #endif
-/* *INDENT-ON* */
-/* clang-format on */
 #endif /* !MDBX_BUILD_SHARED_LIBRARY && !MDBX_MANUAL_MODULE_HANDLER */
 
 /*----------------------------------------------------------------------------*/
@@ -30144,7 +30144,7 @@ mdbx_global_destructor(void) {
 
 #if MDBX_USE_OFDLOCKS
 static int op_setlk, op_setlkw, op_getlk;
-__cold static void choice_fcntl() {
+__cold static void choice_fcntl(void) {
   assert(!op_setlk && !op_setlkw && !op_getlk);
   if ((mdbx_runtime_flags & MDBX_DBG_LEGACY_MULTIOPEN) == 0
 #if defined(__linux__) || defined(__gnu_linux__)
