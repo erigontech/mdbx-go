@@ -270,6 +270,73 @@ func FromHex(in string) []byte {
 	return out
 }
 
+func TestLastDup(t *testing.T) {
+	env := setup(t)
+
+	var dbi DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		dbi, err = txn.OpenDBI("testdb", Create|DupSort, nil, nil)
+		if err != nil {
+			return err
+		}
+
+		err = txn.Put(dbi, []byte("key1"), []byte("value1.1"), 0)
+		if err != nil {
+			return err
+		}
+		err = txn.Put(dbi, []byte("key3"), []byte("value3.1"), 0)
+		if err != nil {
+			return err
+		}
+		err = txn.Put(dbi, []byte("key1"), []byte("value1.3"), 0)
+		if err != nil {
+			return err
+		}
+		err = txn.Put(dbi, []byte("key3"), []byte("value3.3"), 0)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = env.View(func(txn *Txn) error {
+		txn.RawRead = true
+		c, err := txn.OpenCursor(dbi)
+		if err != nil {
+			return err
+		}
+		defer c.Close()
+
+		i := 0
+		for k, _, err := c.Get(nil, nil, First); k != nil; k, _, err = c.Get(nil, nil, NextNoDup) {
+			if err != nil {
+				return err
+			}
+			i++
+			_, v, err := c.Get(nil, nil, LastDup)
+			if err != nil {
+				return err
+			}
+			if i == 1 && string(v) != "value1.3" {
+				t.Fail()
+			}
+			if i == 2 && string(v) != "value3.3" {
+				t.Fail()
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+}
+
 func TestDupCmpExcludeSuffix32(t *testing.T) {
 	hash32Bytes := FromHex("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")
 	env := setup(t)
@@ -360,7 +427,7 @@ func TestDupCmpExcludeSuffix32(t *testing.T) {
 		if !bytes.Equal(v, append([]byte{0}, hash32Bytes...)) {
 			t.Errorf("unexpected order: %x (not %x)", v, append([]byte{0}, hash32Bytes...))
 		}
-		_, v, err = cur.Get(nil, nil, NextDup)
+		_, v, err = cur.Get(nil, nil, LastDup)
 		if err != nil {
 			return err
 		}
