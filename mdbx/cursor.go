@@ -162,7 +162,9 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 			key = p
 		}
 	} else {
-		key = c.txn.bytes(c.txn.key)
+		if op != LastDup {
+			key = c.txn.bytes(c.txn.key)
+		}
 	}
 	val = c.txn.bytes(c.txn.val)
 
