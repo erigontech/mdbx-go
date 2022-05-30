@@ -6,7 +6,6 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-20.04, macos-11 ] # list of os: https://github.com/actions/virtual-environments
-        go: [ '1.18' ]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -14,7 +13,7 @@ jobs:
 
       - uses: actions/setup-go@v3
         with:
-          go-version: ${{ matrix.go }}
+          go-version: 1.18.x
 
       - uses: actions/cache@v3
         with:
@@ -29,8 +28,7 @@ jobs:
   win:
     strategy:
       matrix:
-        os: [ windows-2019 ] # list of os: https://github.com/actions/virtual-environments
-        go: [ '1.18' ]
+        os: [ windows-2022 ] # list of os: https://github.com/actions/virtual-environments
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -38,7 +36,25 @@ jobs:
 
       - uses: actions/setup-go@v3
         with:
-          go-version: ${{ matrix.go }}
+          go-version: 1.18.x
 
-      - run: choco upgrade mingw cmake -y --no-progress
-      - run: go test -v ./...
+      - uses: actions/cache@v3
+        with:
+          path: |
+            C:\ProgramData\chocolatey\lib\mingw
+            C:\ProgramData\chocolatey\lib\cmake
+          key: chocolatey-${{ matrix.os }}
+      - name: Install dependencies
+        run: |
+          choco upgrade mingw -y --no-progress --version 11.2.0.07112021
+          choco install cmake -y --no-progress --version 3.23.1
+
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          key: go-${{ matrix.os }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: go-${{ matrix.os }}-
+
+      - run: go test ./...
