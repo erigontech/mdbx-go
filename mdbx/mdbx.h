@@ -88,7 +88,6 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 /* *INDENT-OFF* */
 /* clang-format off */
-
 /**
  \file mdbx.h
  \brief The libmdbx C API header file
@@ -171,7 +170,6 @@ as a duplicates or as like a multiple values corresponds to keys.
  \defgroup c_rqest Range query estimation
  \defgroup c_extra Extra operations
 */
-
 /* *INDENT-ON* */
 /* clang-format on */
 
@@ -1004,6 +1002,10 @@ LIBMDBX_API const char *mdbx_dump_val(const MDBX_val *key, char *const buf,
 /** \brief Panics with message and causes abnormal process termination. */
 LIBMDBX_API void mdbx_panic(const char *fmt, ...) MDBX_PRINTF_ARGS(1, 2);
 
+/** \brief Panics with asserton failed message and causes abnormal process
+ * termination. */
+LIBMDBX_API void mdbx_assert_fail(const MDBX_env *env, const char *msg,
+                                  const char *func, unsigned line);
 /** end of c_debug @} */
 
 /** \brief Environment flags
