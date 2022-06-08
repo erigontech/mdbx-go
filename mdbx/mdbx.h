@@ -88,7 +88,6 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 /* *INDENT-OFF* */
 /* clang-format off */
-
 /**
  \file mdbx.h
  \brief The libmdbx C API header file
@@ -171,7 +170,6 @@ as a duplicates or as like a multiple values corresponds to keys.
  \defgroup c_rqest Range query estimation
  \defgroup c_extra Extra operations
 */
-
 /* *INDENT-ON* */
 /* clang-format on */
 
@@ -1004,6 +1002,10 @@ LIBMDBX_API const char *mdbx_dump_val(const MDBX_val *key, char *const buf,
 /** \brief Panics with message and causes abnormal process termination. */
 LIBMDBX_API void mdbx_panic(const char *fmt, ...) MDBX_PRINTF_ARGS(1, 2);
 
+/** \brief Panics with asserton failed message and causes abnormal process
+ * termination. */
+LIBMDBX_API void mdbx_assert_fail(const MDBX_env *env, const char *msg,
+                                  const char *func, unsigned line);
 /** end of c_debug @} */
 
 /** \brief Environment flags
@@ -2480,6 +2482,9 @@ struct MDBX_envinfo {
     uint64_t unspill; /**< Quantity of unspilled/reloaded pages */
     uint64_t wops;    /**< Number of explicit write operations (not a pages)
                            to a disk */
+    uint64_t
+        gcrtime_seconds16dot16; /**< Time spent loading and searching inside
+                                     GC (aka FreeDB) in 1/65536 of second. */
   } mi_pgop_stat;
 };
 #ifndef __cplusplus
