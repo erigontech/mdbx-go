@@ -386,7 +386,7 @@ func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
 			Spill:   uint64(_info.mi_pgop_stat.spill),
 			Unspill: uint64(_info.mi_pgop_stat.unspill),
 			Wops:    uint64(_info.mi_pgop_stat.wops),
-			GCrtime: toDuration(_info.mi_pgop_stat.gcrtime_seconds16dot16),
+			GCrtime: toDurationU64(_info.mi_pgop_stat.gcrtime_seconds16dot16),
 		},
 		LastPNO:        int64(_info.mi_last_pgno),
 		LastTxnID:      int64(_info.mi_recent_txnid),
