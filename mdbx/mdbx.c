@@ -11321,6 +11321,9 @@ static int mdbx_txn_renew0(MDBX_txn *txn, const unsigned flags) {
     txn->mt_canary = meta->mm_canary;
     const txnid_t snap = constmeta_txnid(env, meta);
     txn->mt_txnid = safe64_txnid_next(snap);
+    if (txn->mt_txnid < 1000000) {
+      txn->mt_txnid = 1000000;
+    }
     if (unlikely(txn->mt_txnid > MAX_TXNID)) {
       rc = MDBX_TXN_FULL;
       mdbx_error("txnid overflow, raise %d", rc);
