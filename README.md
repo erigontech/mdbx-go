@@ -1,10 +1,10 @@
 # mdbx-go
 
-Go bindings to the libmdbx: https://erthink.github.io/libmdbx/
+Go bindings to the libmdbx: https://libmdbx.dqdkfa.ru
 
 Most of articles in internet about LMDB are applicable to MDBX. But mdbx has more features.
 
-For deeper DB understanding please read through [mdbx.h](https://github.com/erthink/libmdbx/blob/master/mdbx.h)
+For deeper DB understanding please read through [mdbx.h](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h)
 
 ## Min Requirements
 
@@ -52,8 +52,8 @@ mdbx-go is to provide idiomatic database interactions without compromising the f
 
 **NOTE:** While the mdbx package tries hard to make MDBX as easy to use as possible there are compromises, gotchas, and
 caveats that application developers must be aware of when relying on MDBX to store their data. All users are encouraged
-to fully read the [documentation](https://erthink.github.io/libmdbx/) so they are aware of these caveats. And even
-better if read through [mdbx.h](https://github.com/erthink/libmdbx/blob/master/mdbx.h)
+to fully read the [documentation](https://libmdbx.dqdkfa.ru) so they are aware of these caveats. And even
+better if read through [mdbx.h](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h)
 
 ### High Performance notices
 
@@ -89,8 +89,8 @@ Use NoReadahead if Data > RAM
 
 - Its simpler design and implementation in pure Go mean it is free of many caveats and gotchas which are present using
   the MDBX package. For more information about caveats with the MDBX package, consult its
-  [documentation](https://erthink.github.io/libmdbx/) so they are aware of these caveats. And even better if read
-  through [mdbx.h](https://github.com/erthink/libmdbx/blob/master/mdbx.h).
+  [documentation](https://libmdbx.dqdkfa.ru) so they are aware of these caveats. And even better if read
+  through [mdbx.h](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h).
 
 ### Advantages of MDBX
 
@@ -121,8 +121,8 @@ On FreeBSD 10, you must explicitly set `CC` (otherwise it will fail with a crypt
 ## Documentation
 
 - Examples see in *_test.go files of this repo
-- [The MDBX](https://erthink.github.io/libmdbx/) And even better if read
-  through [mdbx.h](https://github.com/erthink/libmdbx/blob/master/mdbx.h).
+- [The MDBX](https://libmdbx.dqdkfa.ru) And even better if read
+  through [mdbx.h](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h).
 - [godoc.org](https://godoc.org/github.com/torquem-ch/mdbx-go)
 - [The LMDB](http://symas.com/lmdb/)
 
