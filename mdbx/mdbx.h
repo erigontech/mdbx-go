@@ -626,9 +626,9 @@ typedef mode_t mdbx_mode_t;
 extern "C" {
 #endif
 
-/* MDBX version 0.11.x */
+/* MDBX version 0.12.x */
 #define MDBX_VERSION_MAJOR 0
-#define MDBX_VERSION_MINOR 11
+#define MDBX_VERSION_MINOR 12
 
 #ifndef LIBMDBX_API
 #if defined(LIBMDBX_EXPORTS)
@@ -824,13 +824,21 @@ enum MDBX_constants {
 /* THE FILES *******************************************************************
  * At the file system level, the environment corresponds to a pair of files. */
 
-/** \brief The name of the lock file in the environment */
+#ifndef MDBX_LOCKNAME
+/** \brief The name of the lock file in the environment
+ * without using \ref MDBX_NOSUBDIR */
 #define MDBX_LOCKNAME "/mdbx.lck"
-/** \brief The name of the data file in the environment */
+#endif
+#ifndef MDBX_DATANAME
+/** \brief The name of the data file in the environment
+ * without using \ref MDBX_NOSUBDIR */
 #define MDBX_DATANAME "/mdbx.dat"
+#endif
 
+#ifndef MDBX_LOCK_SUFFIX
 /** \brief The suffix of the lock file when \ref MDBX_NOSUBDIR is used */
 #define MDBX_LOCK_SUFFIX "-lck"
+#endif
 
 /* DEBUG & LOGGING ************************************************************/
 
@@ -1087,8 +1095,8 @@ enum MDBX_env_flags_t {
    * while opening the database/environment which is already used by another
    * process(es) with unknown mode/flags. In such cases, if there is a
    * difference in the specified flags (\ref MDBX_NOMETASYNC,
-   * \ref MDBX_SAFE_NOSYNC, \ref MDBX_UTTERLY_NOSYNC, \ref MDBX_LIFORECLAIM,
-   * \ref MDBX_COALESCE and \ref MDBX_NORDAHEAD), instead of returning an error,
+   * \ref MDBX_SAFE_NOSYNC, \ref MDBX_UTTERLY_NOSYNC, \ref MDBX_LIFORECLAIM
+   * and \ref MDBX_NORDAHEAD), instead of returning an error,
    * the database will be opened in a compatibility with the already used mode.
    *
    * `MDBX_ACCEDE` has no effect if the current process is the only one either
@@ -1195,6 +1203,7 @@ enum MDBX_env_flags_t {
   MDBX_NOMEMINIT = UINT32_C(0x1000000),
 
   /** Aims to coalesce a Garbage Collection items.
+   * \note Always enabled since v0.12
    *
    * With `MDBX_COALESCE` flag MDBX will aims to coalesce items while recycling
    * a Garbage Collection. Technically, when possible short lists of pages
