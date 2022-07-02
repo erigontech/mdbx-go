@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 6a3a99851210c0db5462532b0ed99b32e4e48f4744b8d269e9fc153286002432_v0_12_0_13_g410a61c3
+#define MDBX_BUILD_SOURCERY c12b37583ad5524e0df13d078a0f9bddb27f12f8889e13cd1c0180cbd682a46a_v0_12_0_14_gfcea7398
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -9278,7 +9278,7 @@ static int meta_eq_mask(const MDBX_env *env) {
   return rc;
 }
 
-static __inline volatile const MDBX_meta *
+static __always_inline volatile const MDBX_meta *
 meta_recent(const enum meta_choise_mode mode, const MDBX_env *env,
             volatile const MDBX_meta *a, volatile const MDBX_meta *b) {
   const bool a_older_that_b = meta_ot(mode, env, a, b);
@@ -9294,7 +9294,7 @@ static const MDBX_meta *meta_ancient_prefer_weak(const MDBX_env *env,
   return a_older_that_b ? a : b;
 }
 
-static __inline volatile const MDBX_meta *
+static __always_inline volatile const MDBX_meta *
 meta_mostrecent(const enum meta_choise_mode mode, const MDBX_env *env) {
   volatile const MDBX_meta *m0 = METAPAGE(env, 0);
   volatile const MDBX_meta *m1 = METAPAGE(env, 1);
@@ -10346,9 +10346,11 @@ page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
           mdbx_debug("gc-make-steady, rc %d", ret.err);
           mdbx_assert(env, steady != meta_prefer_steady(env));
         }
-        if (unlikely(MDBX_IS_ERROR(ret.err)))
-          goto fail;
-        continue;
+        if (likely(ret.err != MDBX_RESULT_TRUE)) {
+          if (unlikely(ret.err != MDBX_SUCCESS))
+            goto fail;
+          continue;
+        }
       }
     }
 
@@ -15090,7 +15092,15 @@ static int mdbx_sync_locked(MDBX_env *env, unsigned flags,
       if (rc != MDBX_SUCCESS)
         goto undo;
     }
-    mdbx_assert(env, meta_checktxnid(env, target, true));
+  }
+
+  uint64_t timestamp = 0;
+  while ("workaround for todo4recovery://erased_by_github/libmdbx/issues/269") {
+    rc = meta_waittxnid(env, target, &timestamp);
+    if (likely(rc == MDBX_SUCCESS))
+      break;
+    if (unlikely(rc != MDBX_RESULT_TRUE))
+      goto fail;
   }
   env->me_lck->mti_meta_sync_txnid.weak =
       (uint32_t)unaligned_peek_u64(4, pending->mm_txnid_a) -
@@ -29631,9 +29641,9 @@ __dll_export
         0,
         12,
         0,
-        13,
-        {"2022-07-01T09:34:07+03:00", "cb2b56c178e1bb1e7f95e88fa63001d2ea5ef913", "410a61c34f42b193f75d684fd7bb150e58349725",
-         "v0.12.0-13-g410a61c3"},
+        14,
+        {"2022-07-02T09:05:59+03:00", "9abe83598baa825c702a4b0210530db2fa7a7ea2", "fcea73985ea082b51645827da6a9df0d78f997aa",
+         "v0.12.0-14-gfcea7398"},
         sourcery};
 
 __dll_export
