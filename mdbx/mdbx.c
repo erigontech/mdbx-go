@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY c12b37583ad5524e0df13d078a0f9bddb27f12f8889e13cd1c0180cbd682a46a_v0_12_0_14_gfcea7398
+#define MDBX_BUILD_SOURCERY 971c39a6823cba7bf8d314ffe483d438c153f3554ab7748ae3574cf32f03900b_v0_12_0_15_gd61c0963
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1697,6 +1697,12 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #error MDBX_ENABLE_BIGFOOT must be defined as 0 or 1
 #endif /* MDBX_ENABLE_BIGFOOT */
 
+#ifndef MDBX_CACHE_METAS
+#define MDBX_CACHE_METAS 0
+#elif !(MDBX_CACHE_METAS == 0 || MDBX_CACHE_METAS == 1)
+#error MDBX_CACHE_METAS must be defined as 0 or 1
+#endif /* MDBX_CACHE_METAS */
+
 /** Controls use of POSIX madvise() hints and friends. */
 #ifndef MDBX_ENABLE_MADVISE
 #define MDBX_ENABLE_MADVISE 1
@@ -3004,6 +3010,10 @@ struct MDBX_env {
 
   MDBX_txn *me_txn; /* current write transaction */
   mdbx_fastmutex_t me_dbi_lock;
+#if MDBX_CACHE_METAS
+  volatile const MDBX_meta *cache_last_meta;
+  volatile const MDBX_meta *cache_steady_meta;
+#endif                /* MDBX_CACHE_METAS */
   MDBX_dbi me_numdbs; /* number of DBs opened */
 
   MDBX_page *me_dp_reserve; /* list of malloc'ed blocks for re-use */
@@ -9170,6 +9180,15 @@ constmeta_txnid(const MDBX_env *env, const MDBX_meta *meta) {
   return (a == b) ? a : 0;
 }
 
+static __inline void meta_cache_clear(MDBX_env *env) {
+#if MDBX_CACHE_METAS
+  env->cache_last_meta = nullptr;
+  env->cache_steady_meta = nullptr;
+#else
+  (void)env;
+#endif /* MDBX_CACHE_METAS */
+}
+
 static __inline txnid_t meta_txnid(const MDBX_env *env,
                                    volatile const MDBX_meta *meta) {
   (void)env;
@@ -9306,40 +9325,53 @@ meta_mostrecent(const enum meta_choise_mode mode, const MDBX_env *env) {
 }
 
 static volatile const MDBX_meta *meta_prefer_steady(const MDBX_env *env) {
-  return meta_mostrecent(prefer_steady, env);
+  return
+#if MDBX_CACHE_METAS
+      ((MDBX_env *)env)->cache_steady_meta =
+#endif /* MDBX_CACHE_METAS */
+          meta_mostrecent(prefer_steady, env);
 }
 
 MDBX_NOTHROW_PURE_FUNCTION static const MDBX_meta *
 constmeta_prefer_steady(const MDBX_env *env) {
-  return (const MDBX_meta *)meta_mostrecent(prefer_steady, env);
+#if MDBX_CACHE_METAS
+  mdbx_assert(env, !env->cache_steady_meta ||
+                       env->cache_steady_meta ==
+                           meta_mostrecent(prefer_steady, env));
+  return (const MDBX_meta *)(env->cache_steady_meta ? env->cache_steady_meta :
+#else
+  return (const MDBX_meta *)(
+#endif /* MDBX_CACHE_METAS */
+                                                    meta_prefer_steady(env));
 }
 
 static volatile const MDBX_meta *meta_prefer_last(const MDBX_env *env) {
-  return meta_mostrecent(prefer_last, env);
+  return
+#if MDBX_CACHE_METAS
+      ((MDBX_env *)env)->cache_last_meta =
+#endif /* MDBX_CACHE_METAS */
+          meta_mostrecent(prefer_last, env);
 }
 
 MDBX_NOTHROW_PURE_FUNCTION static const MDBX_meta *
 constmeta_prefer_last(const MDBX_env *env) {
-  return (const MDBX_meta *)meta_mostrecent(prefer_last, env);
+#if MDBX_CACHE_METAS
+  mdbx_assert(env,
+              !env->cache_last_meta ||
+                  env->cache_last_meta == meta_mostrecent(prefer_last, env));
+  return (const MDBX_meta *)(env->cache_last_meta ? env->cache_last_meta :
+#else
+  return (const MDBX_meta *)(
+#endif /* MDBX_CACHE_METAS */
+                                                  meta_prefer_last(env));
 }
 
 static txnid_t mdbx_recent_committed_txnid(const MDBX_env *env) {
   while (true) {
     volatile const MDBX_meta *head = meta_prefer_last(env);
     const txnid_t recent = meta_txnid(env, head);
-    mdbx_compiler_barrier();
+    mdbx_memory_barrier();
     if (likely(head == meta_prefer_last(env) &&
-               recent == meta_txnid(env, head)))
-      return recent;
-  }
-}
-
-static txnid_t mdbx_recent_steady_txnid(const MDBX_env *env) {
-  while (true) {
-    volatile const MDBX_meta *head = meta_prefer_steady(env);
-    const txnid_t recent = meta_txnid(env, head);
-    mdbx_compiler_barrier();
-    if (likely(head == meta_prefer_steady(env) &&
                recent == meta_txnid(env, head)))
       return recent;
   }
@@ -9358,20 +9390,21 @@ static const char *mdbx_durable_str(volatile const MDBX_meta *const meta) {
 
 /* Find oldest txnid still referenced. */
 static txnid_t find_oldest_reader(const MDBX_env *env) {
-  const txnid_t edge = mdbx_recent_steady_txnid(env);
-  mdbx_assert(env, edge <= env->me_txn0->mt_txnid);
+  const txnid_t steady_edge =
+      constmeta_txnid(env, constmeta_prefer_steady(env));
+  mdbx_assert(env, steady_edge <= env->me_txn0->mt_txnid);
 
   MDBX_lockinfo *const lck = env->me_lck_mmap.lck;
   if (unlikely(lck == NULL /* exclusive without-lck mode */)) {
     mdbx_assert(env, env->me_lck == (void *)&env->x_lckless_stub);
-    return env->me_lck->mti_oldest_reader.weak = edge;
+    return env->me_lck->mti_oldest_reader.weak = steady_edge;
   }
 
   const txnid_t last_oldest =
       atomic_load64(&lck->mti_oldest_reader, mo_AcquireRelease);
-  mdbx_assert(env, edge >= last_oldest);
-  if (likely(last_oldest == edge))
-    return edge;
+  mdbx_assert(env, steady_edge >= last_oldest);
+  if (likely(last_oldest == steady_edge))
+    return steady_edge;
 
   const uint32_t nothing_changed = MDBX_STRING_TETRAD("None");
   const uint32_t snap_readers_refresh_flag =
@@ -9383,12 +9416,12 @@ static txnid_t find_oldest_reader(const MDBX_env *env) {
   atomic_store32(&lck->mti_readers_refresh_flag, nothing_changed, mo_Relaxed);
   const unsigned snap_nreaders =
       atomic_load32(&lck->mti_numreaders, mo_AcquireRelease);
-  txnid_t oldest = edge;
+  txnid_t oldest = steady_edge;
   for (unsigned i = 0; i < snap_nreaders; ++i) {
     if (atomic_load32(&lck->mti_readers[i].mr_pid, mo_AcquireRelease)) {
       /* mdbx_jitter4testing(true); */
       const txnid_t snap = safe64_read(&lck->mti_readers[i].mr_txnid);
-      if (oldest > snap && /* ignore pending updates */ snap <= edge) {
+      if (oldest > snap && /* ignore pending updates */ snap <= steady_edge) {
         oldest = snap;
         if (oldest == last_oldest)
           return oldest;
@@ -9778,6 +9811,7 @@ __cold static int mdbx_mapresize(MDBX_env *env, const pgno_t used_pgno,
   }
 #endif /* MDBX_ENABLE_MADVISE */
 
+  meta_cache_clear(env);
   rc = mdbx_mresize(mresize_flags, &env->me_dxb_mmap, size_bytes, limit_bytes);
 
 #if MDBX_ENABLE_MADVISE
@@ -9930,6 +9964,7 @@ __cold static int mdbx_wipe_steady(MDBX_env *env, const txnid_t last_steady) {
 
   /* force oldest refresh */
   atomic_store32(&env->me_lck->mti_readers_refresh_flag, true, mo_Relaxed);
+  meta_cache_clear(env);
   return MDBX_SUCCESS;
 }
 
@@ -10859,6 +10894,7 @@ retry:;
 #if MDBX_ENABLE_PGOP_STAT
       env->me_lck->mti_pgop_stat.wops.weak += wops;
 #endif /* MDBX_ENABLE_PGOP_STAT */
+      meta_cache_clear(env);
       goto retry;
     }
     env->me_txn0->mt_txnid = head_txnid;
@@ -11103,6 +11139,7 @@ static void mdbx_txn_valgrind(MDBX_env *env, MDBX_txn *txn) {
       /* no write-txn */
       last = NUM_METAS;
       should_unlock = true;
+      meta_cache_clear(env);
     } else {
       /* write txn is running, therefore shouldn't poison any memory range */
       return;
@@ -11444,6 +11481,7 @@ static int mdbx_txn_renew0(MDBX_txn *txn, const unsigned flags) {
     if (likely(/* not recovery mode */ env->me_stuck_meta < 0)) {
       uint64_t timestamp = 0;
       while (1) {
+        meta_cache_clear(env);
         volatile const MDBX_meta *const meta = meta_prefer_last(env);
         mdbx_jitter4testing(false);
         const txnid_t snap = meta_txnid(env, meta);
@@ -11570,6 +11608,7 @@ static int mdbx_txn_renew0(MDBX_txn *txn, const unsigned flags) {
     }
 #endif /* Windows */
 
+    meta_cache_clear(env);
     mdbx_jitter4testing(false);
     const MDBX_meta *meta = constmeta_prefer_last(env);
     uint64_t timestamp = 0;
@@ -15094,6 +15133,7 @@ static int mdbx_sync_locked(MDBX_env *env, unsigned flags,
     }
   }
 
+  meta_cache_clear(env);
   uint64_t timestamp = 0;
   while ("workaround for todo4recovery://erased_by_github/libmdbx/issues/269") {
     rc = meta_waittxnid(env, target, &timestamp);
@@ -15353,6 +15393,7 @@ mdbx_env_set_geometry(MDBX_env *env, intptr_t size_lower, intptr_t size_now,
       if (unlikely(err != MDBX_SUCCESS))
         return err;
       need_unlock = true;
+      meta_cache_clear(env);
     }
     const MDBX_meta *head = constmeta_prefer_last(env);
     if (!inside_txn) {
@@ -16577,6 +16618,7 @@ __cold static int __must_check_result mdbx_override_meta(
   }
   mdbx_flush_incoherent_mmap(env->me_map, pgno2bytes(env, NUM_METAS),
                              env->me_os_psize);
+  meta_cache_clear(env);
   return rc;
 }
 
@@ -17050,7 +17092,7 @@ __cold int mdbx_env_open(MDBX_env *env, const char *pathname,
 
 #if MDBX_DEBUG
   if (rc == MDBX_SUCCESS) {
-    const MDBX_meta *meta = constmeta_prefer_last(env);
+    const MDBX_meta *meta = (const MDBX_meta *)meta_prefer_last(env);
     const MDBX_db *db = &meta->mm_dbs[MAIN_DBI];
 
     mdbx_debug("opened database version %u, pagesize %u",
@@ -23586,6 +23628,7 @@ __cold int mdbx_env_set_flags(MDBX_env *env, MDBX_env_flags_t flags,
     if (unlikely(rc))
       return rc;
     should_unlock = true;
+    meta_cache_clear(env);
   }
 
   if (onoff)
@@ -24849,7 +24892,7 @@ __cold static txnid_t mdbx_kick_longlived_readers(MDBX_env *env,
 
   int retry;
   for (retry = 0; retry < INT_MAX; ++retry) {
-    txnid_t oldest = mdbx_recent_steady_txnid(env);
+    txnid_t oldest = constmeta_txnid(env, constmeta_prefer_steady(env));
     mdbx_assert(env, oldest < env->me_txn0->mt_txnid);
     mdbx_assert(env, oldest >= laggard);
     mdbx_assert(env, oldest >= env->me_lck->mti_oldest_reader.weak);
@@ -26418,6 +26461,7 @@ __cold int mdbx_env_set_option(MDBX_env *env, const MDBX_option_t option,
         if (unlikely(err != MDBX_SUCCESS))
           return err;
         should_unlock = true;
+        meta_cache_clear(env);
       }
       env->me_options.dp_reserve_limit = (unsigned)value;
       while (env->me_dp_reserve_len > env->me_options.dp_reserve_limit) {
@@ -26454,6 +26498,7 @@ __cold int mdbx_env_set_option(MDBX_env *env, const MDBX_option_t option,
       if (unlikely(err != MDBX_SUCCESS))
         return err;
       should_unlock = true;
+      meta_cache_clear(env);
     }
     if (env->me_txn)
       err = MDBX_EPERM /* unable change during transaction */;
@@ -29641,9 +29686,9 @@ __dll_export
         0,
         12,
         0,
-        14,
-        {"2022-07-02T09:05:59+03:00", "9abe83598baa825c702a4b0210530db2fa7a7ea2", "fcea73985ea082b51645827da6a9df0d78f997aa",
-         "v0.12.0-14-gfcea7398"},
+        15,
+        {"2022-07-02T22:53:48+03:00", "1e54d366d625b41753de2675f4c9c107e1765354", "d61c0963138577d5097f4e5287d5ceb906ae9d32",
+         "v0.12.0-15-gd61c0963"},
         sourcery};
 
 __dll_export
