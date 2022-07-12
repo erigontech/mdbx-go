@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 971c39a6823cba7bf8d314ffe483d438c153f3554ab7748ae3574cf32f03900b_v0_12_0_15_gd61c0963
+#define MDBX_BUILD_SOURCERY dfb45f31874a2f337ccc28b7a4abfed87757c461dd8da293616ef48d62e71235_v0_12_0_64_g0018164f
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1697,11 +1697,11 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #error MDBX_ENABLE_BIGFOOT must be defined as 0 or 1
 #endif /* MDBX_ENABLE_BIGFOOT */
 
-#ifndef MDBX_CACHE_METAS
-#define MDBX_CACHE_METAS 0
-#elif !(MDBX_CACHE_METAS == 0 || MDBX_CACHE_METAS == 1)
-#error MDBX_CACHE_METAS must be defined as 0 or 1
-#endif /* MDBX_CACHE_METAS */
+#ifndef MDBX_CACHE_METAPTR
+#define MDBX_CACHE_METAPTR 0
+#elif !(MDBX_CACHE_METAPTR == 0 || MDBX_CACHE_METAPTR == 1)
+#error MDBX_CACHE_METAPTR must be defined as 0 or 1
+#endif /* MDBX_CACHE_METAPTR */
 
 /** Controls use of POSIX madvise() hints and friends. */
 #ifndef MDBX_ENABLE_MADVISE
@@ -1712,11 +1712,11 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 /** Disable some checks to reduce an overhead and detection probability of
  * database corruption to a values closer to the LMDB. */
-#ifndef MDBX_DISABLE_PAGECHECKS
-#define MDBX_DISABLE_PAGECHECKS 0
-#elif !(MDBX_DISABLE_PAGECHECKS == 0 || MDBX_DISABLE_PAGECHECKS == 1)
-#error MDBX_DISABLE_PAGECHECKS must be defined as 0 or 1
-#endif /* MDBX_DISABLE_PAGECHECKS */
+#ifndef MDBX_DISABLE_VALIDATION
+#define MDBX_DISABLE_VALIDATION 0
+#elif !(MDBX_DISABLE_VALIDATION == 0 || MDBX_DISABLE_VALIDATION == 1)
+#error MDBX_DISABLE_VALIDATION must be defined as 0 or 1
+#endif /* MDBX_DISABLE_VALIDATION */
 
 #ifndef MDBX_PNL_PREALLOC_FOR_RADIXSORT
 #define MDBX_PNL_PREALLOC_FOR_RADIXSORT 1
@@ -2352,21 +2352,24 @@ typedef struct MDBX_page {
 #define IS_SHADOWED(txn, p) ((p)->mp_txnid > (txn)->mt_txnid)
 #define IS_VALID(txn, p) ((p)->mp_txnid <= (txn)->mt_front)
 #define IS_MODIFIABLE(txn, p) ((p)->mp_txnid == (txn)->mt_front)
-    uint64_t mp_txnid;
+    uint64_t
+        mp_txnid; /* txnid which created this page, maybe zero in legacy DB */
     struct MDBX_page *mp_next; /* for in-memory list of freed pages */
   };
-  uint16_t mp_leaf2_ksize; /* key size if this is a LEAF2 page */
-#define P_BRANCH 0x01      /* branch page */
-#define P_LEAF 0x02        /* leaf page */
-#define P_OVERFLOW 0x04    /* overflow page */
-#define P_META 0x08        /* meta page */
-#define P_BAD 0x10         /* explicit flag for invalid/bad page */
-#define P_LEAF2 0x20       /* for MDBX_DUPFIXED records */
-#define P_SUBP 0x40        /* for MDBX_DUPSORT sub-pages */
-#define P_SPILLED 0x2000   /* spilled in parent txn */
-#define P_LOOSE 0x4000     /* page was dirtied then freed, can be reused */
-#define P_FROZEN 0x8000    /* used for retire page with known status */
-#define P_ILL_BITS (~(P_BRANCH | P_LEAF | P_LEAF2 | P_OVERFLOW | P_SPILLED))
+  uint16_t mp_leaf2_ksize;   /* key size if this is a LEAF2 page */
+#define P_BRANCH 0x01u       /* branch page */
+#define P_LEAF 0x02u         /* leaf page */
+#define P_OVERFLOW 0x04u     /* overflow page */
+#define P_META 0x08u         /* meta page */
+#define P_LEGACY_DIRTY 0x10u /* legacy P_DIRTY flag prior to v0.10 958fd5b9 */
+#define P_BAD P_LEGACY_DIRTY /* explicit flag for invalid/bad page */
+#define P_LEAF2 0x20u        /* for MDBX_DUPFIXED records */
+#define P_SUBP 0x40u         /* for MDBX_DUPSORT sub-pages */
+#define P_SPILLED 0x2000u    /* spilled in parent txn */
+#define P_LOOSE 0x4000u      /* page was dirtied then freed, can be reused */
+#define P_FROZEN 0x8000u     /* used for retire page with known status */
+#define P_ILL_BITS                                                             \
+  ((uint16_t) ~(P_BRANCH | P_LEAF | P_LEAF2 | P_OVERFLOW | P_SPILLED))
   uint16_t mp_flags;
   union {
     uint32_t mp_pages; /* number of overflow pages */
@@ -2382,6 +2385,14 @@ typedef struct MDBX_page {
   indx_t mp_ptrs[] /* dynamic size */;
 #endif /* C99 */
 } MDBX_page;
+
+#define PAGETYPE_WHOLE(p) ((uint8_t)(p)->mp_flags)
+
+/* Drop legacy P_DIRTY flag for sub-pages for compatilibity */
+#define PAGETYPE_COMPAT(p)                                                     \
+  (unlikely(PAGETYPE_WHOLE(p) & P_SUBP)                                        \
+       ? PAGETYPE_WHOLE(p) & ~(P_SUBP | P_LEGACY_DIRTY)                        \
+       : PAGETYPE_WHOLE(p))
 
 /* Size of the page header, excluding dynamic data at the end */
 #define PAGEHDRSZ ((unsigned)offsetof(MDBX_page, mp_ptrs))
@@ -2875,8 +2886,8 @@ struct MDBX_cursor {
   MDBX_dbx *mc_dbx;
   /* The mt_dbistate for this database */
   uint8_t *mc_dbistate;
-  unsigned mc_snum; /* number of pushed pages */
-  unsigned mc_top;  /* index of top page, normally mc_snum-1 */
+  uint8_t mc_snum; /* number of pushed pages */
+  uint8_t mc_top;  /* index of top page, normally mc_snum-1 */
 
   /* Cursor state flags. */
 #define C_INITIALIZED 0x01 /* cursor has been initialized and is valid */
@@ -2886,17 +2897,26 @@ struct MDBX_cursor {
 #define C_UNTRACK 0x10     /* Un-track cursor when closing */
 #define C_RECLAIMING 0x20  /* GC lookup is prohibited */
 #define C_GCFREEZE 0x40    /* reclaimed_pglist must not be updated */
+  uint8_t mc_flags;        /* see mdbx_cursor */
 
   /* Cursor checking flags. */
-#define C_COPYING 0x100  /* skip key-value length check (copying simplify) */
-#define C_UPDATING 0x200 /* update/rebalance pending */
-#define C_RETIRING 0x400 /* refs to child pages may be invalid */
-#define C_SKIPORD 0x800  /* don't check keys ordering */
+#define CC_BRANCH 0x01    /* same as P_BRANCH for CHECK_LEAF_TYPE() */
+#define CC_LEAF 0x02      /* same as P_LEAF for CHECK_LEAF_TYPE() */
+#define CC_OVERFLOW 0x04  /* same as P_OVERFLOW for CHECK_LEAF_TYPE() */
+#define CC_UPDATING 0x08  /* update/rebalance pending */
+#define CC_SKIPORD 0x10   /* don't check keys ordering */
+#define CC_LEAF2 0x20     /* same as P_LEAF2 for CHECK_LEAF_TYPE() */
+#define CC_RETIRING 0x40  /* refs to child pages may be invalid */
+#define CC_PAGECHECK 0x80 /* perform page checking, see MDBX_VALIDATION */
+  uint8_t mc_checking;    /* page checking level */
 
-  unsigned mc_flags;              /* see mdbx_cursor */
   MDBX_page *mc_pg[CURSOR_STACK]; /* stack of pushed pages */
   indx_t mc_ki[CURSOR_STACK];     /* stack of page indices */
 };
+
+#define CHECK_LEAF_TYPE(mc, mp)                                                \
+  (((PAGETYPE_WHOLE(mp) ^ (mc)->mc_checking) &                                 \
+    (CC_BRANCH | CC_LEAF | CC_OVERFLOW | CC_LEAF2)) == 0)
 
 /* Context for sorted-dup records.
  * We could have gone to a fully recursive design, with arbitrarily
@@ -3010,10 +3030,10 @@ struct MDBX_env {
 
   MDBX_txn *me_txn; /* current write transaction */
   mdbx_fastmutex_t me_dbi_lock;
-#if MDBX_CACHE_METAS
+#if MDBX_CACHE_METAPTR
   volatile const MDBX_meta *cache_last_meta;
   volatile const MDBX_meta *cache_steady_meta;
-#endif                /* MDBX_CACHE_METAS */
+#endif                /* MDBX_CACHE_METAPTR */
   MDBX_dbi me_numdbs; /* number of DBs opened */
 
   MDBX_page *me_dp_reserve; /* list of malloc'ed blocks for re-use */
@@ -3291,8 +3311,6 @@ MDBX_INTERNAL_FUNC void mdbx_rthc_thread_dtor(void *ptr);
 /* Test if a page is a sub page */
 #define IS_SUBP(p) (((p)->mp_flags & P_SUBP) != 0)
 
-#define PAGETYPE(p) ((p)->mp_flags & (P_BRANCH | P_LEAF | P_LEAF2 | P_OVERFLOW))
-
 /* Header for a single key/data pair within a page.
  * Used in pages of type P_BRANCH and P_LEAF without P_LEAF2.
  * We guarantee 2-byte alignment for 'MDBX_node's.
@@ -3435,7 +3453,8 @@ log2n_powerof2(size_t value) {
  * environment and re-opening it with the new flags. */
 #define ENV_CHANGEABLE_FLAGS                                                   \
   (MDBX_SAFE_NOSYNC | MDBX_NOMETASYNC | MDBX_DEPRECATED_MAPASYNC |             \
-   MDBX_NOMEMINIT | MDBX_COALESCE | MDBX_PAGEPERTURB | MDBX_ACCEDE)
+   MDBX_NOMEMINIT | MDBX_COALESCE | MDBX_PAGEPERTURB | MDBX_ACCEDE |           \
+   MDBX_VALIDATION)
 #define ENV_CHANGELESS_FLAGS                                                   \
   (MDBX_NOSUBDIR | MDBX_RDONLY | MDBX_WRITEMAP | MDBX_NOTLS | MDBX_NORDAHEAD | \
    MDBX_LIFORECLAIM | MDBX_EXCLUSIVE)
@@ -4008,7 +4027,7 @@ __cold intptr_t mdbx_limits_valsize_max(intptr_t pagesize,
 /* Calculate the size of a leaf node.
  *
  * The size depends on the environment's page size; if a data item
- * is too large it will be put onto an overflow page and the node
+ * is too large it will be put onto an large/overflow page and the node
  * size will only include the key and not the data. Sizes are always
  * rounded up to an even number of bytes, to guarantee 2-byte alignment
  * of the MDBX_node headers. */
@@ -4016,7 +4035,7 @@ MDBX_NOTHROW_PURE_FUNCTION static __always_inline size_t
 leaf_size(const MDBX_env *env, const MDBX_val *key, const MDBX_val *data) {
   size_t node_bytes = node_size(key, data);
   if (node_bytes > env->me_leaf_nodemax) {
-    /* put on overflow page */
+    /* put on large/overflow page */
     node_bytes = node_size_len(key->iov_len, 0) + sizeof(pgno_t);
   }
 
@@ -4026,7 +4045,7 @@ leaf_size(const MDBX_env *env, const MDBX_val *key, const MDBX_val *data) {
 /* Calculate the size of a branch node.
  *
  * The size should depend on the environment's page size but since
- * we currently don't support spilling large keys onto overflow
+ * we currently don't support spilling large keys onto large/overflow
  * pages, it's simply the size of the MDBX_node header plus the
  * size of the key. Sizes are always rounded up to an even number
  * of bytes, to guarantee 2-byte alignment of the MDBX_node headers.
@@ -4041,7 +4060,7 @@ branch_size(const MDBX_env *env, const MDBX_val *key) {
    * This is just the node header plus the key, there is no data. */
   size_t node_bytes = node_size(key, nullptr);
   if (unlikely(node_bytes > env->me_leaf_nodemax)) {
-    /* put on overflow page */
+    /* put on large/overflow page */
     /* not implemented */
     mdbx_assert_fail(env, "INDXSIZE(key) <= env->me_nodemax", __func__,
                      __LINE__);
@@ -4149,44 +4168,45 @@ page_fill(const MDBX_env *env, const MDBX_page *mp) {
   return page_used(env, mp) * 100.0 / page_space(env);
 }
 
-/* The number of overflow pages needed to store the given size. */
+/* The number of large/overflow pages needed to store the given size. */
 MDBX_NOTHROW_PURE_FUNCTION static __always_inline pgno_t
 number_of_ovpages(const MDBX_env *env, size_t bytes) {
   return bytes2pgno(env, PAGEHDRSZ - 1 + bytes) + 1;
 }
 
-__cold static int MDBX_PRINTF_ARGS(2, 3)
+__cold static const char *pagetype_caption(const uint8_t type,
+                                           char buf4unknown[16]) {
+  switch (type) {
+  case P_BRANCH:
+    return "branch";
+  case P_LEAF:
+    return "leaf";
+  case P_LEAF | P_SUBP:
+    return "subleaf";
+  case P_LEAF | P_LEAF2:
+    return "dupfixed-leaf";
+  case P_LEAF | P_LEAF2 | P_SUBP:
+    return "dupfixed-subleaf";
+  case P_LEAF | P_LEAF2 | P_SUBP | P_LEGACY_DIRTY:
+    return "dupfixed-subleaf.legacy-dirty";
+  case P_OVERFLOW:
+    return "large";
+  default:
+    snprintf(buf4unknown, 16, "unknown_0x%x", type);
+    return buf4unknown;
+  }
+}
+
+__cold static __must_check_result int MDBX_PRINTF_ARGS(2, 3)
     bad_page(const MDBX_page *mp, const char *fmt, ...) {
   if (mdbx_log_enabled(MDBX_LOG_ERROR)) {
     static const MDBX_page *prev;
     if (prev != mp) {
+      char buf4unknown[16];
       prev = mp;
-      const char *type;
-      switch (mp->mp_flags & (P_BRANCH | P_LEAF | P_OVERFLOW | P_META |
-                              P_LEAF2 | P_BAD | P_SUBP)) {
-      case P_BRANCH:
-        type = "branch";
-        break;
-      case P_LEAF:
-        type = "leaf";
-        break;
-      case P_LEAF | P_SUBP:
-        type = "subleaf";
-        break;
-      case P_LEAF | P_LEAF2:
-        type = "dupfixed-leaf";
-        break;
-      case P_LEAF | P_LEAF2 | P_SUBP:
-        type = "dupfixed-subleaf";
-        break;
-      case P_OVERFLOW:
-        type = "large";
-        break;
-      default:
-        type = "broken";
-      }
       mdbx_debug_log(MDBX_LOG_ERROR, "badpage", 0,
-                     "corrupted %s-page #%u, mod-txnid %" PRIaTXN "\n", type,
+                     "corrupted %s-page #%u, mod-txnid %" PRIaTXN "\n",
+                     pagetype_caption(PAGETYPE_WHOLE(mp), buf4unknown),
                      mp->mp_pgno, mp->mp_txnid);
     }
 
@@ -4198,10 +4218,30 @@ __cold static int MDBX_PRINTF_ARGS(2, 3)
   return MDBX_CORRUPTED;
 }
 
+__cold static void MDBX_PRINTF_ARGS(2, 3)
+    poor_page(const MDBX_page *mp, const char *fmt, ...) {
+  if (mdbx_log_enabled(MDBX_LOG_NOTICE)) {
+    static const MDBX_page *prev;
+    if (prev != mp) {
+      char buf4unknown[16];
+      prev = mp;
+      mdbx_debug_log(MDBX_LOG_NOTICE, "poorpage", 0,
+                     "suboptimal %s-page #%u, mod-txnid %" PRIaTXN "\n",
+                     pagetype_caption(PAGETYPE_WHOLE(mp), buf4unknown),
+                     mp->mp_pgno, mp->mp_txnid);
+    }
+
+    va_list args;
+    va_start(args, fmt);
+    mdbx_debug_log_va(MDBX_LOG_NOTICE, "poorpage", 0, fmt, args);
+    va_end(args);
+  }
+}
+
 /* Address of node i in page p */
 MDBX_NOTHROW_PURE_FUNCTION static __always_inline MDBX_node *
 page_node(const MDBX_page *mp, unsigned i) {
-  assert((mp->mp_flags & (P_LEAF2 | P_OVERFLOW | P_META)) == 0);
+  assert(PAGETYPE_COMPAT(mp) == P_LEAF || PAGETYPE_WHOLE(mp) == P_BRANCH);
   assert(page_numkeys(mp) > (unsigned)(i));
   assert(mp->mp_ptrs[i] % 2 == 0);
   return (MDBX_node *)((char *)mp + mp->mp_ptrs[i] + PAGEHDRSZ);
@@ -4212,8 +4252,7 @@ page_node(const MDBX_page *mp, unsigned i) {
  * There are no node headers, keys are stored contiguously. */
 MDBX_NOTHROW_PURE_FUNCTION static __always_inline void *
 page_leaf2key(const MDBX_page *mp, unsigned i, size_t keysize) {
-  assert((mp->mp_flags & (P_BRANCH | P_LEAF | P_LEAF2 | P_OVERFLOW | P_META)) ==
-         (P_LEAF | P_LEAF2));
+  assert(PAGETYPE_COMPAT(mp) == (P_LEAF | P_LEAF2));
   assert(mp->mp_leaf2_ksize == keysize);
   (void)keysize;
   return (char *)mp + PAGEHDRSZ + (i * mp->mp_leaf2_ksize);
@@ -4538,40 +4577,34 @@ static __always_inline uint64_t safe64_txnid_next(uint64_t txnid) {
   return txnid;
 }
 
-#if defined(MDBX_HAVE_C11ATOMICS) && defined(__LCC__)
-#define safe64_reset(p, single_writer)                                         \
-  atomic_store64(p, UINT64_MAX,                                                \
-                 (single_writer) ? mo_AcquireRelease                           \
-                                 : mo_SequentialConsistency)
-#else
+/* Atomically make target value >= SAFE64_INVALID_THRESHOLD */
 static __always_inline void safe64_reset(MDBX_atomic_uint64_t *p,
                                          bool single_writer) {
-#if !MDBX_64BIT_CAS
-  if (!single_writer) {
-    STATIC_ASSERT(xMDBX_TXNID_STEP > 1);
+  if (single_writer) {
+#if MDBX_64BIT_ATOMIC && MDBX_WORDBITS >= 64
+    atomic_store64(p, UINT64_MAX, mo_AcquireRelease);
+#else
+    atomic_store32(&p->high, UINT32_MAX, mo_AcquireRelease);
+#endif /* MDBX_64BIT_ATOMIC && MDBX_WORDBITS >= 64 */
+  } else {
+#if MDBX_64BIT_CAS && MDBX_64BIT_ATOMIC
+    /* atomically make value >= SAFE64_INVALID_THRESHOLD by 64-bit operation */
+    atomic_store64(p, UINT64_MAX, mo_SequentialConsistency);
+#elif MDBX_64BIT_CAS
+    /* atomically make value >= SAFE64_INVALID_THRESHOLD by 32-bit operation */
+    atomic_store32(&p->high, UINT32_MAX, mo_SequentialConsistency);
+#else
     /* it is safe to increment low-part to avoid ABA, since xMDBX_TXNID_STEP > 1
      * and overflow was preserved in safe64_txnid_next() */
+    STATIC_ASSERT(xMDBX_TXNID_STEP > 1);
     atomic_add32(&p->low, 1) /* avoid ABA in safe64_reset_compare() */;
-    atomic_store32(
-        &p->high, UINT32_MAX,
-        mo_Relaxed) /* atomically make >= SAFE64_INVALID_THRESHOLD */;
+    atomic_store32(&p->high, UINT32_MAX, mo_SequentialConsistency);
     atomic_add32(&p->low, 1) /* avoid ABA in safe64_reset_compare() */;
-  } else
-#endif /* !MDBX_64BIT_CAS */
-#if MDBX_64BIT_ATOMIC
-    /* atomically make value >= SAFE64_INVALID_THRESHOLD by 64-bit operation */
-    atomic_store64(p, UINT64_MAX,
-                   single_writer ? mo_AcquireRelease
-                                 : mo_SequentialConsistency);
-#else
-  /* atomically make value >= SAFE64_INVALID_THRESHOLD by 32-bit operation */
-  atomic_store32(&p->high, UINT32_MAX,
-                 single_writer ? mo_AcquireRelease : mo_SequentialConsistency);
-#endif /* MDBX_64BIT_ATOMIC */
+#endif /* MDBX_64BIT_CAS && MDBX_64BIT_ATOMIC */
+  }
   assert(p->weak >= SAFE64_INVALID_THRESHOLD);
   mdbx_jitter4testing(true);
 }
-#endif /* LCC && MDBX_HAVE_C11ATOMICS */
 
 static __always_inline bool safe64_reset_compare(MDBX_atomic_uint64_t *p,
                                                  txnid_t compare) {
@@ -4604,7 +4637,7 @@ static __always_inline bool safe64_reset_compare(MDBX_atomic_uint64_t *p,
 static __always_inline void safe64_write(MDBX_atomic_uint64_t *p,
                                          const uint64_t v) {
   assert(p->weak >= SAFE64_INVALID_THRESHOLD);
-#if MDBX_64BIT_ATOMIC
+#if MDBX_64BIT_ATOMIC && MDBX_64BIT_CAS
   atomic_store64(p, v, mo_AcquireRelease);
 #else  /* MDBX_64BIT_ATOMIC */
   mdbx_compiler_barrier();
@@ -4621,8 +4654,10 @@ static __always_inline void safe64_write(MDBX_atomic_uint64_t *p,
 
 static __always_inline uint64_t safe64_read(const MDBX_atomic_uint64_t *p) {
   mdbx_jitter4testing(true);
-  uint64_t v = atomic_load64(p, mo_AcquireRelease);
-  mdbx_jitter4testing(true);
+  uint64_t v;
+  do
+    v = atomic_load64(p, mo_AcquireRelease);
+  while (!MDBX_64BIT_ATOMIC && unlikely(v != p->weak));
   return v;
 }
 
@@ -4664,7 +4699,7 @@ MDBX_MAYBE_UNUSED static
     void
     safe64_inc(MDBX_atomic_uint64_t *p, const uint64_t v) {
   assert(v > 0);
-  safe64_update(p, atomic_load64(p, mo_Relaxed) + v);
+  safe64_update(p, safe64_read(p) + v);
 }
 
 /*----------------------------------------------------------------------------*/
@@ -6638,7 +6673,7 @@ static bool mdbx_pnl_check(const MDBX_PNL pl, const size_t limit) {
       return false;
     if (unlikely(MDBX_PNL_MOST(pl) >= limit))
       return false;
-    if (mdbx_audit_enabled()) {
+    if (!MDBX_DISABLE_VALIDATION || mdbx_audit_enabled()) {
       for (const pgno_t *scan = &MDBX_PNL_LAST(pl); --scan > pl;) {
         assert(MDBX_PNL_ORDERED(scan[0], scan[1]));
         if (unlikely(!MDBX_PNL_ORDERED(scan[0], scan[1])))
@@ -7278,17 +7313,15 @@ static __must_check_result __inline int mdbx_page_retire(MDBX_cursor *mc,
 
 static int __must_check_result mdbx_page_dirty(MDBX_txn *txn, MDBX_page *mp,
                                                unsigned npages);
-struct page_result {
+typedef struct page_result {
   MDBX_page *page;
   int err;
-};
+} pgr_t;
 
-static txnid_t mdbx_kick_longlived_readers(MDBX_env *env,
-                                           const txnid_t laggard);
+static txnid_t kick_longlived_readers(MDBX_env *env, const txnid_t laggard);
 
-static struct page_result page_new(MDBX_cursor *mc, const unsigned flags);
-static struct page_result page_new_large(MDBX_cursor *mc,
-                                         const unsigned npages);
+static pgr_t page_new(MDBX_cursor *mc, const unsigned flags);
+static pgr_t page_new_large(MDBX_cursor *mc, const unsigned npages);
 static int mdbx_page_touch(MDBX_cursor *mc);
 static int mdbx_cursor_touch(MDBX_cursor *mc);
 static int mdbx_touch_dbi(MDBX_cursor *mc);
@@ -7315,14 +7348,32 @@ enum {
 #define MDBX_END_SLOT 0x80    /* release any reader slot if MDBX_NOTLS */
 static int mdbx_txn_end(MDBX_txn *txn, const unsigned mode);
 
-__hot static struct page_result __must_check_result
-mdbx_page_get_ex(MDBX_cursor *const mc, const pgno_t pgno, txnid_t front);
-static __always_inline int __must_check_result mdbx_page_get(MDBX_cursor *mc,
-                                                             pgno_t pgno,
-                                                             MDBX_page **mp,
-                                                             txnid_t front) {
+static __always_inline pgr_t page_get_inline(const uint16_t ILL,
+                                             MDBX_cursor *const mc,
+                                             const pgno_t pgno,
+                                             const txnid_t front);
 
-  struct page_result ret = mdbx_page_get_ex(mc, pgno, front);
+static pgr_t page_get_any(MDBX_cursor *const mc, const pgno_t pgno,
+                          const txnid_t front) {
+  return page_get_inline(P_ILL_BITS, mc, pgno, front);
+}
+
+__hot static pgr_t page_get_three(MDBX_cursor *const mc, const pgno_t pgno,
+                                  const txnid_t front) {
+  return page_get_inline(P_ILL_BITS | P_OVERFLOW, mc, pgno, front);
+}
+
+static pgr_t page_get_large(MDBX_cursor *const mc, const pgno_t pgno,
+                            const txnid_t front) {
+  return page_get_inline(P_ILL_BITS | P_BRANCH | P_LEAF | P_LEAF2, mc, pgno,
+                         front);
+}
+
+static __always_inline int __must_check_result page_get(MDBX_cursor *mc,
+                                                        const pgno_t pgno,
+                                                        MDBX_page **mp,
+                                                        const txnid_t front) {
+  pgr_t ret = page_get_three(mc, pgno, front);
   *mp = ret.page;
   return ret.err;
 }
@@ -7346,7 +7397,7 @@ static int __must_check_result mdbx_page_split(MDBX_cursor *mc,
                                                MDBX_val *const newdata,
                                                pgno_t newpgno, unsigned nflags);
 
-static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
+static bool meta_checktxnid(const MDBX_env *env, const volatile MDBX_meta *meta,
                             bool report);
 static int __must_check_result mdbx_validate_meta_copy(MDBX_env *env,
                                                        const MDBX_meta *meta,
@@ -7390,7 +7441,7 @@ static int __must_check_result mdbx_node_move(MDBX_cursor *csrc,
 static int __must_check_result mdbx_node_read(MDBX_cursor *mc,
                                               const MDBX_node *leaf,
                                               MDBX_val *data,
-                                              const txnid_t front);
+                                              const MDBX_page *mp);
 static int __must_check_result mdbx_rebalance(MDBX_cursor *mc);
 static int __must_check_result mdbx_update_key(MDBX_cursor *mc,
                                                const MDBX_val *key);
@@ -7403,10 +7454,9 @@ static int __must_check_result mdbx_audit_ex(MDBX_txn *txn,
                                              bool dont_filter_gc);
 
 static int __must_check_result mdbx_page_check(MDBX_cursor *const mc,
-                                               const MDBX_page *const mp,
-                                               unsigned options);
-static int __must_check_result mdbx_cursor_check(MDBX_cursor *mc,
-                                                 unsigned options);
+                                               const MDBX_page *const mp);
+static int __must_check_result mdbx_cursor_check(MDBX_cursor *mc);
+static int __must_check_result mdbx_cursor_check_updating(MDBX_cursor *mc);
 static int __must_check_result mdbx_cursor_del0(MDBX_cursor *mc);
 static int __must_check_result mdbx_del0(MDBX_txn *txn, MDBX_dbi dbi,
                                          const MDBX_val *key,
@@ -7705,7 +7755,7 @@ static const char *mdbx_leafnode_type(MDBX_node *n) {
   static const char *const tp[2][2] = {{"", ": DB"},
                                        {": sub-page", ": sub-DB"}};
   return F_ISSET(node_flags(n), F_BIGDATA)
-             ? ": overflow page"
+             ? ": large page"
              : tp[F_ISSET(node_flags(n), F_DUPDATA)]
                  [F_ISSET(node_flags(n), F_SUBDATA)];
 }
@@ -7719,8 +7769,7 @@ MDBX_MAYBE_UNUSED static void mdbx_page_list(MDBX_page *mp) {
   MDBX_val key;
   DKBUF;
 
-  switch (mp->mp_flags &
-          (P_BRANCH | P_LEAF | P_LEAF2 | P_META | P_OVERFLOW | P_SUBP)) {
+  switch (PAGETYPE_WHOLE(mp)) {
   case P_BRANCH:
     type = "Branch page";
     break;
@@ -8247,7 +8296,7 @@ static __inline void mdbx_page_wash(MDBX_txn *txn, const unsigned di,
                         (txn->mt_parent ? txn->mt_parent->tw.dirtyroom
                                         : txn->mt_env->me_options.dp_limit));
   mp->mp_txnid = INVALID_TXNID;
-  mp->mp_flags = 0xFFFF;
+  mp->mp_flags = P_BAD;
   VALGRIND_MAKE_MEM_UNDEFINED(mp, PAGEHDRSZ);
   if (txn->mt_flags & MDBX_WRITEMAP) {
     VALGRIND_MAKE_MEM_NOACCESS(page_data(mp),
@@ -8256,16 +8305,6 @@ static __inline void mdbx_page_wash(MDBX_txn *txn, const unsigned di,
                                    pgno2bytes(txn->mt_env, npages) - PAGEHDRSZ);
   } else
     mdbx_dpage_free(txn->mt_env, mp, npages);
-}
-
-static __inline txnid_t pp_txnid4chk(const MDBX_page *mp, const MDBX_txn *txn) {
-  (void)txn;
-#if MDBX_DISABLE_PAGECHECKS
-  (void)mp;
-  return 0;
-#else
-  return /* maybe zero in legacy DB */ mp->mp_txnid;
-#endif /* !MDBX_DISABLE_PAGECHECKS */
 }
 
 /* Retire, loosen or free a single page.
@@ -8278,10 +8317,10 @@ static __inline txnid_t pp_txnid4chk(const MDBX_page *mp, const MDBX_txn *txn) {
  * to this txn's free list. */
 static int mdbx_page_retire_ex(MDBX_cursor *mc, const pgno_t pgno,
                                MDBX_page *mp /* maybe null */,
-                               int pagetype /* maybe unknown/zero */) {
+                               unsigned pageflags /* maybe unknown/zero */) {
   int rc;
   MDBX_txn *const txn = mc->mc_txn;
-  mdbx_tassert(txn, !mp || (mp->mp_pgno == pgno && PAGETYPE(mp) == pagetype));
+  mdbx_tassert(txn, !mp || (mp->mp_pgno == pgno && mp->mp_flags == pageflags));
 
   /* During deleting entire subtrees, it is reasonable and possible to avoid
    * reading leaf pages, i.e. significantly reduce hard page-faults & IOPs:
@@ -8297,15 +8336,16 @@ static int mdbx_page_retire_ex(MDBX_cursor *mc, const pgno_t pgno,
   unsigned di = 0, si = 0, npages = 1;
   bool is_frozen = false, is_spilled = false, is_shadowed = false;
   if (unlikely(!mp)) {
-    if (mdbx_assert_enabled() && pagetype) {
-      MDBX_page *check;
-      rc = mdbx_page_get(mc, pgno, &check, txn->mt_front);
-      if (unlikely(rc != MDBX_SUCCESS))
-        return rc;
-      mdbx_tassert(txn, (PAGETYPE(check) & ~P_LEAF2) == (pagetype & ~P_FROZEN));
-      mdbx_tassert(txn, !(pagetype & P_FROZEN) || IS_FROZEN(txn, check));
+    if (mdbx_assert_enabled() && pageflags) {
+      pgr_t check;
+      check = page_get_any(mc, pgno, txn->mt_front);
+      if (unlikely(check.err != MDBX_SUCCESS))
+        return check.err;
+      mdbx_tassert(txn, (check.page->mp_flags & ~P_LEAF2) ==
+                            (pageflags & ~P_FROZEN));
+      mdbx_tassert(txn, !(pageflags & P_FROZEN) || IS_FROZEN(txn, check.page));
     }
-    if (pagetype & P_FROZEN) {
+    if (pageflags & P_FROZEN) {
       is_frozen = true;
       if (mdbx_assert_enabled()) {
         for (MDBX_txn *scan = txn; scan; scan = scan->mt_parent) {
@@ -8314,7 +8354,7 @@ static int mdbx_page_retire_ex(MDBX_cursor *mc, const pgno_t pgno,
         }
       }
       goto status_done;
-    } else if (pagetype && txn->tw.dirtylist) {
+    } else if (pageflags && txn->tw.dirtylist) {
       if ((di = mdbx_dpl_exist(txn, pgno)) != 0) {
         mp = txn->tw.dirtylist->items[di].ptr;
         mdbx_tassert(txn, IS_MODIFIABLE(txn, mp));
@@ -8339,11 +8379,12 @@ static int mdbx_page_retire_ex(MDBX_cursor *mc, const pgno_t pgno,
       goto status_done;
     }
 
-    rc = mdbx_page_get(mc, pgno, &mp, txn->mt_front);
-    if (unlikely(rc != MDBX_SUCCESS))
-      return rc;
-    mdbx_tassert(txn, !pagetype || PAGETYPE(mp) == pagetype);
-    pagetype = PAGETYPE(mp);
+    pgr_t pg = page_get_any(mc, pgno, txn->mt_front);
+    if (unlikely(pg.err != MDBX_SUCCESS))
+      return pg.err;
+    mp = pg.page;
+    mdbx_tassert(txn, !pageflags || mp->mp_flags == pageflags);
+    pageflags = mp->mp_flags;
   }
 
   is_frozen = IS_FROZEN(txn, mp);
@@ -8370,9 +8411,9 @@ static int mdbx_page_retire_ex(MDBX_cursor *mc, const pgno_t pgno,
   }
 
 status_done:
-  if (likely((pagetype & P_OVERFLOW) == 0)) {
+  if (likely((pageflags & P_OVERFLOW) == 0)) {
     STATIC_ASSERT(P_BRANCH == 1);
-    const bool is_branch = pagetype & P_BRANCH;
+    const bool is_branch = pageflags & P_BRANCH;
     if (unlikely(mc->mc_flags & C_SUB)) {
       MDBX_db *outer = mdbx_outer_db(mc);
       mdbx_cassert(mc, !is_branch || outer->md_branch_pages > 0);
@@ -8382,8 +8423,8 @@ status_done:
     }
     mdbx_cassert(mc, !is_branch || mc->mc_db->md_branch_pages > 0);
     mc->mc_db->md_branch_pages -= is_branch;
-    mdbx_cassert(mc, (pagetype & P_LEAF) == 0 || mc->mc_db->md_leaf_pages > 0);
-    mc->mc_db->md_leaf_pages -= (pagetype & P_LEAF) != 0;
+    mdbx_cassert(mc, (pageflags & P_LEAF) == 0 || mc->mc_db->md_leaf_pages > 0);
+    mc->mc_db->md_leaf_pages -= (pageflags & P_LEAF) != 0;
   } else {
     npages = mp->mp_pages;
     mdbx_cassert(mc, mc->mc_db->md_overflow_pages >= npages);
@@ -8568,7 +8609,7 @@ status_done:
 }
 
 static __inline int mdbx_page_retire(MDBX_cursor *mc, MDBX_page *mp) {
-  return mdbx_page_retire_ex(mc, mp->mp_pgno, mp, PAGETYPE(mp));
+  return mdbx_page_retire_ex(mc, mp->mp_pgno, mp, mp->mp_flags);
 }
 
 struct mdbx_iov_ctx {
@@ -9181,12 +9222,12 @@ constmeta_txnid(const MDBX_env *env, const MDBX_meta *meta) {
 }
 
 static __inline void meta_cache_clear(MDBX_env *env) {
-#if MDBX_CACHE_METAS
+#if MDBX_CACHE_METAPTR
   env->cache_last_meta = nullptr;
   env->cache_steady_meta = nullptr;
 #else
   (void)env;
-#endif /* MDBX_CACHE_METAS */
+#endif /* MDBX_CACHE_METAPTR */
 }
 
 static __inline txnid_t meta_txnid(const MDBX_env *env,
@@ -9326,44 +9367,41 @@ meta_mostrecent(const enum meta_choise_mode mode, const MDBX_env *env) {
 
 static volatile const MDBX_meta *meta_prefer_steady(const MDBX_env *env) {
   return
-#if MDBX_CACHE_METAS
+#if MDBX_CACHE_METAPTR
       ((MDBX_env *)env)->cache_steady_meta =
-#endif /* MDBX_CACHE_METAS */
+#endif /* MDBX_CACHE_METAPTR */
           meta_mostrecent(prefer_steady, env);
 }
 
 MDBX_NOTHROW_PURE_FUNCTION static const MDBX_meta *
 constmeta_prefer_steady(const MDBX_env *env) {
-#if MDBX_CACHE_METAS
-  mdbx_assert(env, !env->cache_steady_meta ||
-                       env->cache_steady_meta ==
-                           meta_mostrecent(prefer_steady, env));
-  return (const MDBX_meta *)(env->cache_steady_meta ? env->cache_steady_meta :
-#else
-  return (const MDBX_meta *)(
-#endif /* MDBX_CACHE_METAS */
-                                                    meta_prefer_steady(env));
+#if MDBX_CACHE_METAPTR
+  if (likely(env->cache_steady_meta)) {
+    mdbx_assert(env,
+                env->cache_steady_meta == meta_mostrecent(prefer_steady, env));
+    return (const MDBX_meta *)env->cache_steady_meta;
+  }
+#endif /* MDBX_CACHE_METAPTR */
+  return (const MDBX_meta *)meta_prefer_steady(env);
 }
 
 static volatile const MDBX_meta *meta_prefer_last(const MDBX_env *env) {
   return
-#if MDBX_CACHE_METAS
+#if MDBX_CACHE_METAPTR
       ((MDBX_env *)env)->cache_last_meta =
-#endif /* MDBX_CACHE_METAS */
+#endif /* MDBX_CACHE_METAPTR */
           meta_mostrecent(prefer_last, env);
 }
 
 MDBX_NOTHROW_PURE_FUNCTION static const MDBX_meta *
 constmeta_prefer_last(const MDBX_env *env) {
-#if MDBX_CACHE_METAS
-  mdbx_assert(env,
-              !env->cache_last_meta ||
-                  env->cache_last_meta == meta_mostrecent(prefer_last, env));
-  return (const MDBX_meta *)(env->cache_last_meta ? env->cache_last_meta :
-#else
-  return (const MDBX_meta *)(
-#endif /* MDBX_CACHE_METAS */
-                                                  meta_prefer_last(env));
+#if MDBX_CACHE_METAPTR
+  if (likely(env->cache_last_meta)) {
+    mdbx_assert(env, env->cache_last_meta == meta_mostrecent(prefer_last, env));
+    return (const MDBX_meta *)env->cache_last_meta;
+  }
+#endif /* MDBX_CACHE_METAPTR */
+  return (const MDBX_meta *)meta_prefer_last(env);
 }
 
 static txnid_t mdbx_recent_committed_txnid(const MDBX_env *env) {
@@ -9389,53 +9427,66 @@ static const char *mdbx_durable_str(volatile const MDBX_meta *const meta) {
 /*----------------------------------------------------------------------------*/
 
 /* Find oldest txnid still referenced. */
-static txnid_t find_oldest_reader(const MDBX_env *env) {
-  const txnid_t steady_edge =
-      constmeta_txnid(env, constmeta_prefer_steady(env));
-  mdbx_assert(env, steady_edge <= env->me_txn0->mt_txnid);
+static txnid_t find_oldest_reader(MDBX_env *env) {
+  const uint32_t nothing_changed = MDBX_STRING_TETRAD("None");
+  const txnid_t steady = constmeta_txnid(env, constmeta_prefer_steady(env));
+  mdbx_assert(env, steady <= env->me_txn0->mt_txnid);
 
   MDBX_lockinfo *const lck = env->me_lck_mmap.lck;
   if (unlikely(lck == NULL /* exclusive without-lck mode */)) {
     mdbx_assert(env, env->me_lck == (void *)&env->x_lckless_stub);
-    return env->me_lck->mti_oldest_reader.weak = steady_edge;
+    return env->me_lck->mti_oldest_reader.weak = steady;
   }
 
-  const txnid_t last_oldest =
+  const txnid_t prev_oldest =
       atomic_load64(&lck->mti_oldest_reader, mo_AcquireRelease);
-  mdbx_assert(env, steady_edge >= last_oldest);
-  if (likely(last_oldest == steady_edge))
-    return steady_edge;
+  mdbx_assert(env, steady >= prev_oldest);
 
-  const uint32_t nothing_changed = MDBX_STRING_TETRAD("None");
-  const uint32_t snap_readers_refresh_flag =
-      atomic_load32(&lck->mti_readers_refresh_flag, mo_AcquireRelease);
-  mdbx_jitter4testing(false);
-  if (snap_readers_refresh_flag == nothing_changed)
-    return last_oldest;
+  txnid_t new_oldest = prev_oldest;
+  while (new_oldest != steady &&
+         nothing_changed !=
+             atomic_load32(&lck->mti_readers_refresh_flag, mo_AcquireRelease)) {
+    lck->mti_readers_refresh_flag.weak = nothing_changed;
+    mdbx_jitter4testing(false);
+    const unsigned snap_nreaders =
+        atomic_load32(&lck->mti_numreaders, mo_AcquireRelease);
+    new_oldest = steady;
 
-  atomic_store32(&lck->mti_readers_refresh_flag, nothing_changed, mo_Relaxed);
-  const unsigned snap_nreaders =
-      atomic_load32(&lck->mti_numreaders, mo_AcquireRelease);
-  txnid_t oldest = steady_edge;
-  for (unsigned i = 0; i < snap_nreaders; ++i) {
-    if (atomic_load32(&lck->mti_readers[i].mr_pid, mo_AcquireRelease)) {
-      /* mdbx_jitter4testing(true); */
-      const txnid_t snap = safe64_read(&lck->mti_readers[i].mr_txnid);
-      if (oldest > snap && /* ignore pending updates */ snap <= steady_edge) {
-        oldest = snap;
-        if (oldest == last_oldest)
-          return oldest;
+    for (unsigned i = 0; i < snap_nreaders; ++i) {
+      const mdbx_pid_t pid =
+          atomic_load32(&lck->mti_readers[i].mr_pid, mo_AcquireRelease);
+      if (!pid)
+        continue;
+      mdbx_jitter4testing(true);
+
+      const txnid_t rtxn = safe64_read(&lck->mti_readers[i].mr_txnid);
+      if (unlikely(rtxn < prev_oldest)) {
+        if (unlikely(nothing_changed ==
+                     atomic_load32(&lck->mti_readers_refresh_flag,
+                                   mo_AcquireRelease)) &&
+            safe64_reset_compare(&lck->mti_readers[i].mr_txnid, rtxn)) {
+          mdbx_notice("kick stuck reader[%u of %u].pid_%u %" PRIaTXN
+                      " < prev-oldest %" PRIaTXN ", steady-txn %" PRIaTXN,
+                      i, snap_nreaders, pid, rtxn, prev_oldest, steady);
+        }
+        continue;
+      }
+
+      if (rtxn < new_oldest) {
+        new_oldest = rtxn;
+        if (!MDBX_DEBUG && !MDBX_FORCE_ASSERTIONS && new_oldest == prev_oldest)
+          break;
       }
     }
   }
 
-  if (oldest != last_oldest) {
-    mdbx_verbose("update oldest %" PRIaTXN " -> %" PRIaTXN, last_oldest,
-                 oldest);
-    mdbx_assert(env, oldest >= lck->mti_oldest_reader.weak);
-    atomic_store64(&lck->mti_oldest_reader, oldest, mo_Relaxed);
+  if (new_oldest != prev_oldest) {
+    mdbx_verbose("update oldest %" PRIaTXN " -> %" PRIaTXN, prev_oldest,
+                 new_oldest);
+    mdbx_assert(env, new_oldest >= lck->mti_oldest_reader.weak);
+    atomic_store64(&lck->mti_oldest_reader, new_oldest, mo_Relaxed);
   }
-  return oldest;
+  return new_oldest;
 }
 
 /* Find largest mvcc-snapshot still referenced. */
@@ -10049,9 +10100,9 @@ __hot static pgno_t *scan4range(const MDBX_PNL pnl, const unsigned len,
 #define MDBX_ALLOC_NOLOG 32
 #define MDBX_ALLOC_ALL (MDBX_ALLOC_GC | MDBX_ALLOC_NEW)
 
-__cold static struct page_result
-page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
-  struct page_result ret;
+__cold static pgr_t page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num,
+                                        int flags) {
+  pgr_t ret;
   MDBX_txn *const txn = mc->mc_txn;
   MDBX_env *const env = txn->mt_env;
   mdbx_assert(env, num == 0 || !(flags & MDBX_ALLOC_SLOT));
@@ -10166,17 +10217,11 @@ page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
         goto fail;
       }
 
-      if (!MDBX_DISABLE_PAGECHECKS &&
-          unlikely(key.iov_len != sizeof(txnid_t))) {
+      if (unlikely(key.iov_len != sizeof(txnid_t))) {
         ret.err = MDBX_CORRUPTED;
         goto fail;
       }
       last = unaligned_peek_u64(4, key.iov_base);
-      if (!MDBX_DISABLE_PAGECHECKS &&
-          unlikely(last < MIN_TXNID || last > MAX_TXNID)) {
-        ret.err = MDBX_CORRUPTED;
-        goto fail;
-      }
       if (detent <= last) {
         detent = find_oldest_reader(env) + 1;
         if (detent <= last) {
@@ -10203,7 +10248,7 @@ page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
       if (unlikely((ret.err = mdbx_node_read(
                         &recur.outer,
                         page_node(mp, recur.outer.mc_ki[recur.outer.mc_top]),
-                        &data, pp_txnid4chk(mp, txn))) != MDBX_SUCCESS))
+                        &data, mp)) != MDBX_SUCCESS))
         goto fail;
 
       if ((flags & MDBX_LIFORECLAIM) && !txn->tw.lifo_reclaimed) {
@@ -10218,7 +10263,8 @@ page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
       mdbx_cassert(mc, (mc->mc_flags & C_GCFREEZE) == 0);
       pgno_t *gc_pnl = (pgno_t *)data.iov_base;
       mdbx_tassert(txn, data.iov_len >= MDBX_PNL_SIZEOF(gc_pnl));
-      if (unlikely(data.iov_len < MDBX_PNL_SIZEOF(gc_pnl) ||
+      if (unlikely(data.iov_len % sizeof(pgno_t) ||
+                   data.iov_len < MDBX_PNL_SIZEOF(gc_pnl) ||
                    !mdbx_pnl_check(gc_pnl, txn->mt_next_pgno))) {
         ret.err = MDBX_CORRUPTED;
         goto fail;
@@ -10233,7 +10279,7 @@ page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
                 txn->mt_next_pgno + (size_t)num) ||
            gc_len + MDBX_PNL_SIZE(txn->tw.reclaimed_pglist) >=
                MDBX_PGL_LIMIT)) {
-        /* Stop reclaiming to avoid overflow the page list.
+        /* Stop reclaiming to avoid large/overflow the page list.
          * This is a rare case while search for a continuously multi-page region
          * in a large database.
          * todo4recovery://erased_by_github/libmdbx/issues/123 */
@@ -10269,8 +10315,7 @@ page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
       /* Merge in descending sorted order */
       const unsigned prev_re_len = MDBX_PNL_SIZE(re_list);
       mdbx_pnl_xmerge(re_list, gc_pnl);
-      /* re-check to avoid duplicates */
-      if (!MDBX_DISABLE_PAGECHECKS &&
+      if (mdbx_audit_enabled() &&
           unlikely(!mdbx_pnl_check(re_list, txn->mt_next_pgno))) {
         ret.err = MDBX_CORRUPTED;
         goto fail;
@@ -10338,7 +10383,7 @@ page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
       if (head != steady && META_IS_STEADY(steady) &&
           detent == constmeta_txnid(env, steady) + 1) {
         mdbx_debug("gc-kick-steady: head %" PRIaTXN "-%s, tail %" PRIaTXN
-                   "-%s, oldest %" PRIaTXN,
+                   "-%s, detent %" PRIaTXN,
                    constmeta_txnid(env, head), mdbx_durable_str(head),
                    constmeta_txnid(env, steady), mdbx_durable_str(steady),
                    detent);
@@ -10396,9 +10441,8 @@ page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
 
     if (flags & MDBX_ALLOC_GC) {
       const txnid_t laggard = find_oldest_reader(env);
-      if (laggard >= detent ||
-          (laggard < txn->mt_txnid - xMDBX_TXNID_STEP &&
-           mdbx_kick_longlived_readers(env, laggard) >= detent))
+      if (laggard >= detent || (laggard < txn->mt_txnid - xMDBX_TXNID_STEP &&
+                                kick_longlived_readers(env, laggard) >= detent))
         continue;
     }
 
@@ -10531,7 +10575,7 @@ done:
   return ret;
 }
 
-__hot static struct page_result page_alloc(MDBX_cursor *mc) {
+__hot static pgr_t page_alloc(MDBX_cursor *mc) {
   MDBX_txn *const txn = mc->mc_txn;
 
   /* If there are any loose pages, just use them */
@@ -10554,7 +10598,7 @@ __hot static struct page_result page_alloc(MDBX_cursor *mc) {
     VALGRIND_MAKE_MEM_UNDEFINED(page_data(page), page_space(txn->mt_env));
     MDBX_ASAN_UNPOISON_MEMORY_REGION(page_data(page), page_space(txn->mt_env));
     page->mp_txnid = txn->mt_front;
-    struct page_result ret = {page, MDBX_SUCCESS};
+    pgr_t ret = {page, MDBX_SUCCESS};
     return ret;
   }
 
@@ -10572,7 +10616,7 @@ __hot static struct page_result page_alloc(MDBX_cursor *mc) {
 #endif
 
       MDBX_env *const env = txn->mt_env;
-      struct page_result ret;
+      pgr_t ret;
       if (env->me_flags & MDBX_WRITEMAP) {
         ret.page = pgno2page(env, pgno);
         MDBX_ASAN_UNPOISON_MEMORY_REGION(ret.page, env->me_psize);
@@ -10601,7 +10645,7 @@ __hot static struct page_result page_alloc(MDBX_cursor *mc) {
   return page_alloc_slowpath(mc, 1, MDBX_ALLOC_ALL);
 }
 
-/* Copy the used portions of a non-overflow page. */
+/* Copy the used portions of a non-large/overflow page. */
 __hot static void mdbx_page_copy(MDBX_page *dst, const MDBX_page *src,
                                  size_t psize) {
   STATIC_ASSERT(UINT16_MAX > MAX_PAGESIZE - PAGEHDRSZ);
@@ -10627,13 +10671,13 @@ __hot static void mdbx_page_copy(MDBX_page *dst, const MDBX_page *src,
  *
  * If a page being referenced was spilled to disk in this txn, bring
  * it back and make it dirty/writable again. */
-static struct page_result __must_check_result
-mdbx_page_unspill(MDBX_txn *const txn, const MDBX_page *const mp) {
+static pgr_t __must_check_result mdbx_page_unspill(MDBX_txn *const txn,
+                                                   const MDBX_page *const mp) {
   mdbx_verbose("unspill page %" PRIaPGNO, mp->mp_pgno);
   mdbx_tassert(txn, (txn->mt_flags & MDBX_WRITEMAP) == 0);
   mdbx_tassert(txn, IS_SPILLED(txn, mp));
   const MDBX_txn *scan = txn;
-  struct page_result ret;
+  pgr_t ret;
   do {
     mdbx_tassert(txn, (scan->mt_flags & MDBX_TXN_SPILLS) != 0);
     const unsigned si = mdbx_search_spilled(scan, mp->mp_pgno);
@@ -10710,7 +10754,7 @@ __hot static int mdbx_page_touch(MDBX_cursor *mc) {
     rc = mdbx_pnl_need(&txn->tw.retired_pages, 1);
     if (unlikely(rc != MDBX_SUCCESS))
       goto fail;
-    const struct page_result par = page_alloc(mc);
+    const pgr_t par = page_alloc(mc);
     rc = par.err;
     np = par.page;
     if (unlikely(rc != MDBX_SUCCESS))
@@ -10737,7 +10781,7 @@ __hot static int mdbx_page_touch(MDBX_cursor *mc) {
     np->mp_pgno = pgno;
     np->mp_txnid = txn->mt_front;
   } else if (IS_SPILLED(txn, mp)) {
-    struct page_result pur = mdbx_page_unspill(txn, mp);
+    pgr_t pur = mdbx_page_unspill(txn, mp);
     np = pur.page;
     rc = pur.err;
     if (likely(rc == MDBX_SUCCESS)) {
@@ -11197,10 +11241,10 @@ static bind_rslot_result bind_rslot(MDBX_env *env, const uintptr_t tid) {
   result.err = MDBX_SUCCESS;
   unsigned slot, nreaders;
   while (1) {
-    nreaders = atomic_load32(&env->me_lck->mti_numreaders, mo_Relaxed);
+    nreaders = env->me_lck->mti_numreaders.weak;
     for (slot = 0; slot < nreaders; slot++)
-      if (atomic_load32(&env->me_lck->mti_readers[slot].mr_pid, mo_Relaxed) ==
-          0)
+      if (!atomic_load32(&env->me_lck->mti_readers[slot].mr_pid,
+                         mo_AcquireRelease))
         break;
 
     if (likely(slot < env->me_maxreaders))
@@ -11221,13 +11265,12 @@ static bind_rslot_result bind_rslot(MDBX_env *env, const uintptr_t tid) {
    * slot, next publish it in lck->mti_numreaders.  After
    * that, it is safe for mdbx_env_close() to touch it.
    * When it will be closed, we can finally claim it. */
-  atomic_store32(&result.rslot->mr_pid, 0, mo_Relaxed);
+  atomic_store32(&result.rslot->mr_pid, 0, mo_SequentialConsistency);
   safe64_reset(&result.rslot->mr_txnid, true);
   if (slot == nreaders)
-    atomic_store32(&env->me_lck->mti_numreaders, ++nreaders, mo_Relaxed);
-  atomic_store64(&result.rslot->mr_tid, (env->me_flags & MDBX_NOTLS) ? 0 : tid,
-                 mo_Relaxed);
-  atomic_store32(&result.rslot->mr_pid, env->me_pid, mo_Relaxed);
+    env->me_lck->mti_numreaders.weak = ++nreaders;
+  result.rslot->mr_tid.weak = (env->me_flags & MDBX_NOTLS) ? 0 : tid;
+  atomic_store32(&result.rslot->mr_pid, env->me_pid, mo_AcquireRelease);
   mdbx_rdt_unlock(env);
 
   if (likely(env->me_flags & MDBX_ENV_TXKEY)) {
@@ -11292,6 +11335,7 @@ __cold int mdbx_thread_unregister(const MDBX_env *env) {
                r->mr_tid.weak != mdbx_thread_self()))
     return MDBX_BAD_RSLOT;
 
+  mdbx_assert(env, r->mr_txnid.weak >= SAFE64_INVALID_THRESHOLD);
   if (unlikely(r->mr_txnid.weak < SAFE64_INVALID_THRESHOLD))
     return MDBX_BUSY /* transaction is still active */;
 
@@ -11303,7 +11347,7 @@ __cold int mdbx_thread_unregister(const MDBX_env *env) {
 }
 
 /* check against todo4recovery://erased_by_github/libmdbx/issues/269 */
-static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
+static bool meta_checktxnid(const MDBX_env *env, const volatile MDBX_meta *meta,
                             bool report) {
   const txnid_t head_txnid = meta_txnid(env, meta);
   const txnid_t freedb_mod_txnid = meta->mm_dbs[FREE_DBI].md_mod_txnid;
@@ -11318,16 +11362,16 @@ static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
   const MDBX_page *maindb_root = (env->me_map && maindb_root_pgno != P_INVALID)
                                      ? pgno2page(env, maindb_root_pgno)
                                      : nullptr;
-
   const uint64_t magic_and_version =
-      unaligned_peek_u64(4, &meta->mm_magic_and_version);
+      unaligned_peek_u64_volatile(4, &meta->mm_magic_and_version);
+
   bool ok = true;
   if (unlikely(!head_txnid || head_txnid < freedb_mod_txnid ||
                (!freedb_mod_txnid && freedb_root &&
                 likely(magic_and_version == MDBX_DATA_MAGIC)))) {
     if (report)
       mdbx_warning(
-          "catch invalid %sdb_mod_txnid %" PRIaTXN " for meta_txnid %" PRIaTXN
+          "catch invalid %sdb.mod_txnid %" PRIaTXN " for meta_txnid %" PRIaTXN
           " %s",
           "free", freedb_mod_txnid, head_txnid,
           "(workaround for incoherent flaw of unified page/buffer cache)");
@@ -11338,7 +11382,7 @@ static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
                 likely(magic_and_version == MDBX_DATA_MAGIC)))) {
     if (report)
       mdbx_warning(
-          "catch invalid %sdb_mod_txnid %" PRIaTXN " for meta_txnid %" PRIaTXN
+          "catch invalid %sdb.mod_txnid %" PRIaTXN " for meta_txnid %" PRIaTXN
           " %s",
           "main", maindb_mod_txnid, head_txnid,
           "(workaround for incoherent flaw of unified page/buffer cache)");
@@ -11353,8 +11397,8 @@ static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
       if (report)
         mdbx_warning(
             "catch invalid root_page_txnid %" PRIaTXN
-            " for %sdb_mod_txnid %" PRIaTXN " %s",
-            root_txnid, "free", maindb_mod_txnid,
+            " for %sdb.mod_txnid %" PRIaTXN " %s",
+            root_txnid, "free", freedb_mod_txnid,
             "(workaround for incoherent flaw of unified page/buffer cache)");
       ok = false;
     }
@@ -11368,7 +11412,7 @@ static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
       if (report)
         mdbx_warning(
             "catch invalid root_page_txnid %" PRIaTXN
-            " for %sdb_mod_txnid %" PRIaTXN " %s",
+            " for %sdb.mod_txnid %" PRIaTXN " %s",
             root_txnid, "main", maindb_mod_txnid,
             "(workaround for incoherent flaw of unified page/buffer cache)");
       ok = false;
@@ -11377,31 +11421,37 @@ static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
   return ok;
 }
 
+__cold static bool is_timeout(uint64_t *timestamp) {
+  if (likely(!*timestamp)) {
+    *timestamp = mdbx_osal_monotime();
+    return false;
+  }
+  return mdbx_osal_monotime() - *timestamp > 65536 / 10;
+}
+
 /* check with timeout as the workaround
  * for todo4recovery://erased_by_github/libmdbx/issues/269 */
-static int meta_waittxnid(const MDBX_env *env, const MDBX_meta *meta,
+static int meta_waittxnid(const MDBX_env *env, const volatile MDBX_meta *meta,
                           uint64_t *timestamp) {
   if (likely(meta_checktxnid(env, meta, !*timestamp)))
     return MDBX_SUCCESS;
 
-  if (!*timestamp)
-    *timestamp = mdbx_osal_monotime();
-  else if (unlikely(mdbx_osal_monotime() - *timestamp > 65536 / 10)) {
-    mdbx_error("bailout waiting for valid snapshot %s",
-               "(workaround for incoherent flaw of unified page/buffer cache)");
-    return MDBX_CORRUPTED;
+  if (likely(!is_timeout(timestamp))) {
+#if defined(_WIN32) || defined(_WIN64)
+    SwitchToThread();
+#elif defined(__linux__) || defined(__gnu_linux__) || defined(_UNIX03_SOURCE)
+    sched_yield();
+#elif (defined(_GNU_SOURCE) && __GLIBC_PREREQ(2, 1)) || defined(_OPEN_THREADS)
+    pthread_yield();
+#else
+    usleep(42);
+#endif
+    return MDBX_RESULT_TRUE;
   }
 
-#if defined(_WIN32) || defined(_WIN64)
-  SwitchToThread();
-#elif defined(__linux__) || defined(__gnu_linux__) || defined(_UNIX03_SOURCE)
-  sched_yield();
-#elif (defined(_GNU_SOURCE) && __GLIBC_PREREQ(2, 1)) || defined(_OPEN_THREADS)
-  pthread_yield();
-#else
-  usleep(42);
-#endif
-  return MDBX_RESULT_TRUE;
+  mdbx_error("bailout waiting for valid snapshot (%s)",
+             "workaround for incoherent flaw of unified page/buffer cache");
+  return MDBX_CORRUPTED;
 }
 
 /* Common code for mdbx_txn_begin() and mdbx_txn_renew(). */
@@ -11478,84 +11528,77 @@ static int mdbx_txn_renew0(MDBX_txn *txn, const unsigned flags) {
     }
 
     /* Seek & fetch the last meta */
-    if (likely(/* not recovery mode */ env->me_stuck_meta < 0)) {
-      uint64_t timestamp = 0;
-      while (1) {
-        meta_cache_clear(env);
-        volatile const MDBX_meta *const meta = meta_prefer_last(env);
-        mdbx_jitter4testing(false);
-        const txnid_t snap = meta_txnid(env, meta);
-        mdbx_jitter4testing(false);
-        if (likely(r)) {
-          safe64_reset(&r->mr_txnid, false);
-          atomic_store32(&r->mr_snapshot_pages_used, meta->mm_geo.next,
-                         mo_Relaxed);
-          atomic_store64(&r->mr_snapshot_pages_retired,
-                         unaligned_peek_u64_volatile(4, meta->mm_pages_retired),
-                         mo_Relaxed);
-          safe64_write(&r->mr_txnid, snap);
-          mdbx_jitter4testing(false);
-          mdbx_assert(env, r->mr_pid.weak == mdbx_getpid());
-          mdbx_assert(
-              env, r->mr_tid.weak ==
-                       ((env->me_flags & MDBX_NOTLS) ? 0 : mdbx_thread_self()));
-          mdbx_assert(env, r->mr_txnid.weak == snap);
-          atomic_store32(&env->me_lck->mti_readers_refresh_flag, true,
-                         mo_AcquireRelease);
-        } else {
-          /* exclusive mode without lck */
-        }
-        mdbx_jitter4testing(true);
-
-        /* Snap the state from current meta-head */
-        txn->mt_txnid = snap;
-        txn->mt_geo = meta->mm_geo;
-        STATIC_ASSERT(CORE_DBS == 2);
-        txn->mt_dbs[0] = meta->mm_dbs[0];
-        txn->mt_dbs[1] = meta->mm_dbs[1];
-        txn->mt_canary = meta->mm_canary;
-
-        /* LY: Retry on a race, ITS#7970.
-         * The barrier is not needed here since C11-atomics are used,
-         * but it is reasonable paranoia to avoid compiler misoptimization
-         * and makes clarity for code readers. */
-        mdbx_compiler_barrier();
-        if (likely(meta == meta_prefer_last(env) &&
-                   snap == meta_txnid(env, meta) &&
-                   snap >= atomic_load64(&env->me_lck->mti_oldest_reader,
-                                         mo_AcquireRelease))) {
-          rc = meta_waittxnid(env, (const MDBX_meta *)meta, &timestamp);
-          mdbx_jitter4testing(false);
-          if (likely(rc == MDBX_SUCCESS))
-            break;
-          if (likely(rc == MDBX_RESULT_TRUE))
-            continue;
-          goto bailout;
-        }
-      }
-    } else {
-      /* r/o recovery mode */
-      MDBX_meta *const meta = METAPAGE(env, env->me_stuck_meta);
-      txn->mt_txnid = constmeta_txnid(env, meta);
-      txn->mt_geo = meta->mm_geo;
-      memcpy(txn->mt_dbs, meta->mm_dbs, CORE_DBS * sizeof(MDBX_db));
-      txn->mt_canary = meta->mm_canary;
+    uint64_t timestamp = 0;
+    unsigned loop = 0;
+    while (1) {
+      meta_cache_clear(env);
+      volatile const MDBX_meta *const meta =
+          likely(env->me_stuck_meta < 0)
+              ? /* regular */ meta_prefer_last(env)
+              : /* recovery mode */ METAPAGE(env, env->me_stuck_meta);
+      mdbx_jitter4testing(false);
+      const txnid_t target_txnid = meta_txnid(env, meta);
+      mdbx_jitter4testing(false);
       if (likely(r)) {
+        safe64_reset(&r->mr_txnid, false);
         atomic_store32(&r->mr_snapshot_pages_used, meta->mm_geo.next,
                        mo_Relaxed);
         atomic_store64(&r->mr_snapshot_pages_retired,
-                       unaligned_peek_u64(4, meta->mm_pages_retired),
+                       unaligned_peek_u64_volatile(4, meta->mm_pages_retired),
                        mo_Relaxed);
-        atomic_store64(&r->mr_txnid, txn->mt_txnid, mo_Relaxed);
+        safe64_write(&r->mr_txnid, target_txnid);
         mdbx_jitter4testing(false);
         mdbx_assert(env, r->mr_pid.weak == mdbx_getpid());
         mdbx_assert(
             env, r->mr_tid.weak ==
                      ((env->me_flags & MDBX_NOTLS) ? 0 : mdbx_thread_self()));
-        mdbx_assert(env, r->mr_txnid.weak == txn->mt_txnid);
+        mdbx_assert(env,
+                    r->mr_txnid.weak == target_txnid ||
+                        (r->mr_txnid.weak >= SAFE64_INVALID_THRESHOLD &&
+                         target_txnid < env->me_lck->mti_oldest_reader.weak));
         atomic_store32(&env->me_lck->mti_readers_refresh_flag, true,
-                       mo_Relaxed);
+                       mo_AcquireRelease);
+      } else {
+        /* exclusive mode without lck */
+        mdbx_assert(env, !env->me_lck_mmap.lck &&
+                             env->me_lck == (void *)&env->x_lckless_stub);
       }
+      mdbx_jitter4testing(true);
+
+      /* Snap the state from current meta-head */
+      txn->mt_txnid = target_txnid;
+      txn->mt_geo = meta->mm_geo;
+      STATIC_ASSERT(CORE_DBS == 2);
+      txn->mt_dbs[0] = meta->mm_dbs[0];
+      txn->mt_dbs[1] = meta->mm_dbs[1];
+      txn->mt_canary = meta->mm_canary;
+
+      /* LY: Retry on a race, ITS#7970.
+       * The barrier is not needed here since C11-atomics are used,
+       * but it is reasonable paranoia to avoid compiler misoptimization
+       * and makes clarity for code readers. */
+      mdbx_compiler_barrier();
+      const txnid_t oldest =
+          atomic_load64(&env->me_lck->mti_oldest_reader, mo_AcquireRelease);
+      if (unlikely(target_txnid < oldest ||
+                   (meta != meta_prefer_last(env) && env->me_stuck_meta < 0) ||
+                   target_txnid != meta_txnid(env, meta))) {
+        if (unlikely(++loop > 42)) {
+          mdbx_error("bailout waiting for valid snapshot (%s)",
+                     "metapages are too volatile");
+          rc = MDBX_PROBLEM;
+          goto bailout;
+        }
+        timestamp = 0;
+        continue;
+      }
+
+      rc = meta_waittxnid(env, meta, &timestamp);
+      mdbx_jitter4testing(false);
+      if (likely(rc == MDBX_SUCCESS))
+        break;
+      if (unlikely(rc != MDBX_RESULT_TRUE))
+        goto bailout;
     }
 
     if (unlikely(txn->mt_txnid < MIN_TXNID || txn->mt_txnid > MAX_TXNID)) {
@@ -11614,7 +11657,7 @@ static int mdbx_txn_renew0(MDBX_txn *txn, const unsigned flags) {
     uint64_t timestamp = 0;
     while (
         "workaround for todo4recovery://erased_by_github/libmdbx/issues/269") {
-      rc = meta_waittxnid(env, (const MDBX_meta *)meta, &timestamp);
+      rc = meta_waittxnid(env, meta, &timestamp);
       if (likely(rc == MDBX_SUCCESS))
         break;
       if (unlikely(rc != MDBX_RESULT_TRUE))
@@ -11691,6 +11734,10 @@ static int mdbx_txn_renew0(MDBX_txn *txn, const unsigned flags) {
                           (txn->mt_flags & MDBX_TXN_RDONLY) ? true : false);
       if (rc != MDBX_SUCCESS)
         goto bailout;
+    } else {
+      env->me_dxb_mmap.current = size;
+      env->me_dxb_mmap.filesize =
+          (env->me_dxb_mmap.filesize < size) ? size : env->me_dxb_mmap.filesize;
     }
     if (txn->mt_flags & MDBX_TXN_RDONLY) {
 #if defined(_WIN32) || defined(_WIN64)
@@ -11705,10 +11752,6 @@ static int mdbx_txn_renew0(MDBX_txn *txn, const unsigned flags) {
         mdbx_srwlock_AcquireShared(&env->me_remap_guard);
       }
 #endif /* Windows */
-    } else {
-      env->me_dxb_mmap.current = size;
-      env->me_dxb_mmap.filesize =
-          (env->me_dxb_mmap.filesize < size) ? size : env->me_dxb_mmap.filesize;
     }
 #if defined(MDBX_USE_VALGRIND) || defined(__SANITIZE_ADDRESS__)
     mdbx_txn_valgrind(env, txn);
@@ -12906,12 +12949,11 @@ retry:
        * now delete them and any we reserved for tw.reclaimed_pglist. */
       while (ctx->cleaned_id <= txn->tw.last_reclaimed) {
         rc = mdbx_cursor_first(&ctx->cursor.outer, &key, NULL);
-        if (unlikely(rc != MDBX_SUCCESS)) {
-          if (rc == MDBX_NOTFOUND)
-            break;
+        if (rc == MDBX_NOTFOUND)
+          break;
+        if (unlikely(rc != MDBX_SUCCESS))
           goto bailout;
-        }
-        if (!MDBX_DISABLE_PAGECHECKS &&
+        if (!MDBX_DISABLE_VALIDATION &&
             unlikely(key.iov_len != sizeof(txnid_t))) {
           rc = MDBX_CORRUPTED;
           goto bailout;
@@ -12920,11 +12962,6 @@ retry:
         ctx->settled = 0;
         ctx->reused_slot = 0;
         ctx->cleaned_id = unaligned_peek_u64(4, key.iov_base);
-        if (!MDBX_DISABLE_PAGECHECKS && unlikely(ctx->cleaned_id < MIN_TXNID ||
-                                                 ctx->cleaned_id > MAX_TXNID)) {
-          rc = MDBX_CORRUPTED;
-          goto bailout;
-        }
         if (ctx->cleaned_id > txn->tw.last_reclaimed)
           break;
         if (likely(!ctx->dense)) {
@@ -13289,11 +13326,6 @@ retry:
               goto bailout;
             }
             txnid_t gc_first = unaligned_peek_u64(4, key.iov_base);
-            if (!MDBX_DISABLE_PAGECHECKS &&
-                unlikely(gc_first < MIN_TXNID || gc_first > MAX_TXNID)) {
-              rc = MDBX_CORRUPTED;
-              goto bailout;
-            }
             if (gc_first <= MIN_TXNID) {
               mdbx_debug("%s: no free GC's id(s) less than %" PRIaTXN
                          " (going dense-mode)",
@@ -13344,17 +13376,11 @@ retry:
         ctx->rid = find_oldest_reader(env);
         rc = mdbx_cursor_get(&ctx->cursor.outer, &key, NULL, MDBX_FIRST);
         if (rc == MDBX_SUCCESS) {
-          if (!MDBX_DISABLE_PAGECHECKS &&
-              unlikely(key.iov_len != sizeof(txnid_t))) {
+          if (unlikely(key.iov_len != sizeof(txnid_t))) {
             rc = MDBX_CORRUPTED;
             goto bailout;
           }
           txnid_t gc_first = unaligned_peek_u64(4, key.iov_base);
-          if (!MDBX_DISABLE_PAGECHECKS &&
-              unlikely(gc_first < MIN_TXNID || gc_first > MAX_TXNID)) {
-            rc = MDBX_CORRUPTED;
-            goto bailout;
-          }
           if (ctx->rid >= gc_first)
             ctx->rid = gc_first - 1;
           if (unlikely(ctx->rid == 0)) {
@@ -13983,7 +14009,7 @@ static __inline void mdbx_txn_merge(MDBX_txn *const parent, MDBX_txn *const txn,
       }
     }
   } else {
-    /* from begin to end with dst shrinking (a lot of new overflow pages) */
+    /* from begin to end with shrinking (a lot of new large/overflow pages) */
     for (l = s = d = 1; s <= src->length && d <= dst->length;) {
       if (unlikely(l >= d)) {
         /* squash to get a gap of free space for merge */
@@ -15797,8 +15823,9 @@ __cold static int mdbx_setup_dxb(MDBX_env *env, const int lck_rc,
     if (unlikely(err != MDBX_SUCCESS))
       return err;
 
-    err = mdbx_ftruncate(env->me_lazy_fd,
-                         env->me_dxb_mmap.filesize = env->me_dbgeo.now);
+    err = mdbx_ftruncate(env->me_lazy_fd, env->me_dxb_mmap.filesize =
+                                              env->me_dxb_mmap.current =
+                                                  env->me_dbgeo.now);
     if (unlikely(err != MDBX_SUCCESS))
       return err;
 
@@ -17104,7 +17131,7 @@ __cold int mdbx_env_open(MDBX_env *env, const char *pathname,
     mdbx_debug("entries: %" PRIu64, db->md_entries);
     mdbx_debug("branch pages: %" PRIaPGNO, db->md_branch_pages);
     mdbx_debug("leaf pages: %" PRIaPGNO, db->md_leaf_pages);
-    mdbx_debug("overflow pages: %" PRIaPGNO, db->md_overflow_pages);
+    mdbx_debug("large/overflow pages: %" PRIaPGNO, db->md_overflow_pages);
     mdbx_debug("root: %" PRIaPGNO, db->md_root);
     mdbx_debug("schema_altered: %" PRIaTXN, db->md_mod_txnid);
   }
@@ -17490,10 +17517,10 @@ static struct node_result __hot mdbx_node_search(MDBX_cursor *mc,
 
 /* Pop a page off the top of the cursor's stack. */
 static __inline void mdbx_cursor_pop(MDBX_cursor *mc) {
-  if (mc->mc_snum) {
+  if (likely(mc->mc_snum)) {
     mdbx_debug("popped page %" PRIaPGNO " off db %d cursor %p",
                mc->mc_pg[mc->mc_top]->mp_pgno, DDBI(mc), (void *)mc);
-    if (--mc->mc_snum) {
+    if (likely(--mc->mc_snum)) {
       mc->mc_top--;
     } else {
       mc->mc_flags &= ~C_INITIALIZED;
@@ -17512,102 +17539,135 @@ static __inline int mdbx_cursor_push(MDBX_cursor *mc, MDBX_page *mp) {
     return MDBX_CURSOR_FULL;
   }
 
-  mdbx_cassert(mc, mc->mc_snum < UINT16_MAX);
   mc->mc_top = mc->mc_snum++;
   mc->mc_pg[mc->mc_top] = mp;
   mc->mc_ki[mc->mc_top] = 0;
-
   return MDBX_SUCCESS;
 }
 
-__hot static struct page_result
-mdbx_page_get_ex(MDBX_cursor *const mc, const pgno_t pgno,
-                 /* TODO: use parent-page ptr */ txnid_t front) {
-  struct page_result ret;
+__hot static __noinline MDBX_page *page_lookup_spilled(MDBX_txn *const txn,
+                                                       const pgno_t pgno) {
+  const MDBX_txn *spiller = txn;
+  do {
+    /* Spilled pages were dirtied in this txn and flushed
+     * because the dirty list got full. Bring this page
+     * back in from the map (but don't unspill it here,
+     * leave that unless page_touch happens again). */
+    if (unlikely(spiller->mt_flags & MDBX_TXN_SPILLS) &&
+        mdbx_search_spilled(spiller, pgno))
+      break;
+
+    const unsigned i = mdbx_dpl_search(spiller, pgno);
+    mdbx_tassert(txn, (int)i > 0);
+    if (spiller->tw.dirtylist->items[i].pgno == pgno) {
+      spiller->tw.dirtylist->items[i].lru = txn->tw.dirtylru++;
+      return spiller->tw.dirtylist->items[i].ptr;
+    }
+
+    spiller = spiller->mt_parent;
+  } while (spiller);
+
+  return pgno2page(txn->mt_env, pgno);
+}
+
+__hot static __always_inline pgr_t page_get_inline(const uint16_t ILL,
+                                                   MDBX_cursor *const mc,
+                                                   const pgno_t pgno,
+                                                   const txnid_t front) {
   MDBX_txn *const txn = mc->mc_txn;
   mdbx_tassert(txn, front <= txn->mt_front);
+
+  pgr_t r;
   if (unlikely(pgno >= txn->mt_next_pgno)) {
     mdbx_error("page #%" PRIaPGNO " beyond next-pgno", pgno);
   notfound:
-    ret.page = nullptr;
-    ret.err = MDBX_PAGE_NOTFOUND;
+    r.page = nullptr;
+    r.err = MDBX_PAGE_NOTFOUND;
   bailout:
     mc->mc_txn->mt_flags |= MDBX_TXN_ERROR;
-    return ret;
+    return r;
   }
+
+  r.page = pgno2page(txn->mt_env, pgno);
+  if (unlikely((txn->mt_flags & (MDBX_TXN_RDONLY | MDBX_WRITEMAP)) == 0))
+    r.page = page_lookup_spilled(txn, pgno);
 
   MDBX_env *const env = txn->mt_env;
   mdbx_assert(env, ((txn->mt_flags ^ env->me_flags) & MDBX_WRITEMAP) == 0);
-  if (unlikely((txn->mt_flags & (MDBX_TXN_RDONLY | MDBX_WRITEMAP)) == 0)) {
-    const MDBX_txn *spiller = txn;
-    do {
-      /* Spilled pages were dirtied in this txn and flushed
-       * because the dirty list got full. Bring this page
-       * back in from the map (but don't unspill it here,
-       * leave that unless page_touch happens again). */
-      if (unlikely(spiller->mt_flags & MDBX_TXN_SPILLS) &&
-          mdbx_search_spilled(spiller, pgno)) {
-        goto spilled;
-      }
 
-      const unsigned i = mdbx_dpl_search(spiller, pgno);
-      assert((int)i > 0);
-      if (spiller->tw.dirtylist->items[i].pgno == pgno) {
-        ret.page = spiller->tw.dirtylist->items[i].ptr;
-        spiller->tw.dirtylist->items[i].lru = txn->tw.dirtylru++;
-        goto dirty;
-      }
-
-      spiller = spiller->mt_parent;
-    } while (spiller != NULL);
-  }
-
-spilled:
-  ret.page = pgno2page(env, pgno);
-
-dirty:
-  if (unlikely(ret.page->mp_pgno != pgno)) {
-    bad_page(ret.page,
-             "mismatch actual pgno (%" PRIaPGNO ") != expected (%" PRIaPGNO
-             ")\n",
-             ret.page->mp_pgno, pgno);
+  if (unlikely(r.page->mp_pgno != pgno)) {
+    r.err = bad_page(
+        r.page, "pgno mismatch (%" PRIaPGNO ") != expected (%" PRIaPGNO ")\n",
+        r.page->mp_pgno, pgno);
     goto notfound;
   }
 
-#if !MDBX_DISABLE_PAGECHECKS
-  if (unlikely(ret.page->mp_flags & P_ILL_BITS)) {
-    ret.err =
-        bad_page(ret.page, "invalid page's flags (%u)\n", ret.page->mp_flags);
+#if !MDBX_DISABLE_VALIDATION
+  if (unlikely(r.page->mp_flags & ILL)) {
+    if (ILL == P_ILL_BITS || (r.page->mp_flags & P_ILL_BITS))
+      r.err = bad_page(r.page, "invalid page's flags (%u)\n", r.page->mp_flags);
+    else if (ILL & P_OVERFLOW) {
+      assert((ILL & (P_BRANCH | P_LEAF | P_LEAF2)) == 0);
+      assert(r.page->mp_flags & (P_BRANCH | P_LEAF | P_LEAF2));
+      r.err = bad_page(r.page, "unexpected %s instead of %s (%u)\n",
+                       "large/overlow", "branch/leaf/leaf2", r.page->mp_flags);
+    } else if (ILL & (P_BRANCH | P_LEAF | P_LEAF2)) {
+      assert((ILL & P_BRANCH) && (ILL & P_LEAF) && (ILL & P_LEAF2));
+      assert(r.page->mp_flags & (P_BRANCH | P_LEAF | P_LEAF2));
+      r.err = bad_page(r.page, "unexpected %s instead of %s (%u)\n",
+                       "branch/leaf/leaf2", "large/overlow", r.page->mp_flags);
+    } else {
+      assert(false);
+    }
     goto bailout;
   }
 
-  if (unlikely(ret.page->mp_txnid > front) &&
-      unlikely(ret.page->mp_txnid > txn->mt_front || front < txn->mt_txnid)) {
-    ret.err = bad_page(
-        ret.page,
-        "invalid page txnid (%" PRIaTXN ") for %s' txnid (%" PRIaTXN ")\n",
-        ret.page->mp_txnid,
+  if (unlikely(r.page->mp_txnid > front) &&
+      unlikely(r.page->mp_txnid > txn->mt_front || front < txn->mt_txnid)) {
+    r.err = bad_page(
+        r.page,
+        "invalid page' txnid (%" PRIaTXN ") for %s' txnid (%" PRIaTXN ")\n",
+        r.page->mp_txnid,
         (front == txn->mt_front && front != txn->mt_txnid) ? "front-txn"
                                                            : "parent-page",
         front);
     goto bailout;
   }
 
-  if (unlikely((ret.page->mp_upper < ret.page->mp_lower ||
-                ((ret.page->mp_lower | ret.page->mp_upper) & 1) ||
-                PAGEHDRSZ + ret.page->mp_upper > env->me_psize) &&
-               !IS_OVERFLOW(ret.page))) {
-    ret.err =
-        bad_page(ret.page, "invalid page lower(%u)/upper(%u) with limit (%u)\n",
-                 ret.page->mp_lower, ret.page->mp_upper, page_space(env));
-    goto bailout;
+  if (((ILL & P_OVERFLOW) || !IS_OVERFLOW(r.page)) &&
+      (ILL & (P_BRANCH | P_LEAF | P_LEAF2)) == 0) {
+    if (unlikely(r.page->mp_upper < r.page->mp_lower ||
+                 ((r.page->mp_lower | r.page->mp_upper) & 1) ||
+                 PAGEHDRSZ + r.page->mp_upper > env->me_psize)) {
+      r.err =
+          bad_page(r.page, "invalid page' lower(%u)/upper(%u) with limit %u\n",
+                   r.page->mp_lower, r.page->mp_upper, page_space(env));
+      goto bailout;
+    }
+  } else if ((ILL & P_OVERFLOW) == 0) {
+    const pgno_t npages = r.page->mp_pages;
+    if (unlikely(npages < 1 || npages >= MAX_PAGENO / 2)) {
+      r.err = bad_page(r.page, "invalid n-pages (%u) for large-page\n", npages);
+      goto bailout;
+    }
+    if (unlikely(r.page->mp_pgno + npages > txn->mt_next_pgno)) {
+      r.err = bad_page(
+          r.page,
+          "end of large-page beyond (%u) allocated space (%u next-pgno)\n",
+          r.page->mp_pgno + npages, txn->mt_next_pgno);
+      goto bailout;
+    }
+  } else {
+    assert(false);
   }
-#endif /* !MDBX_DISABLE_PAGECHECKS */
+#endif /* !MDBX_DISABLE_VALIDATION */
 
-  ret.err = MDBX_SUCCESS;
-  if (mdbx_audit_enabled())
-    ret.err = mdbx_page_check(mc, ret.page, C_UPDATING);
-  return ret;
+  if (unlikely(mc->mc_checking & CC_PAGECHECK) &&
+      unlikely(MDBX_SUCCESS != (r.err = mdbx_page_check(mc, r.page))))
+    goto bailout;
+
+  r.err = MDBX_SUCCESS;
+  return r;
 }
 
 /* Finish mdbx_page_search() / mdbx_page_search_lowest().
@@ -17655,8 +17715,8 @@ __hot static int mdbx_page_search_root(MDBX_cursor *mc, const MDBX_val *key,
     mdbx_cassert(mc, i >= 0 && i < (int)page_numkeys(mp));
     node = page_node(mp, i);
 
-    if (unlikely((rc = mdbx_page_get(mc, node_pgno(node), &mp,
-                                     pp_txnid4chk(mp, mc->mc_txn))) != 0))
+    rc = page_get(mc, node_pgno(node), &mp, mp->mp_txnid);
+    if (unlikely(rc != MDBX_SUCCESS))
       return rc;
 
     mc->mc_ki[mc->mc_top] = (indx_t)i;
@@ -17671,13 +17731,11 @@ __hot static int mdbx_page_search_root(MDBX_cursor *mc, const MDBX_val *key,
     }
   }
 
-#if !MDBX_DISABLE_PAGECHECKS
-  if (unlikely(!IS_LEAF(mp))) {
-    mc->mc_txn->mt_flags |= MDBX_TXN_ERROR;
-    return bad_page(mp, "index points to a page with 0x%02x flags\n",
-                    mp->mp_flags);
+  if (!MDBX_DISABLE_VALIDATION && unlikely(!CHECK_LEAF_TYPE(mc, mp))) {
+    mdbx_error("unexpected leaf-page #%" PRIaPGNO " type 0x%x seen by cursor",
+               mp->mp_pgno, mp->mp_flags);
+    return MDBX_CORRUPTED;
   }
-#endif /* !MDBX_DISABLE_PAGECHECKS */
 
   mdbx_debug("found leaf page %" PRIaPGNO " for key [%s]", mp->mp_pgno,
              DKEY_DEBUG(key));
@@ -17706,7 +17764,7 @@ static int mdbx_setup_dbx(MDBX_dbx *const dbx, const MDBX_db *const db,
   assert(dbx->md_vlen_max != (unsigned)-1);
 
   if ((db->md_flags & (MDBX_DUPFIXED | MDBX_INTEGERDUP)) != 0 && db->md_xsize) {
-    if (!MDBX_DISABLE_PAGECHECKS && unlikely(db->md_xsize < dbx->md_vlen_min ||
+    if (!MDBX_DISABLE_VALIDATION && unlikely(db->md_xsize < dbx->md_vlen_min ||
                                              db->md_xsize > dbx->md_vlen_max)) {
       mdbx_error("db.md_xsize (%u) <> min/max value-length (%zu/%zu)",
                  db->md_xsize, dbx->md_vlen_min, dbx->md_vlen_max);
@@ -17752,9 +17810,8 @@ static int mdbx_fetch_sdb(MDBX_txn *txn, MDBX_dbi dbi) {
     return MDBX_INCOMPATIBLE; /* not a named DB */
   }
 
-  const txnid_t pp_txnid =
-      pp_txnid4chk(couple.outer.mc_pg[couple.outer.mc_top], txn);
-  rc = mdbx_node_read(&couple.outer, nsr.node, &data, pp_txnid);
+  rc = mdbx_node_read(&couple.outer, nsr.node, &data,
+                      couple.outer.mc_pg[couple.outer.mc_top]);
   if (unlikely(rc != MDBX_SUCCESS))
     return rc;
 
@@ -17780,14 +17837,15 @@ static int mdbx_fetch_sdb(MDBX_txn *txn, MDBX_dbi dbi) {
   }
 
   memcpy(db, data.iov_base, sizeof(MDBX_db));
-#if !MDBX_DISABLE_PAGECHECKS
+#if !MDBX_DISABLE_VALIDATION
+  const txnid_t pp_txnid = couple.outer.mc_pg[couple.outer.mc_top]->mp_txnid;
   mdbx_tassert(txn, txn->mt_front >= pp_txnid);
   if (unlikely(db->md_mod_txnid > pp_txnid)) {
     mdbx_error("db.md_mod_txnid (%" PRIaTXN ") > page-txnid (%" PRIaTXN ")",
                db->md_mod_txnid, pp_txnid);
     return MDBX_CORRUPTED;
   }
-#endif /* !MDBX_DISABLE_PAGECHECKS */
+#endif /* !MDBX_DISABLE_VALIDATION */
   rc = mdbx_setup_dbx(dbx, db, txn->mt_env->me_psize);
   if (unlikely(rc != MDBX_SUCCESS))
     return rc;
@@ -17805,10 +17863,9 @@ __hot static int mdbx_page_search_lowest(MDBX_cursor *mc) {
   MDBX_page *mp = mc->mc_pg[mc->mc_top];
   mdbx_cassert(mc, IS_BRANCH(mp));
   MDBX_node *node = page_node(mp, 0);
-  int rc;
 
-  if (unlikely((rc = mdbx_page_get(mc, node_pgno(node), &mp,
-                                   pp_txnid4chk(mp, mc->mc_txn))) != 0))
+  int rc = page_get(mc, node_pgno(node), &mp, mp->mp_txnid);
+  if (unlikely(rc != MDBX_SUCCESS))
     return rc;
 
   mc->mc_ki[mc->mc_top] = 0;
@@ -17873,7 +17930,7 @@ __hot static int mdbx_page_search(MDBX_cursor *mc, const MDBX_val *key,
         }
       while (unlikely((scan = scan->mt_parent) != nullptr));
     }
-    if (unlikely((rc = mdbx_page_get(mc, root, &mc->mc_pg[0], pp_txnid)) != 0))
+    if (unlikely((rc = page_get(mc, root, &mc->mc_pg[0], pp_txnid)) != 0))
       return rc;
   }
 
@@ -17896,30 +17953,49 @@ __hot static int mdbx_page_search(MDBX_cursor *mc, const MDBX_val *key,
   return mdbx_page_search_root(mc, key, flags);
 }
 
-/* Return the data associated with a given node.
- *
- * [in] mc      The cursor for this operation.
- * [in] leaf    The node being read.
- * [out] data   Updated to point to the node's data.
- *
- * Returns 0 on success, non-zero on failure. */
-static __always_inline int mdbx_node_read(MDBX_cursor *mc,
-                                          const MDBX_node *node, MDBX_val *data,
-                                          const txnid_t front) {
-  data->iov_len = node_ds(node);
-  data->iov_base = node_data(node);
-  if (unlikely(F_ISSET(node_flags(node), F_BIGDATA))) {
-    /* Read overflow data. */
-    MDBX_page *omp; /* overflow page */
-    int rc = mdbx_page_get(mc, node_largedata_pgno(node), &omp, front);
-    if (unlikely((rc != MDBX_SUCCESS))) {
-      mdbx_debug("read overflow page %" PRIaPGNO " failed",
-                 node_largedata_pgno(node));
-      return rc;
+/* Read large/overflow node data. */
+static __noinline int node_read_bigdata(MDBX_cursor *mc, const MDBX_node *node,
+                                        MDBX_val *data, const MDBX_page *mp) {
+  mdbx_cassert(mc,
+               node_flags(node) == F_BIGDATA && data->iov_len == node_ds(node));
+
+  pgr_t lp = page_get_large(mc, node_largedata_pgno(node), mp->mp_txnid);
+  if (unlikely((lp.err != MDBX_SUCCESS))) {
+    mdbx_debug("read large/overflow page %" PRIaPGNO " failed",
+               node_largedata_pgno(node));
+    return lp.err;
+  }
+
+  mdbx_cassert(mc, PAGETYPE_WHOLE(lp.page) == P_OVERFLOW);
+  data->iov_base = page_data(lp.page);
+  if (!MDBX_DISABLE_VALIDATION) {
+    const MDBX_env *env = mc->mc_txn->mt_env;
+    const size_t dsize = data->iov_len;
+    if (unlikely(node_size_len(node_ks(node), dsize) <= env->me_leaf_nodemax))
+      poor_page(mp, "too small data (%zu bytes) for bigdata-node", dsize);
+    const unsigned npages = number_of_ovpages(env, dsize);
+    if (unlikely(lp.page->mp_pages != npages)) {
+      if (lp.page->mp_pages < npages)
+        return bad_page(lp.page,
+                        "too less n-pages %u for bigdata-node (%zu bytes)",
+                        lp.page->mp_pages, dsize);
+      else
+        poor_page(lp.page, "extra n-pages %u for bigdata-node (%zu bytes)",
+                  lp.page->mp_pages, dsize);
     }
-    data->iov_base = page_data(omp);
   }
   return MDBX_SUCCESS;
+}
+
+/* Return the data associated with a given node. */
+static __always_inline int mdbx_node_read(MDBX_cursor *mc,
+                                          const MDBX_node *node, MDBX_val *data,
+                                          const MDBX_page *mp) {
+  data->iov_len = node_ds(node);
+  data->iov_base = node_data(node);
+  if (likely(node_flags(node) != F_BIGDATA))
+    return MDBX_SUCCESS;
+  return node_read_bigdata(mc, node, data, mp);
 }
 
 int mdbx_get(MDBX_txn *txn, MDBX_dbi dbi, const MDBX_val *key, MDBX_val *data) {
@@ -18057,8 +18133,8 @@ static int mdbx_cursor_sibling(MDBX_cursor *mc, int dir) {
   mdbx_cassert(mc, IS_BRANCH(mc->mc_pg[mc->mc_top]));
 
   node = page_node(mp = mc->mc_pg[mc->mc_top], mc->mc_ki[mc->mc_top]);
-  if (unlikely((rc = mdbx_page_get(mc, node_pgno(node), &mp,
-                                   pp_txnid4chk(mp, mc->mc_txn))) != 0)) {
+  rc = page_get(mc, node_pgno(node), &mp, mp->mp_txnid);
+  if (unlikely(rc != MDBX_SUCCESS)) {
     /* mc will be inconsistent if caller does mc_snum++ as above */
     mc->mc_flags &= ~(C_INITIALIZED | C_EOF);
     return rc;
@@ -18069,7 +18145,7 @@ static int mdbx_cursor_sibling(MDBX_cursor *mc, int dir) {
     return rc;
 
   mc->mc_ki[mc->mc_top] =
-      (indx_t)((dir == SIBLING_LEFT) ? page_numkeys(mp) - 1 : 0);
+      (dir == SIBLING_LEFT) ? (indx_t)page_numkeys(mp) - 1 : 0;
   return MDBX_SUCCESS;
 }
 
@@ -18125,8 +18201,8 @@ static int mdbx_cursor_next(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
   if (unlikely(ki >= numkeys)) {
     mdbx_debug("%s", "=====> move to next sibling page");
     mc->mc_ki[mc->mc_top] = (indx_t)(numkeys - 1);
-    if (unlikely((rc = mdbx_cursor_sibling(mc, SIBLING_RIGHT)) !=
-                 MDBX_SUCCESS)) {
+    rc = mdbx_cursor_sibling(mc, SIBLING_RIGHT);
+    if (unlikely(rc != MDBX_SUCCESS)) {
       mc->mc_flags |= C_EOF;
       return rc;
     }
@@ -18140,15 +18216,14 @@ skip:
              " with %u keys, key index %u",
              mp->mp_pgno, page_numkeys(mp), mc->mc_ki[mc->mc_top]);
 
-  if (!MDBX_DISABLE_PAGECHECKS && unlikely(!IS_LEAF(mp)))
+  if (!MDBX_DISABLE_VALIDATION && unlikely(!CHECK_LEAF_TYPE(mc, mp))) {
+    mdbx_error("unexpected leaf-page #%" PRIaPGNO " type 0x%x seen by cursor",
+               mp->mp_pgno, mp->mp_flags);
     return MDBX_CORRUPTED;
+  }
 
   if (IS_LEAF2(mp)) {
-    if (!MDBX_DISABLE_PAGECHECKS && unlikely((mc->mc_flags & C_SUB) == 0)) {
-      mdbx_error("unexpected LEAF2-page %" PRIaPGNO "for non-dupsort cursor",
-                 mp->mp_pgno);
-      return MDBX_CORRUPTED;
-    } else if (likely(key)) {
+    if (likely(key)) {
       key->iov_len = mc->mc_db->md_xsize;
       key->iov_base = page_leaf2key(mp, mc->mc_ki[mc->mc_top], key->iov_len);
     }
@@ -18164,9 +18239,8 @@ skip:
     if (unlikely(rc != MDBX_SUCCESS))
       return rc;
   } else if (likely(data)) {
-    if (unlikely((rc = mdbx_node_read(mc, node, data,
-                                      pp_txnid4chk(mp, mc->mc_txn))) !=
-                 MDBX_SUCCESS))
+    rc = mdbx_node_read(mc, node, data, mp);
+    if (unlikely(rc != MDBX_SUCCESS))
       return rc;
   }
 
@@ -18234,15 +18308,14 @@ static int mdbx_cursor_prev(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
              " with %u keys, key index %u",
              mp->mp_pgno, page_numkeys(mp), mc->mc_ki[mc->mc_top]);
 
-  if (!MDBX_DISABLE_PAGECHECKS && unlikely(!IS_LEAF(mp)))
+  if (!MDBX_DISABLE_VALIDATION && unlikely(!CHECK_LEAF_TYPE(mc, mp))) {
+    mdbx_error("unexpected leaf-page #%" PRIaPGNO " type 0x%x seen by cursor",
+               mp->mp_pgno, mp->mp_flags);
     return MDBX_CORRUPTED;
+  }
 
   if (IS_LEAF2(mp)) {
-    if (!MDBX_DISABLE_PAGECHECKS && unlikely((mc->mc_flags & C_SUB) == 0)) {
-      mdbx_error("unexpected LEAF2-page %" PRIaPGNO "for non-dupsort cursor",
-                 mp->mp_pgno);
-      return MDBX_CORRUPTED;
-    } else if (likely(key)) {
+    if (likely(key)) {
       key->iov_len = mc->mc_db->md_xsize;
       key->iov_base = page_leaf2key(mp, mc->mc_ki[mc->mc_top], key->iov_len);
     }
@@ -18259,9 +18332,8 @@ static int mdbx_cursor_prev(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
     if (unlikely(rc != MDBX_SUCCESS))
       return rc;
   } else if (likely(data)) {
-    if (unlikely((rc = mdbx_node_read(mc, node, data,
-                                      pp_txnid4chk(mp, mc->mc_txn))) !=
-                 MDBX_SUCCESS))
+    rc = mdbx_node_read(mc, node, data, mp);
+    if (unlikely(rc != MDBX_SUCCESS))
       return rc;
   }
 
@@ -18459,18 +18531,19 @@ got_node:
   mc->mc_flags |= C_INITIALIZED;
   mc->mc_flags &= ~C_EOF;
 
+  if (!MDBX_DISABLE_VALIDATION && unlikely(!CHECK_LEAF_TYPE(mc, mp))) {
+    mdbx_error("unexpected leaf-page #%" PRIaPGNO " type 0x%x seen by cursor",
+               mp->mp_pgno, mp->mp_flags);
+    ret.err = MDBX_CORRUPTED;
+    return ret;
+  }
+
   if (IS_LEAF2(mp)) {
-    if (!MDBX_DISABLE_PAGECHECKS && unlikely((mc->mc_flags & C_SUB) == 0)) {
-      mdbx_error("unexpected LEAF2-page %" PRIaPGNO "for non-dupsort cursor",
-                 mp->mp_pgno);
-      ret.err = MDBX_CORRUPTED;
-    } else {
-      if (op == MDBX_SET_RANGE || op == MDBX_SET_KEY) {
-        key->iov_len = mc->mc_db->md_xsize;
-        key->iov_base = page_leaf2key(mp, mc->mc_ki[mc->mc_top], key->iov_len);
-      }
-      ret.err = MDBX_SUCCESS;
+    if (op == MDBX_SET_RANGE || op == MDBX_SET_KEY) {
+      key->iov_len = mc->mc_db->md_xsize;
+      key->iov_base = page_leaf2key(mp, mc->mc_ki[mc->mc_top], key->iov_len);
     }
+    ret.err = MDBX_SUCCESS;
     return ret;
   }
 
@@ -18523,8 +18596,7 @@ got_node:
         }
       }
       MDBX_val actual_data;
-      ret.err = mdbx_node_read(mc, node, &actual_data,
-                               pp_txnid4chk(mc->mc_pg[mc->mc_top], mc->mc_txn));
+      ret.err = mdbx_node_read(mc, node, &actual_data, mc->mc_pg[mc->mc_top]);
       if (unlikely(ret.err != MDBX_SUCCESS))
         return ret;
       const int cmp = mc->mc_dbx->md_dcmp(&aligned_data, &actual_data);
@@ -18539,8 +18611,7 @@ got_node:
       }
       *data = actual_data;
     } else {
-      ret.err = mdbx_node_read(mc, node, data,
-                               pp_txnid4chk(mc->mc_pg[mc->mc_top], mc->mc_txn));
+      ret.err = mdbx_node_read(mc, node, data, mc->mc_pg[mc->mc_top]);
       if (unlikely(ret.err != MDBX_SUCCESS))
         return ret;
     }
@@ -18569,38 +18640,36 @@ static int mdbx_cursor_first(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data) {
       return rc;
   }
 
-  if (!MDBX_DISABLE_PAGECHECKS && unlikely(!IS_LEAF(mc->mc_pg[mc->mc_top])))
+  const MDBX_page *mp = mc->mc_pg[mc->mc_top];
+  if (!MDBX_DISABLE_VALIDATION && unlikely(!CHECK_LEAF_TYPE(mc, mp))) {
+    mdbx_error("unexpected leaf-page #%" PRIaPGNO " type 0x%x seen by cursor",
+               mp->mp_pgno, mp->mp_flags);
     return MDBX_CORRUPTED;
+  }
 
   mc->mc_flags |= C_INITIALIZED;
   mc->mc_flags &= ~C_EOF;
   mc->mc_ki[mc->mc_top] = 0;
 
-  if (IS_LEAF2(mc->mc_pg[mc->mc_top])) {
-    if (!MDBX_DISABLE_PAGECHECKS && unlikely((mc->mc_flags & C_SUB) == 0)) {
-      mdbx_error("unexpected LEAF2-page %" PRIaPGNO "for non-dupsort cursor",
-                 mc->mc_pg[mc->mc_top]->mp_pgno);
-      return MDBX_CORRUPTED;
-    } else if (likely(key)) {
+  if (IS_LEAF2(mp)) {
+    if (likely(key)) {
       key->iov_len = mc->mc_db->md_xsize;
-      key->iov_base = page_leaf2key(mc->mc_pg[mc->mc_top], 0, key->iov_len);
+      key->iov_base = page_leaf2key(mp, 0, key->iov_len);
     }
     return MDBX_SUCCESS;
   }
 
-  MDBX_node *node = page_node(mc->mc_pg[mc->mc_top], 0);
+  MDBX_node *node = page_node(mp, 0);
   if (F_ISSET(node_flags(node), F_DUPDATA)) {
-    rc = mdbx_xcursor_init1(mc, node, mc->mc_pg[mc->mc_top]);
+    rc = mdbx_xcursor_init1(mc, node, mp);
     if (unlikely(rc != MDBX_SUCCESS))
       return rc;
     rc = mdbx_cursor_first(&mc->mc_xcursor->mx_cursor, data, NULL);
     if (unlikely(rc))
       return rc;
   } else if (likely(data)) {
-    if (unlikely((rc = mdbx_node_read(
-                      mc, node, data,
-                      pp_txnid4chk(mc->mc_pg[mc->mc_top], mc->mc_txn))) !=
-                 MDBX_SUCCESS))
+    rc = mdbx_node_read(mc, node, data, mp);
+    if (unlikely(rc != MDBX_SUCCESS))
       return rc;
   }
 
@@ -18621,38 +18690,35 @@ static int mdbx_cursor_last(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data) {
       return rc;
   }
 
-  if (!MDBX_DISABLE_PAGECHECKS && unlikely(!IS_LEAF(mc->mc_pg[mc->mc_top])))
+  const MDBX_page *mp = mc->mc_pg[mc->mc_top];
+  if (!MDBX_DISABLE_VALIDATION && unlikely(!CHECK_LEAF_TYPE(mc, mp))) {
+    mdbx_error("unexpected leaf-page #%" PRIaPGNO " type 0x%x seen by cursor",
+               mp->mp_pgno, mp->mp_flags);
     return MDBX_CORRUPTED;
+  }
 
-  mc->mc_ki[mc->mc_top] = (indx_t)page_numkeys(mc->mc_pg[mc->mc_top]) - 1;
+  mc->mc_ki[mc->mc_top] = (indx_t)page_numkeys(mp) - 1;
   mc->mc_flags |= C_INITIALIZED | C_EOF;
 
-  if (IS_LEAF2(mc->mc_pg[mc->mc_top])) {
-    if (!MDBX_DISABLE_PAGECHECKS && unlikely((mc->mc_flags & C_SUB) == 0)) {
-      mdbx_error("unexpected LEAF2-page %" PRIaPGNO "for non-dupsort cursor",
-                 mc->mc_pg[mc->mc_top]->mp_pgno);
-      return MDBX_CORRUPTED;
-    } else if (likely(key)) {
+  if (IS_LEAF2(mp)) {
+    if (likely(key)) {
       key->iov_len = mc->mc_db->md_xsize;
-      key->iov_base = page_leaf2key(mc->mc_pg[mc->mc_top],
-                                    mc->mc_ki[mc->mc_top], key->iov_len);
+      key->iov_base = page_leaf2key(mp, mc->mc_ki[mc->mc_top], key->iov_len);
     }
     return MDBX_SUCCESS;
   }
 
-  MDBX_node *node = page_node(mc->mc_pg[mc->mc_top], mc->mc_ki[mc->mc_top]);
+  MDBX_node *node = page_node(mp, mc->mc_ki[mc->mc_top]);
   if (F_ISSET(node_flags(node), F_DUPDATA)) {
-    rc = mdbx_xcursor_init1(mc, node, mc->mc_pg[mc->mc_top]);
+    rc = mdbx_xcursor_init1(mc, node, mp);
     if (unlikely(rc != MDBX_SUCCESS))
       return rc;
     rc = mdbx_cursor_last(&mc->mc_xcursor->mx_cursor, data, NULL);
     if (unlikely(rc))
       return rc;
   } else if (likely(data)) {
-    if (unlikely((rc = mdbx_node_read(
-                      mc, node, data,
-                      pp_txnid4chk(mc->mc_pg[mc->mc_top], mc->mc_txn))) !=
-                 MDBX_SUCCESS))
+    rc = mdbx_node_read(mc, node, data, mp);
+    if (unlikely(rc != MDBX_SUCCESS))
       return rc;
   }
 
@@ -18678,7 +18744,12 @@ int mdbx_cursor_get(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
   case MDBX_GET_CURRENT: {
     if (unlikely(!(mc->mc_flags & C_INITIALIZED)))
       return MDBX_ENODATA;
-    MDBX_page *mp = mc->mc_pg[mc->mc_top];
+    const MDBX_page *mp = mc->mc_pg[mc->mc_top];
+    if (!MDBX_DISABLE_VALIDATION && unlikely(!CHECK_LEAF_TYPE(mc, mp))) {
+      mdbx_error("unexpected leaf-page #%" PRIaPGNO " type 0x%x seen by cursor",
+                 mp->mp_pgno, mp->mp_flags);
+      return MDBX_CORRUPTED;
+    }
     const unsigned nkeys = page_numkeys(mp);
     if (unlikely(mc->mc_ki[mc->mc_top] >= nkeys)) {
       mdbx_cassert(mc, nkeys <= UINT16_MAX);
@@ -18692,11 +18763,6 @@ int mdbx_cursor_get(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
 
     rc = MDBX_SUCCESS;
     if (IS_LEAF2(mp)) {
-      if (!MDBX_DISABLE_PAGECHECKS && unlikely((mc->mc_flags & C_SUB) == 0)) {
-        mdbx_error("unexpected LEAF2-page %" PRIaPGNO "for non-dupsort cursor",
-                   mp->mp_pgno);
-        return MDBX_CORRUPTED;
-      }
       key->iov_len = mc->mc_db->md_xsize;
       key->iov_base = page_leaf2key(mp, mc->mc_ki[mc->mc_top], key->iov_len);
     } else {
@@ -18718,7 +18784,7 @@ int mdbx_cursor_get(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
               return rc;
           }
         } else {
-          rc = mdbx_node_read(mc, node, data, pp_txnid4chk(mp, mc->mc_txn));
+          rc = mdbx_node_read(mc, node, data, mp);
           if (unlikely(rc))
             return rc;
         }
@@ -18825,8 +18891,7 @@ int mdbx_cursor_get(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
       MDBX_node *node = page_node(mc->mc_pg[mc->mc_top], mc->mc_ki[mc->mc_top]);
       if (!F_ISSET(node_flags(node), F_DUPDATA)) {
         get_key_optional(node, key);
-        rc = mdbx_node_read(mc, node, data,
-                            pp_txnid4chk(mc->mc_pg[mc->mc_top], mc->mc_txn));
+        rc = mdbx_node_read(mc, node, data, mc->mc_pg[mc->mc_top]);
         break;
       }
     }
@@ -18932,6 +18997,11 @@ static int cursor_next_batch(MDBX_cursor *mc) {
     mp = mc->mc_pg[mc->mc_top];
     mdbx_debug("next page is %" PRIaPGNO ", key index %u", mp->mp_pgno,
                mc->mc_ki[mc->mc_top]);
+    if (!MDBX_DISABLE_VALIDATION && unlikely(!CHECK_LEAF_TYPE(mc, mp))) {
+      mdbx_error("unexpected leaf-page #%" PRIaPGNO " type 0x%x seen by cursor",
+                 mp->mp_pgno, mp->mp_flags);
+      return MDBX_CORRUPTED;
+    }
   }
   return MDBX_SUCCESS;
 }
@@ -18973,8 +19043,13 @@ int mdbx_cursor_get_batch(MDBX_cursor *mc, size_t *count, MDBX_val *pairs,
     return rc;
   }
 
-  const MDBX_page *const page = mc->mc_pg[mc->mc_top];
-  const unsigned nkeys = page_numkeys(page);
+  const MDBX_page *const mp = mc->mc_pg[mc->mc_top];
+  if (!MDBX_DISABLE_VALIDATION && unlikely(!CHECK_LEAF_TYPE(mc, mp))) {
+    mdbx_error("unexpected leaf-page #%" PRIaPGNO " type 0x%x seen by cursor",
+               mp->mp_pgno, mp->mp_flags);
+    return MDBX_CORRUPTED;
+  }
+  const unsigned nkeys = page_numkeys(mp);
   unsigned i = mc->mc_ki[mc->mc_top], n = 0;
   if (unlikely(i >= nkeys)) {
     mdbx_cassert(mc, op == MDBX_GET_CURRENT);
@@ -18990,15 +19065,14 @@ int mdbx_cursor_get_batch(MDBX_cursor *mc, size_t *count, MDBX_val *pairs,
     return MDBX_NOTFOUND;
   }
 
-  const txnid_t pp_txnid = pp_txnid4chk(page, mc->mc_txn);
   do {
     if (unlikely(n + 2 > limit)) {
       rc = MDBX_RESULT_TRUE;
       break;
     }
-    const MDBX_node *leaf = page_node(page, i);
+    const MDBX_node *leaf = page_node(mp, i);
     get_key(leaf, &pairs[n]);
-    rc = mdbx_node_read(mc, leaf, &pairs[n + 1], pp_txnid);
+    rc = mdbx_node_read(mc, leaf, &pairs[n + 1], mp);
     if (unlikely(rc != MDBX_SUCCESS))
       break;
     n += 2;
@@ -19331,7 +19405,7 @@ int mdbx_cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
       if (unlikely(err != MDBX_SUCCESS))
         return err;
     }
-    struct page_result npr = page_new(mc, P_LEAF);
+    pgr_t npr = page_new(mc, P_LEAF);
     if (unlikely(npr.err != MDBX_SUCCESS))
       return npr.err;
     npr.err = mdbx_cursor_push(mc, npr.page);
@@ -19406,13 +19480,13 @@ int mdbx_cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
         if (mc->mc_ki[mc->mc_top])
           err = mdbx_update_key(mc, key);
         mdbx_cassert(mc, mc->mc_top + dtop < UINT16_MAX);
-        mc->mc_top += (uint16_t)dtop;
+        mc->mc_top += (uint8_t)dtop;
         if (unlikely(err != MDBX_SUCCESS))
           return err;
       }
 
       if (mdbx_audit_enabled()) {
-        err = mdbx_cursor_check(mc, 0);
+        err = mdbx_cursor_check(mc);
         if (unlikely(err != MDBX_SUCCESS))
           return err;
       }
@@ -19421,7 +19495,7 @@ int mdbx_cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
 
   more:;
     if (mdbx_audit_enabled()) {
-      err = mdbx_cursor_check(mc, 0);
+      err = mdbx_cursor_check(mc);
       if (unlikely(err != MDBX_SUCCESS))
         return err;
     }
@@ -19434,29 +19508,27 @@ int mdbx_cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
                        : 0;
 
       const pgno_t pgno = node_largedata_pgno(node);
-      struct page_result pgr = mdbx_page_get_ex(
-          mc, pgno, pp_txnid4chk(mc->mc_pg[mc->mc_top], mc->mc_txn));
-      if (unlikely(pgr.err != MDBX_SUCCESS))
-        return pgr.err;
-      if (unlikely(!IS_OVERFLOW(pgr.page)))
-        return MDBX_CORRUPTED;
+      pgr_t lp = page_get_large(mc, pgno, mc->mc_pg[mc->mc_top]->mp_txnid);
+      if (unlikely(lp.err != MDBX_SUCCESS))
+        return lp.err;
+      mdbx_cassert(mc, PAGETYPE_WHOLE(lp.page) == P_OVERFLOW);
 
       /* Is the ov page from this txn (or a parent) and big enough? */
-      int ovpages = pgr.page->mp_pages;
-      if (!IS_FROZEN(mc->mc_txn, pgr.page) &&
+      int ovpages = lp.page->mp_pages;
+      if (!IS_FROZEN(mc->mc_txn, lp.page) &&
           (unlikely(mc->mc_flags & C_GCFREEZE)
                ? (ovpages >= dpages)
                : (ovpages ==
                   /* LY: add configurable threshold to keep reserve space */
                   dpages))) {
         /* yes, overwrite it. */
-        if (!IS_MODIFIABLE(mc->mc_txn, pgr.page)) {
-          if (IS_SPILLED(mc->mc_txn, pgr.page)) {
-            pgr = /* TODO: avoid search and get txn & spill-index from
+        if (!IS_MODIFIABLE(mc->mc_txn, lp.page)) {
+          if (IS_SPILLED(mc->mc_txn, lp.page)) {
+            lp = /* TODO: avoid search and get txn & spill-index from
                      page_result */
-                mdbx_page_unspill(mc->mc_txn, pgr.page);
-            if (unlikely(pgr.err))
-              return pgr.err;
+                mdbx_page_unspill(mc->mc_txn, lp.page);
+            if (unlikely(lp.err))
+              return lp.err;
           } else {
             if (unlikely(!mc->mc_txn->mt_parent)) {
               mdbx_error(
@@ -19464,7 +19536,7 @@ int mdbx_cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
                   "page %" PRIaPGNO " mod-txnid %" PRIaTXN ","
                   " without parent transaction, current txn %" PRIaTXN
                   " front %" PRIaTXN,
-                  "overflow/large", pgno, pgr.page->mp_txnid,
+                  "overflow/large", pgno, lp.page->mp_txnid,
                   mc->mc_txn->mt_txnid, mc->mc_txn->mt_front);
               return MDBX_PROBLEM;
             }
@@ -19474,8 +19546,8 @@ int mdbx_cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
             if (unlikely(!np))
               return MDBX_ENOMEM;
 
-            memcpy(np, pgr.page, PAGEHDRSZ); /* Copy header of page */
-            err = mdbx_page_dirty(mc->mc_txn, pgr.page = np, ovpages);
+            memcpy(np, lp.page, PAGEHDRSZ); /* Copy header of page */
+            err = mdbx_page_dirty(mc->mc_txn, lp.page = np, ovpages);
             if (unlikely(err != MDBX_SUCCESS))
               return err;
 
@@ -19487,19 +19559,19 @@ int mdbx_cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
         }
         node_set_ds(node, data->iov_len);
         if (F_ISSET(flags, MDBX_RESERVE))
-          data->iov_base = page_data(pgr.page);
+          data->iov_base = page_data(lp.page);
         else
-          memcpy(page_data(pgr.page), data->iov_base, data->iov_len);
+          memcpy(page_data(lp.page), data->iov_base, data->iov_len);
 
         if (mdbx_audit_enabled()) {
-          err = mdbx_cursor_check(mc, 0);
+          err = mdbx_cursor_check(mc);
           if (unlikely(err != MDBX_SUCCESS))
             return err;
         }
         return MDBX_SUCCESS;
       }
 
-      if ((err = mdbx_page_retire(mc, pgr.page)) != MDBX_SUCCESS)
+      if ((err = mdbx_page_retire(mc, lp.page)) != MDBX_SUCCESS)
         return err;
     } else {
       olddata.iov_len = node_ds(node);
@@ -19621,7 +19693,7 @@ int mdbx_cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
           nested_dupdb.md_entries = page_numkeys(fp);
           xdata.iov_len = sizeof(nested_dupdb);
           xdata.iov_base = &nested_dupdb;
-          const struct page_result par = page_alloc(mc);
+          const pgr_t par = page_alloc(mc);
           mp = par.page;
           if (unlikely(par.err != MDBX_SUCCESS))
             return par.err;
@@ -19681,7 +19753,7 @@ int mdbx_cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
           memcpy(olddata.iov_base, data->iov_base, data->iov_len);
         else {
           mdbx_cassert(mc, page_numkeys(mc->mc_pg[mc->mc_top]) == 1);
-          mdbx_cassert(mc, PAGETYPE(mc->mc_pg[mc->mc_top]) == P_LEAF);
+          mdbx_cassert(mc, PAGETYPE_COMPAT(mc->mc_pg[mc->mc_top]) == P_LEAF);
           mdbx_cassert(mc, node_ds(node) == 0);
           mdbx_cassert(mc, node_flags(node) == 0);
           mdbx_cassert(mc, key->iov_len < UINT16_MAX);
@@ -19693,7 +19765,7 @@ int mdbx_cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
         }
 
         if (mdbx_audit_enabled()) {
-          err = mdbx_cursor_check(mc, 0);
+          err = mdbx_cursor_check(mc);
           if (unlikely(err != MDBX_SUCCESS))
             return err;
         }
@@ -19714,7 +19786,7 @@ new_sub:;
       nflags |= MDBX_SPLIT_REPLACE;
     rc = mdbx_page_split(mc, key, rdata, P_INVALID, nflags);
     if (rc == MDBX_SUCCESS && mdbx_audit_enabled())
-      rc = mdbx_cursor_check(mc, 0);
+      rc = insert_key ? mdbx_cursor_check(mc) : mdbx_cursor_check_updating(mc);
   } else {
     /* There is room already in this leaf page. */
     if (IS_LEAF2(mc->mc_pg[mc->mc_top])) {
@@ -19840,7 +19912,7 @@ new_sub:;
       }
     }
     if (rc == MDBX_SUCCESS && mdbx_audit_enabled())
-      rc = mdbx_cursor_check(mc, 0);
+      rc = mdbx_cursor_check(mc);
     return rc;
   bad_sub:
     if (unlikely(rc == MDBX_KEYEXIST)) {
@@ -19883,16 +19955,13 @@ int mdbx_cursor_del(MDBX_cursor *mc, MDBX_put_flags_t flags) {
     return rc;
 
   MDBX_page *mp = mc->mc_pg[mc->mc_top];
-  if (!MDBX_DISABLE_PAGECHECKS && unlikely(!IS_LEAF(mp)))
+  if (!MDBX_DISABLE_VALIDATION && unlikely(!CHECK_LEAF_TYPE(mc, mp))) {
+    mdbx_error("unexpected leaf-page #%" PRIaPGNO " type 0x%x seen by cursor",
+               mp->mp_pgno, mp->mp_flags);
     return MDBX_CORRUPTED;
-  if (IS_LEAF2(mp)) {
-    if (!MDBX_DISABLE_PAGECHECKS && unlikely((mc->mc_flags & C_SUB) == 0)) {
-      mdbx_error("unexpected LEAF2-page %" PRIaPGNO "for non-dupsort cursor",
-                 mp->mp_pgno);
-      return MDBX_CORRUPTED;
-    }
-    goto del_key;
   }
+  if (IS_LEAF2(mp))
+    goto del_key;
 
   MDBX_node *node = page_node(mp, mc->mc_ki[mc->mc_top]);
   if (F_ISSET(node_flags(node), F_DUPDATA)) {
@@ -19959,12 +20028,10 @@ int mdbx_cursor_del(MDBX_cursor *mc, MDBX_put_flags_t flags) {
   else if (unlikely((node_flags(node) ^ flags) & F_SUBDATA))
     return MDBX_INCOMPATIBLE;
 
-  /* add overflow pages to free list */
+  /* add large/overflow pages to free list */
   if (F_ISSET(node_flags(node), F_BIGDATA)) {
-    MDBX_page *omp;
-    if (unlikely((rc = mdbx_page_get(mc, node_largedata_pgno(node), &omp,
-                                     pp_txnid4chk(mp, mc->mc_txn))) ||
-                 (rc = mdbx_page_retire(mc, omp))))
+    pgr_t lp = page_get_large(mc, node_largedata_pgno(node), mp->mp_txnid);
+    if (unlikely((rc = lp.err) || (rc = mdbx_page_retire(mc, lp.page))))
       goto fail;
   }
 
@@ -19978,9 +20045,9 @@ fail:
 
 /* Allocate and initialize new pages for a database.
  * Set MDBX_TXN_ERROR on failure. */
-static struct page_result page_new(MDBX_cursor *mc, const unsigned flags) {
+static pgr_t page_new(MDBX_cursor *mc, const unsigned flags) {
   mdbx_cassert(mc, (flags & P_OVERFLOW) == 0);
-  struct page_result ret = page_alloc(mc);
+  pgr_t ret = page_alloc(mc);
   if (unlikely(ret.err != MDBX_SUCCESS))
     return ret;
 
@@ -20009,11 +20076,10 @@ static struct page_result page_new(MDBX_cursor *mc, const unsigned flags) {
   return ret;
 }
 
-static struct page_result page_new_large(MDBX_cursor *mc,
-                                         const unsigned npages) {
-  struct page_result ret =
-      likely(npages == 1) ? page_alloc(mc)
-                          : page_alloc_slowpath(mc, npages, MDBX_ALLOC_ALL);
+static pgr_t page_new_large(MDBX_cursor *mc, const unsigned npages) {
+  pgr_t ret = likely(npages == 1)
+                  ? page_alloc(mc)
+                  : page_alloc_slowpath(mc, npages, MDBX_ALLOC_ALL);
   if (unlikely(ret.err != MDBX_SUCCESS))
     return ret;
 
@@ -20044,7 +20110,7 @@ static int __must_check_result mdbx_node_add_leaf2(MDBX_cursor *mc,
              key ? key->iov_len : 0, DKEY_DEBUG(key));
 
   mdbx_cassert(mc, key);
-  mdbx_cassert(mc, PAGETYPE(mp) == (P_LEAF | P_LEAF2));
+  mdbx_cassert(mc, PAGETYPE_COMPAT(mp) == (P_LEAF | P_LEAF2));
   const unsigned ksize = mc->mc_db->md_xsize;
   mdbx_cassert(mc, ksize == key->iov_len);
   const unsigned nkeys = page_numkeys(mp);
@@ -20081,7 +20147,7 @@ static int __must_check_result mdbx_node_add_branch(MDBX_cursor *mc,
              IS_SUBP(mp) ? "sub-" : "", mp->mp_pgno, indx, pgno,
              key ? key->iov_len : 0, DKEY_DEBUG(key));
 
-  mdbx_cassert(mc, PAGETYPE(mp) == P_BRANCH);
+  mdbx_cassert(mc, PAGETYPE_WHOLE(mp) == P_BRANCH);
   STATIC_ASSERT(NODESIZE % 2 == 0);
 
   /* Move higher pointers up one slot. */
@@ -20126,19 +20192,19 @@ static int __must_check_result mdbx_node_add_leaf(MDBX_cursor *mc,
              IS_SUBP(mp) ? "sub-" : "", mp->mp_pgno, indx,
              data ? data->iov_len : 0, key ? key->iov_len : 0, DKEY_DEBUG(key));
   mdbx_cassert(mc, key != NULL && data != NULL);
-  mdbx_cassert(mc, PAGETYPE(mp) == P_LEAF);
+  mdbx_cassert(mc, PAGETYPE_COMPAT(mp) == P_LEAF);
   mdbx_cassert(mc, page_room(mp) >= leaf_size(mc->mc_txn->mt_env, key, data));
   MDBX_page *largepage = NULL;
 
   size_t node_bytes;
   if (unlikely(flags & F_BIGDATA)) {
-    /* Data already on overflow page. */
+    /* Data already on large/overflow page. */
     STATIC_ASSERT(sizeof(pgno_t) % 2 == 0);
     node_bytes =
         node_size_len(key->iov_len, 0) + sizeof(pgno_t) + sizeof(indx_t);
   } else if (unlikely(node_size(key, data) >
                       mc->mc_txn->mt_env->me_leaf_nodemax)) {
-    /* Put data on overflow page. */
+    /* Put data on large/overflow page. */
     if (unlikely(mc->mc_db->md_flags & MDBX_DUPSORT)) {
       mdbx_error("Unexpected target %s flags 0x%x for large data-item",
                  "dupsort-db", mc->mc_db->md_flags);
@@ -20150,11 +20216,11 @@ static int __must_check_result mdbx_node_add_leaf(MDBX_cursor *mc,
       return MDBX_PROBLEM;
     }
     const pgno_t ovpages = number_of_ovpages(mc->mc_txn->mt_env, data->iov_len);
-    const struct page_result npr = page_new_large(mc, ovpages);
+    const pgr_t npr = page_new_large(mc, ovpages);
     if (unlikely(npr.err != MDBX_SUCCESS))
       return npr.err;
     largepage = npr.page;
-    mdbx_debug("allocated %u overflow page(s) %" PRIaPGNO "for %" PRIuPTR
+    mdbx_debug("allocated %u large/overflow page(s) %" PRIaPGNO "for %" PRIuPTR
                " data bytes",
                largepage->mp_pages, largepage->mp_pgno, data->iov_len);
     flags |= F_BIGDATA;
@@ -20271,12 +20337,13 @@ static void mdbx_node_del(MDBX_cursor *mc, size_t ksize) {
   mdbx_cassert(mc, (size_t)UINT16_MAX - mp->mp_upper >= sz);
   mp->mp_upper += (indx_t)sz;
 
-#if MDBX_DEBUG > 0
   if (mdbx_audit_enabled()) {
-    int page_check_err = mdbx_page_check(mc, mp, C_UPDATING);
+    const uint8_t checking = mc->mc_checking;
+    mc->mc_checking |= CC_UPDATING;
+    const int page_check_err = mdbx_page_check(mc, mp);
+    mc->mc_checking = checking;
     mdbx_cassert(mc, page_check_err == MDBX_SUCCESS);
   }
-#endif
 }
 
 /* Compact the main page after deleting a node on a subpage.
@@ -20342,7 +20409,7 @@ static void mdbx_node_shrink(MDBX_page *mp, unsigned indx) {
  * [in] mc The main cursor whose sorted-dups cursor is to be initialized. */
 static int mdbx_xcursor_init0(MDBX_cursor *mc) {
   MDBX_xcursor *mx = mc->mc_xcursor;
-  if (!MDBX_DISABLE_PAGECHECKS && unlikely(mx == nullptr)) {
+  if (!MDBX_DISABLE_VALIDATION && unlikely(mx == nullptr)) {
     mdbx_error("unexpected dupsort-page for non-dupsort db/cursor (dbi %u)",
                mc->mc_dbi);
     return MDBX_CORRUPTED;
@@ -20357,7 +20424,11 @@ static int mdbx_xcursor_init0(MDBX_cursor *mc) {
   mx->mx_cursor.mc_dbistate = mc->mc_dbistate;
   mx->mx_cursor.mc_snum = 0;
   mx->mx_cursor.mc_top = 0;
-  mx->mx_cursor.mc_flags = C_SUB | (mc->mc_flags & (C_COPYING | C_SKIPORD));
+  mx->mx_cursor.mc_flags = C_SUB;
+  STATIC_ASSERT(MDBX_DUPFIXED * 2 == P_LEAF2);
+  mdbx_cassert(mc, (mc->mc_checking & (P_BRANCH | P_LEAF | P_LEAF2)) == P_LEAF);
+  mx->mx_cursor.mc_checking =
+      mc->mc_checking + ((mc->mc_db->md_flags & MDBX_DUPFIXED) << 1);
   mx->mx_dbx.md_name.iov_len = 0;
   mx->mx_dbx.md_name.iov_base = NULL;
   mx->mx_dbx.md_cmp = mc->mc_dbx->md_dcmp;
@@ -20375,7 +20446,7 @@ static int mdbx_xcursor_init0(MDBX_cursor *mc) {
 static int mdbx_xcursor_init1(MDBX_cursor *mc, MDBX_node *node,
                               const MDBX_page *mp) {
   MDBX_xcursor *mx = mc->mc_xcursor;
-  if (!MDBX_DISABLE_PAGECHECKS && unlikely(mx == nullptr)) {
+  if (!MDBX_DISABLE_VALIDATION && unlikely(mx == nullptr)) {
     mdbx_error("unexpected dupsort-page for non-dupsort db/cursor (dbi %u)",
                mc->mc_dbi);
     return MDBX_CORRUPTED;
@@ -20387,14 +20458,14 @@ static int mdbx_xcursor_init1(MDBX_cursor *mc, MDBX_node *node,
     mdbx_error("invalid node flags %u", flags);
     return MDBX_CORRUPTED;
   case F_DUPDATA | F_SUBDATA:
-    if (!MDBX_DISABLE_PAGECHECKS &&
+    if (!MDBX_DISABLE_VALIDATION &&
         unlikely(node_ds(node) != sizeof(MDBX_db))) {
       mdbx_error("invalid nested-db record size %zu", node_ds(node));
       return MDBX_CORRUPTED;
     }
     memcpy(&mx->mx_db, node_data(node), sizeof(MDBX_db));
     const txnid_t pp_txnid = mp->mp_txnid;
-    if (!MDBX_DISABLE_PAGECHECKS &&
+    if (!MDBX_DISABLE_VALIDATION &&
         unlikely(mx->mx_db.md_mod_txnid > pp_txnid)) {
       mdbx_error("nested-db.md_mod_txnid (%" PRIaTXN ") > page-txnid (%" PRIaTXN
                  ")",
@@ -20404,10 +20475,10 @@ static int mdbx_xcursor_init1(MDBX_cursor *mc, MDBX_node *node,
     mx->mx_cursor.mc_pg[0] = 0;
     mx->mx_cursor.mc_snum = 0;
     mx->mx_cursor.mc_top = 0;
-    mx->mx_cursor.mc_flags = C_SUB | (mc->mc_flags & (C_COPYING | C_SKIPORD));
+    mx->mx_cursor.mc_flags = C_SUB;
     break;
   case F_DUPDATA:
-    if (!MDBX_DISABLE_PAGECHECKS && unlikely(node_ds(node) <= PAGEHDRSZ)) {
+    if (!MDBX_DISABLE_VALIDATION && unlikely(node_ds(node) <= PAGEHDRSZ)) {
       mdbx_error("invalid nested-page size %zu", node_ds(node));
       return MDBX_CORRUPTED;
     }
@@ -20421,8 +20492,7 @@ static int mdbx_xcursor_init1(MDBX_cursor *mc, MDBX_node *node,
     mx->mx_db.md_mod_txnid = mp->mp_txnid;
     mx->mx_cursor.mc_snum = 1;
     mx->mx_cursor.mc_top = 0;
-    mx->mx_cursor.mc_flags =
-        C_INITIALIZED | C_SUB | (mc->mc_flags & (C_COPYING | C_SKIPORD));
+    mx->mx_cursor.mc_flags = C_SUB | C_INITIALIZED;
     mx->mx_cursor.mc_pg[0] = fp;
     mx->mx_cursor.mc_ki[0] = 0;
     mx->mx_db.md_flags = flags_db2sub(mc->mc_db->md_flags);
@@ -20432,17 +20502,17 @@ static int mdbx_xcursor_init1(MDBX_cursor *mc, MDBX_node *node,
   }
 
   if (unlikely(mx->mx_db.md_xsize != mc->mc_db->md_xsize)) {
-    if (!MDBX_DISABLE_PAGECHECKS && unlikely(mc->mc_db->md_xsize != 0)) {
+    if (!MDBX_DISABLE_VALIDATION && unlikely(mc->mc_db->md_xsize != 0)) {
       mdbx_error("cursor mismatched nested-db md_xsize %u",
                  mc->mc_db->md_xsize);
       return MDBX_CORRUPTED;
     }
-    if (!MDBX_DISABLE_PAGECHECKS &&
+    if (!MDBX_DISABLE_VALIDATION &&
         unlikely((mc->mc_db->md_flags & MDBX_DUPFIXED) == 0)) {
       mdbx_error("mismatched nested-db md_flags %u", mc->mc_db->md_flags);
       return MDBX_CORRUPTED;
     }
-    if (!MDBX_DISABLE_PAGECHECKS &&
+    if (!MDBX_DISABLE_VALIDATION &&
         unlikely(mx->mx_db.md_xsize < mc->mc_dbx->md_vlen_min ||
                  mx->mx_db.md_xsize > mc->mc_dbx->md_vlen_max)) {
       mdbx_error("mismatched nested-db.md_xsize (%u) <> min/max value-length "
@@ -20472,7 +20542,7 @@ static int mdbx_xcursor_init1(MDBX_cursor *mc, MDBX_node *node,
 static int mdbx_xcursor_init2(MDBX_cursor *mc, MDBX_xcursor *src_mx,
                               bool new_dupdata) {
   MDBX_xcursor *mx = mc->mc_xcursor;
-  if (!MDBX_DISABLE_PAGECHECKS && unlikely(mx == nullptr)) {
+  if (!MDBX_DISABLE_VALIDATION && unlikely(mx == nullptr)) {
     mdbx_error("unexpected dupsort-page for non-dupsort db/cursor (dbi %u)",
                mc->mc_dbi);
     return MDBX_CORRUPTED;
@@ -20481,7 +20551,7 @@ static int mdbx_xcursor_init2(MDBX_cursor *mc, MDBX_xcursor *src_mx,
   if (new_dupdata) {
     mx->mx_cursor.mc_snum = 1;
     mx->mx_cursor.mc_top = 0;
-    mx->mx_cursor.mc_flags |= C_INITIALIZED;
+    mx->mx_cursor.mc_flags = C_SUB | C_INITIALIZED;
     mx->mx_cursor.mc_ki[0] = 0;
   }
 
@@ -20513,6 +20583,12 @@ static __inline int mdbx_couple_init(MDBX_cursor_couple *couple,
   couple->outer.mc_top = 0;
   couple->outer.mc_pg[0] = 0;
   couple->outer.mc_flags = 0;
+  STATIC_ASSERT(CC_BRANCH == P_BRANCH && CC_LEAF == P_LEAF &&
+                CC_OVERFLOW == P_OVERFLOW && CC_LEAF2 == P_LEAF2);
+  couple->outer.mc_checking =
+      (mdbx_audit_enabled() || (txn->mt_env->me_flags & MDBX_VALIDATION))
+          ? CC_PAGECHECK | CC_LEAF
+          : CC_LEAF;
   couple->outer.mc_ki[0] = 0;
   couple->outer.mc_xcursor = NULL;
 
@@ -20839,7 +20915,7 @@ static int mdbx_update_key(MDBX_cursor *mc, const MDBX_val *key) {
       mdbx_node_del(mc, 0);
       int rc = mdbx_page_split(mc, key, NULL, pgno, MDBX_SPLIT_REPLACE);
       if (rc == MDBX_SUCCESS && mdbx_audit_enabled())
-        rc = mdbx_cursor_check(mc, C_UPDATING);
+        rc = mdbx_cursor_check_updating(mc);
       return rc;
     }
 
@@ -20875,19 +20951,19 @@ static int mdbx_node_move(MDBX_cursor *csrc, MDBX_cursor *cdst, bool fromleft) {
 
   MDBX_page *psrc = csrc->mc_pg[csrc->mc_top];
   MDBX_page *pdst = cdst->mc_pg[cdst->mc_top];
-  mdbx_cassert(csrc, PAGETYPE(psrc) == PAGETYPE(pdst));
+  mdbx_cassert(csrc, PAGETYPE_WHOLE(psrc) == PAGETYPE_WHOLE(pdst));
   mdbx_cassert(csrc, csrc->mc_dbi == cdst->mc_dbi);
   mdbx_cassert(csrc, csrc->mc_top == cdst->mc_top);
-  if (unlikely(PAGETYPE(psrc) != PAGETYPE(pdst))) {
+  if (unlikely(PAGETYPE_WHOLE(psrc) != PAGETYPE_WHOLE(pdst))) {
   bailout:
     mdbx_error("Wrong or mismatch pages's types (src %d, dst %d) to move node",
-               PAGETYPE(psrc), PAGETYPE(pdst));
+               PAGETYPE_WHOLE(psrc), PAGETYPE_WHOLE(pdst));
     csrc->mc_txn->mt_flags |= MDBX_TXN_ERROR;
     return MDBX_PROBLEM;
   }
 
   MDBX_val key4move;
-  switch (PAGETYPE(psrc)) {
+  switch (PAGETYPE_WHOLE(psrc)) {
   case P_BRANCH: {
     const MDBX_node *srcnode = page_node(psrc, csrc->mc_ki[csrc->mc_top]);
     mdbx_cassert(csrc, node_flags(srcnode) == 0);
@@ -20916,8 +20992,8 @@ static int mdbx_node_move(MDBX_cursor *csrc, MDBX_cursor *cdst, bool fromleft) {
       }
 
       /* restore cursor after mdbx_page_search_lowest() */
-      csrc->mc_snum = snum;
-      csrc->mc_top = snum - 1;
+      csrc->mc_snum = (uint8_t)snum;
+      csrc->mc_top = (uint8_t)snum - 1;
       csrc->mc_ki[csrc->mc_top] = 0;
 
       /* paranoia */
@@ -20951,8 +21027,8 @@ static int mdbx_node_move(MDBX_cursor *csrc, MDBX_cursor *cdst, bool fromleft) {
       }
 
       /* restore cursor after mdbx_page_search_lowest() */
-      mn.mc_snum = snum;
-      mn.mc_top = snum - 1;
+      mn.mc_snum = (uint8_t)snum;
+      mn.mc_top = (uint8_t)snum - 1;
       mn.mc_ki[mn.mc_top] = 0;
 
       const intptr_t delta =
@@ -21044,7 +21120,7 @@ static int mdbx_node_move(MDBX_cursor *csrc, MDBX_cursor *cdst, bool fromleft) {
 
   mdbx_cassert(csrc, psrc == csrc->mc_pg[csrc->mc_top]);
   mdbx_cassert(cdst, pdst == cdst->mc_pg[cdst->mc_top]);
-  mdbx_cassert(csrc, PAGETYPE(psrc) == PAGETYPE(pdst));
+  mdbx_cassert(csrc, PAGETYPE_WHOLE(psrc) == PAGETYPE_WHOLE(pdst));
 
   {
     /* Adjust other cursors pointing to mp */
@@ -21189,7 +21265,7 @@ static int mdbx_page_merge(MDBX_cursor *csrc, MDBX_cursor *cdst) {
   mdbx_debug("merging page %" PRIaPGNO " into %" PRIaPGNO, psrc->mp_pgno,
              pdst->mp_pgno);
 
-  mdbx_cassert(csrc, PAGETYPE(psrc) == PAGETYPE(pdst));
+  mdbx_cassert(csrc, PAGETYPE_WHOLE(psrc) == PAGETYPE_WHOLE(pdst));
   mdbx_cassert(csrc,
                csrc->mc_dbi == cdst->mc_dbi && csrc->mc_db == cdst->mc_db);
   mdbx_cassert(csrc, csrc->mc_snum > 1); /* can't merge root page */
@@ -21199,7 +21275,7 @@ static int mdbx_page_merge(MDBX_cursor *csrc, MDBX_cursor *cdst) {
   mdbx_cassert(csrc, csrc->mc_snum < csrc->mc_db->md_depth ||
                          IS_LEAF(csrc->mc_pg[csrc->mc_db->md_depth - 1]));
   mdbx_cassert(cdst, page_room(pdst) >= page_used(cdst->mc_txn->mt_env, psrc));
-  const int pagetype = PAGETYPE(psrc);
+  const int pagetype = PAGETYPE_WHOLE(psrc);
 
   /* Move all nodes from src to dst */
   const unsigned dst_nkeys = page_numkeys(pdst);
@@ -21358,14 +21434,15 @@ static int mdbx_page_merge(MDBX_cursor *csrc, MDBX_cursor *cdst) {
 
   if (IS_LEAF(cdst->mc_pg[cdst->mc_top])) {
     /* LY: don't touch cursor if top-page is a LEAF */
-    mdbx_cassert(cdst, IS_LEAF(cdst->mc_pg[cdst->mc_top]) ||
-                           PAGETYPE(cdst->mc_pg[cdst->mc_top]) == pagetype);
+    mdbx_cassert(cdst,
+                 IS_LEAF(cdst->mc_pg[cdst->mc_top]) ||
+                     PAGETYPE_WHOLE(cdst->mc_pg[cdst->mc_top]) == pagetype);
     return MDBX_SUCCESS;
   }
 
   mdbx_cassert(cdst, page_numkeys(top_page) == dst_nkeys + src_nkeys);
 
-  if (unlikely(pagetype != PAGETYPE(top_page))) {
+  if (unlikely(pagetype != PAGETYPE_WHOLE(top_page))) {
     /* LY: LEAF-page becomes BRANCH, unable restore cursor's stack */
     goto bailout;
   }
@@ -21373,8 +21450,9 @@ static int mdbx_page_merge(MDBX_cursor *csrc, MDBX_cursor *cdst) {
   if (top_page == cdst->mc_pg[cdst->mc_top]) {
     /* LY: don't touch cursor if prev top-page already on the top */
     mdbx_cassert(cdst, cdst->mc_ki[cdst->mc_top] == top_indx);
-    mdbx_cassert(cdst, IS_LEAF(cdst->mc_pg[cdst->mc_top]) ||
-                           PAGETYPE(cdst->mc_pg[cdst->mc_top]) == pagetype);
+    mdbx_cassert(cdst,
+                 IS_LEAF(cdst->mc_pg[cdst->mc_top]) ||
+                     PAGETYPE_WHOLE(cdst->mc_pg[cdst->mc_top]) == pagetype);
     return MDBX_SUCCESS;
   }
 
@@ -21387,12 +21465,13 @@ static int mdbx_page_merge(MDBX_cursor *csrc, MDBX_cursor *cdst) {
   if (top_page == cdst->mc_pg[new_snum - 1]) {
     mdbx_cassert(cdst, cdst->mc_ki[new_snum - 1] == top_indx);
     /* LY: restore cursor stack */
-    cdst->mc_snum = (uint16_t)new_snum;
-    cdst->mc_top = (uint16_t)new_snum - 1;
+    cdst->mc_snum = (uint8_t)new_snum;
+    cdst->mc_top = (uint8_t)new_snum - 1;
     mdbx_cassert(cdst, cdst->mc_snum < cdst->mc_db->md_depth ||
                            IS_LEAF(cdst->mc_pg[cdst->mc_db->md_depth - 1]));
-    mdbx_cassert(cdst, IS_LEAF(cdst->mc_pg[cdst->mc_top]) ||
-                           PAGETYPE(cdst->mc_pg[cdst->mc_top]) == pagetype);
+    mdbx_cassert(cdst,
+                 IS_LEAF(cdst->mc_pg[cdst->mc_top]) ||
+                     PAGETYPE_WHOLE(cdst->mc_pg[cdst->mc_top]) == pagetype);
     return MDBX_SUCCESS;
   }
 
@@ -21408,12 +21487,13 @@ static int mdbx_page_merge(MDBX_cursor *csrc, MDBX_cursor *cdst) {
     cdst->mc_ki[new_snum - 1] = top_indx;
     cdst->mc_pg[new_snum] = (MDBX_page *)(~(uintptr_t)cdst->mc_pg[new_snum]);
     cdst->mc_ki[new_snum] = ~cdst->mc_ki[new_snum];
-    cdst->mc_snum = (uint16_t)new_snum;
-    cdst->mc_top = (uint16_t)new_snum - 1;
+    cdst->mc_snum = (uint8_t)new_snum;
+    cdst->mc_top = (uint8_t)new_snum - 1;
     mdbx_cassert(cdst, cdst->mc_snum < cdst->mc_db->md_depth ||
                            IS_LEAF(cdst->mc_pg[cdst->mc_db->md_depth - 1]));
-    mdbx_cassert(cdst, IS_LEAF(cdst->mc_pg[cdst->mc_top]) ||
-                           PAGETYPE(cdst->mc_pg[cdst->mc_top]) == pagetype);
+    mdbx_cassert(cdst,
+                 IS_LEAF(cdst->mc_pg[cdst->mc_top]) ||
+                     PAGETYPE_WHOLE(cdst->mc_pg[cdst->mc_top]) == pagetype);
     return MDBX_SUCCESS;
   }
 
@@ -21432,6 +21512,7 @@ static void cursor_restore(const MDBX_cursor *csrc, MDBX_cursor *cdst) {
   cdst->mc_snum = csrc->mc_snum;
   cdst->mc_top = csrc->mc_top;
   cdst->mc_flags = csrc->mc_flags;
+  cdst->mc_checking = csrc->mc_checking;
 
   for (unsigned i = 0; i < csrc->mc_snum; i++) {
     cdst->mc_pg[i] = csrc->mc_pg[i];
@@ -21464,7 +21545,7 @@ static int mdbx_rebalance(MDBX_cursor *mc) {
   mdbx_cassert(mc, mc->mc_snum > 0);
   mdbx_cassert(mc, mc->mc_snum < mc->mc_db->md_depth ||
                        IS_LEAF(mc->mc_pg[mc->mc_db->md_depth - 1]));
-  const int pagetype = PAGETYPE(mc->mc_pg[mc->mc_top]);
+  const int pagetype = PAGETYPE_WHOLE(mc->mc_pg[mc->mc_top]);
 
   STATIC_ASSERT(P_BRANCH == 1);
   const unsigned minkeys = (pagetype & P_BRANCH) + 1;
@@ -21539,8 +21620,7 @@ static int mdbx_rebalance(MDBX_cursor *mc) {
     } else if (IS_BRANCH(mp) && nkeys == 1) {
       mdbx_debug("%s", "collapsing root page!");
       mc->mc_db->md_root = node_pgno(page_node(mp, 0));
-      rc = mdbx_page_get(mc, mc->mc_db->md_root, &mc->mc_pg[0],
-                         pp_txnid4chk(mp, mc->mc_txn));
+      rc = page_get(mc, mc->mc_db->md_root, &mc->mc_pg[0], mp->mp_txnid);
       if (unlikely(rc != MDBX_SUCCESS))
         return rc;
       mc->mc_db->md_depth--;
@@ -21567,7 +21647,7 @@ static int mdbx_rebalance(MDBX_cursor *mc) {
         }
       }
       mdbx_cassert(mc, IS_LEAF(mc->mc_pg[mc->mc_top]) ||
-                           PAGETYPE(mc->mc_pg[mc->mc_top]) == pagetype);
+                           PAGETYPE_WHOLE(mc->mc_pg[mc->mc_top]) == pagetype);
       mdbx_cassert(mc, mc->mc_snum < mc->mc_db->md_depth ||
                            IS_LEAF(mc->mc_pg[mc->mc_db->md_depth - 1]));
 
@@ -21599,20 +21679,22 @@ static int mdbx_rebalance(MDBX_cursor *mc) {
 
   MDBX_page *left = nullptr, *right = nullptr;
   if (mn.mc_ki[pre_top] > 0) {
-    rc = mdbx_page_get(
+    rc = page_get(
         &mn, node_pgno(page_node(mn.mc_pg[pre_top], mn.mc_ki[pre_top] - 1)),
-        &left, pp_txnid4chk(mn.mc_pg[pre_top], mc->mc_txn));
+        &left, mc->mc_pg[mc->mc_top]->mp_txnid);
     if (unlikely(rc != MDBX_SUCCESS))
       return rc;
-    mdbx_cassert(mc, PAGETYPE(left) == PAGETYPE(mc->mc_pg[mc->mc_top]));
+    mdbx_cassert(mc,
+                 PAGETYPE_WHOLE(left) == PAGETYPE_WHOLE(mc->mc_pg[mc->mc_top]));
   }
   if (mn.mc_ki[pre_top] + 1u < page_numkeys(mn.mc_pg[pre_top])) {
-    rc = mdbx_page_get(
+    rc = page_get(
         &mn, node_pgno(page_node(mn.mc_pg[pre_top], mn.mc_ki[pre_top] + 1)),
-        &right, pp_txnid4chk(mn.mc_pg[pre_top], mc->mc_txn));
+        &right, mc->mc_pg[mc->mc_top]->mp_txnid);
     if (unlikely(rc != MDBX_SUCCESS))
       return rc;
-    mdbx_cassert(mc, PAGETYPE(right) == PAGETYPE(mc->mc_pg[mc->mc_top]));
+    mdbx_cassert(mc, PAGETYPE_WHOLE(right) ==
+                         PAGETYPE_WHOLE(mc->mc_pg[mc->mc_top]));
   }
   mdbx_cassert(mc, left || right);
 
@@ -21688,9 +21770,9 @@ retry:
 
   if (nkeys >= minkeys) {
     mc->mc_ki[mc->mc_top] = (indx_t)ki_top;
-    if (!mdbx_audit_enabled())
-      return MDBX_SUCCESS;
-    return mdbx_cursor_check(mc, C_UPDATING);
+    if (mdbx_audit_enabled())
+      return mdbx_cursor_check_updating(mc);
+    return MDBX_SUCCESS;
   }
 
   if (likely(room_threshold > 0)) {
@@ -21706,65 +21788,140 @@ retry:
 }
 
 __cold static int mdbx_page_check(MDBX_cursor *const mc,
-                                  const MDBX_page *const mp, unsigned options) {
+                                  const MDBX_page *const mp) {
   DKBUF;
-  options |= mc->mc_flags;
-  MDBX_env *const env = mc->mc_txn->mt_env;
-  const unsigned nkeys = page_numkeys(mp);
-  char *const end_of_page = (char *)mp + env->me_psize;
+  int rc = MDBX_SUCCESS;
   if (unlikely(mp->mp_pgno < MIN_PAGENO || mp->mp_pgno > MAX_PAGENO))
-    return bad_page(mp, "invalid pgno (%u)\n", mp->mp_pgno);
-  if (IS_OVERFLOW(mp)) {
-    if (unlikely(mp->mp_pages < 1 && mp->mp_pages >= MAX_PAGENO / 2))
-      return bad_page(mp, "invalid overflow n-pages (%u)\n", mp->mp_pages);
-    if (unlikely(mp->mp_pgno + mp->mp_pages > mc->mc_txn->mt_next_pgno))
-      return bad_page(mp, "overflow page beyond (%u) next-pgno\n",
-                      mp->mp_pgno + mp->mp_pages);
-    if (unlikely((options & (C_SUB | C_COPYING)) == C_SUB))
-      return bad_page(mp,
-                      "unexpected overflow-page for dupsort db (flags 0x%x)\n",
-                      mc->mc_db->md_flags);
-    return MDBX_SUCCESS;
+    rc = bad_page(mp, "invalid pgno (%u)\n", mp->mp_pgno);
+
+  MDBX_env *const env = mc->mc_txn->mt_env;
+  const ptrdiff_t offset = (uint8_t *)mp - env->me_dxb_mmap.dxb;
+  unsigned flags_mask = P_ILL_BITS;
+  unsigned flags_expected = 0;
+  if (offset < 0 ||
+      offset > (ptrdiff_t)(env->me_dxb_mmap.current - ((mp->mp_flags & P_SUBP)
+                                                           ? PAGEHDRSZ + 1
+                                                           : env->me_psize))) {
+    /* should be dirty page without MDBX_WRITEMAP, or a subpage of. */
+    flags_mask -= P_SUBP;
+    if ((env->me_flags & MDBX_WRITEMAP) != 0 ||
+        (!IS_SHADOWED(mc->mc_txn, mp) && !(mp->mp_flags & P_SUBP)))
+      rc = bad_page(mp, "invalid page-address %p, offset %zi\n",
+                    __Wpedantic_format_voidptr(mp), offset);
+  } else if (offset & (env->me_psize - 1))
+    flags_expected = P_SUBP;
+
+  if (unlikely((mp->mp_flags & flags_mask) != flags_expected))
+    rc = bad_page(mp, "unknown/extra page-flags (have 0x%x, expect 0x%x)\n",
+                  mp->mp_flags & flags_mask, flags_expected);
+
+  mdbx_cassert(mc, (mc->mc_checking & CC_LEAF2) == 0 ||
+                       (mc->mc_flags & C_SUB) != 0);
+  const uint8_t type = PAGETYPE_WHOLE(mp);
+  switch (type) {
+  default:
+    return bad_page(mp, "invalid type (%u)\n", type);
+  case P_OVERFLOW:
+    if (unlikely(mc->mc_flags & C_SUB))
+      rc = bad_page(mp, "unexpected %s-page for %s (db-flags 0x%x)\n", "large",
+                    "nested dupsort tree", mc->mc_db->md_flags);
+    const pgno_t npages = mp->mp_pages;
+    if (unlikely(npages < 1 || npages >= MAX_PAGENO / 2))
+      rc = bad_page(mp, "invalid n-pages (%u) for large-page\n", npages);
+    if (unlikely(mp->mp_pgno + npages > mc->mc_txn->mt_next_pgno))
+      rc = bad_page(
+          mp, "end of large-page beyond (%u) allocated space (%u next-pgno)\n",
+          mp->mp_pgno + npages, mc->mc_txn->mt_next_pgno);
+    return rc; //-------------------------- end of large/overflow page handling
+  case P_LEAF | P_SUBP:
+    if (unlikely(mc->mc_db->md_depth != 1))
+      rc = bad_page(mp, "unexpected %s-page for %s (db-flags 0x%x)\n",
+                    "leaf-sub", "nested dupsort db", mc->mc_db->md_flags);
+    /* fall through */
+    __fallthrough;
+  case P_LEAF:
+    if (unlikely((mc->mc_checking & CC_LEAF2) != 0))
+      rc = bad_page(
+          mp, "unexpected leaf-page for dupfixed subtree (db-lags 0x%x)\n",
+          mc->mc_db->md_flags);
+    break;
+  case P_LEAF | P_LEAF2 | P_SUBP:
+    if (unlikely(mc->mc_db->md_depth != 1))
+      rc = bad_page(mp, "unexpected %s-page for %s (db-flags 0x%x)\n",
+                    "leaf2-sub", "nested dupsort db", mc->mc_db->md_flags);
+    /* fall through */
+    __fallthrough;
+  case P_LEAF | P_LEAF2:
+    if (unlikely((mc->mc_checking & CC_LEAF2) == 0))
+      rc = bad_page(
+          mp,
+          "unexpected leaf2-page for non-dupfixed (sub)tree (db-flags 0x%x)\n",
+          mc->mc_db->md_flags);
+    break;
+  case P_BRANCH:
+    break;
   }
 
-  int rc = MDBX_SUCCESS;
-  if ((options & C_UPDATING) == 0 || !IS_MODIFIABLE(mc->mc_txn, mp)) {
-    if (unlikely(nkeys < 2 && IS_BRANCH(mp)))
-      rc = bad_page(mp, "branch-page nkey (%u) < 2\n", nkeys);
+  if (unlikely(mp->mp_upper < mp->mp_lower ||
+               ((mp->mp_lower | mp->mp_upper) & 1) ||
+               PAGEHDRSZ + mp->mp_upper > env->me_psize))
+    rc = bad_page(mp, "invalid page lower(%u)/upper(%u) with limit %u\n",
+                  mp->mp_lower, mp->mp_upper, page_space(env));
+
+  char *const end_of_page = (char *)mp + env->me_psize;
+  const unsigned nkeys = page_numkeys(mp);
+  STATIC_ASSERT(P_BRANCH == 1);
+  if (unlikely(nkeys <= (uint8_t)(mp->mp_flags & P_BRANCH))) {
+    if ((!(mc->mc_flags & C_SUB) || mc->mc_db->md_entries) &&
+        (!(mc->mc_checking & CC_UPDATING) ||
+         !(IS_MODIFIABLE(mc->mc_txn, mp) || (mp->mp_flags & P_SUBP))))
+      rc =
+          bad_page(mp, "%s-page nkeys (%u) < %u\n",
+                   IS_BRANCH(mp) ? "branch" : "leaf", nkeys, 1 + IS_BRANCH(mp));
   }
-  if (IS_LEAF2(mp) && unlikely((options & (C_SUB | C_COPYING)) == 0))
-    rc = bad_page(mp, "unexpected leaf2-page (db flags 0x%x)\n",
-                  mc->mc_db->md_flags);
+  if (!IS_LEAF2(mp) && unlikely(PAGEHDRSZ + mp->mp_upper +
+                                    nkeys * sizeof(MDBX_node) + nkeys - 1 >
+                                env->me_psize))
+    rc = bad_page(mp, "invalid page upper (%u) for nkeys %u with limit %u\n",
+                  mp->mp_upper, nkeys, page_space(env));
+
+  const size_t ksize_max = keysize_max(env->me_psize, 0);
+  const size_t leaf2_ksize = mp->mp_leaf2_ksize;
+  if (IS_LEAF2(mp)) {
+    if (unlikely((mc->mc_flags & C_SUB) == 0 ||
+                 (mc->mc_db->md_flags & MDBX_DUPFIXED) == 0))
+      rc = bad_page(mp, "unexpected leaf2-page (db-flags 0x%x)\n",
+                    mc->mc_db->md_flags);
+    if (unlikely(leaf2_ksize < 1 || leaf2_ksize > ksize_max))
+      rc = bad_page(mp, "invalid leaf2-key length (%zu)\n", leaf2_ksize);
+  }
 
   MDBX_val here, prev = {0, 0};
   for (unsigned i = 0; i < nkeys; ++i) {
     if (IS_LEAF2(mp)) {
-      const size_t ksize = mp->mp_leaf2_ksize;
-      char *const key = page_leaf2key(mp, i, ksize);
-      if (unlikely(end_of_page < key + ksize)) {
+      char *const key = page_leaf2key(mp, i, leaf2_ksize);
+      if (unlikely(end_of_page < key + leaf2_ksize)) {
         rc = bad_page(mp, "leaf2-key beyond (%zu) page-end\n",
-                      key + ksize - end_of_page);
+                      key + leaf2_ksize - end_of_page);
         continue;
       }
 
-      if ((options & C_COPYING) == 0) {
-        if (unlikely(ksize != mc->mc_dbx->md_klen_min)) {
-          if (unlikely(ksize < mc->mc_dbx->md_klen_min ||
-                       ksize > mc->mc_dbx->md_klen_max))
-            rc = bad_page(
-                mp, "leaf2-key size (%zu) <> min/max key-length (%zu/%zu)\n",
-                ksize, mc->mc_dbx->md_klen_min, mc->mc_dbx->md_klen_max);
-          else
-            mc->mc_dbx->md_klen_min = mc->mc_dbx->md_klen_max = ksize;
-        }
-        if ((options & C_SKIPORD) == 0) {
-          here.iov_len = ksize;
-          here.iov_base = key;
-          if (prev.iov_base && unlikely(mc->mc_dbx->md_cmp(&prev, &here) >= 0))
-            rc = bad_page(mp, "leaf2-key #%u wrong order (%s >= %s)\n", i,
-                          DKEY(&prev), DVAL(&here));
-          prev = here;
-        }
+      if (unlikely(leaf2_ksize != mc->mc_dbx->md_klen_min)) {
+        if (unlikely(leaf2_ksize < mc->mc_dbx->md_klen_min ||
+                     leaf2_ksize > mc->mc_dbx->md_klen_max))
+          rc = bad_page(
+              mp, "leaf2-key size (%zu) <> min/max key-length (%zu/%zu)\n",
+              leaf2_ksize, mc->mc_dbx->md_klen_min, mc->mc_dbx->md_klen_max);
+        else
+          mc->mc_dbx->md_klen_min = mc->mc_dbx->md_klen_max = leaf2_ksize;
+      }
+      if ((mc->mc_checking & CC_SKIPORD) == 0) {
+        here.iov_len = leaf2_ksize;
+        here.iov_base = key;
+        if (prev.iov_base && unlikely(mc->mc_dbx->md_cmp(&prev, &here) >= 0))
+          rc = bad_page(mp, "leaf2-key #%u wrong order (%s >= %s)\n", i,
+                        DKEY(&prev), DVAL(&here));
+        prev = here;
       }
     } else {
       const MDBX_node *const node = page_node(mp, i);
@@ -21774,20 +21931,22 @@ __cold static int mdbx_page_check(MDBX_cursor *const mc,
                       node_end - end_of_page);
         continue;
       }
-      size_t ksize = node_ks(node);
+      const size_t ksize = node_ks(node);
+      if (unlikely(ksize > ksize_max))
+        rc = bad_page(mp, "node[%u] too long key (%zu)\n", i, ksize);
       char *key = node_key(node);
       if (unlikely(end_of_page < key + ksize)) {
         rc = bad_page(mp, "node[%u] key (%zu) beyond page-end\n", i,
                       key + ksize - end_of_page);
         continue;
       }
-      if ((IS_LEAF(mp) || i > 0) && (options & C_COPYING) == 0) {
+      if ((IS_LEAF(mp) || i > 0)) {
         if (unlikely(ksize < mc->mc_dbx->md_klen_min ||
                      ksize > mc->mc_dbx->md_klen_max))
           rc = bad_page(
               mp, "node[%u] key size (%zu) <> min/max key-length (%zu/%zu)\n",
               i, ksize, mc->mc_dbx->md_klen_min, mc->mc_dbx->md_klen_max);
-        if ((options & C_SKIPORD) == 0) {
+        if ((mc->mc_checking & CC_SKIPORD) == 0) {
           here.iov_base = key;
           here.iov_len = ksize;
           if (prev.iov_base && unlikely(mc->mc_dbx->md_cmp(&prev, &here) >= 0))
@@ -21797,14 +21956,16 @@ __cold static int mdbx_page_check(MDBX_cursor *const mc,
         }
       }
       if (IS_BRANCH(mp)) {
-        if ((options & C_UPDATING) == 0 && i == 0 && unlikely(ksize != 0))
+        if ((mc->mc_checking & CC_UPDATING) == 0 && i == 0 &&
+            unlikely(ksize != 0))
           rc = bad_page(mp, "branch-node[%u] wrong 0-node key-length (%zu)\n",
                         i, ksize);
-        if ((options & C_RETIRING) == 0) {
-          const pgno_t ref = node_pgno(node);
-          if (unlikely(ref < MIN_PAGENO || ref >= mc->mc_txn->mt_next_pgno))
-            rc = bad_page(mp, "branch-node[%u] wrong pgno (%u)\n", i, ref);
-        }
+        const pgno_t ref = node_pgno(node);
+        if (unlikely(ref < MIN_PAGENO) ||
+            (unlikely(ref >= mc->mc_txn->mt_next_pgno) &&
+             (unlikely(ref >= mc->mc_txn->mt_geo.now) ||
+              !(mc->mc_checking & CC_RETIRING))))
+          rc = bad_page(mp, "branch-node[%u] wrong pgno (%u)\n", i, ref);
         if (unlikely(node_flags(node)))
           rc = bad_page(mp, "branch-node[%u] wrong flags (%u)\n", i,
                         node_flags(node));
@@ -21832,29 +21993,33 @@ __cold static int mdbx_page_check(MDBX_cursor *const mc,
               "bigdata-pgno", i, nkeys, dsize, data + dsize - end_of_page);
           continue;
         }
-        if ((options & C_COPYING) == 0) {
-          if (unlikely(dsize <= mc->mc_dbx->md_vlen_min ||
-                       dsize > mc->mc_dbx->md_vlen_max))
-            rc = bad_page(
-                mp,
-                "big-node data size (%zu) <> min/max value-length (%zu/%zu)\n",
-                dsize, mc->mc_dbx->md_vlen_min, mc->mc_dbx->md_vlen_max);
-        }
-        if ((options & C_RETIRING) == 0) {
-          MDBX_page *lp;
-          int err = mdbx_page_get(mc, node_largedata_pgno(node), &lp,
-                                  pp_txnid4chk(mp, mc->mc_txn));
-          if (unlikely(err != MDBX_SUCCESS))
-            return err;
-          if (unlikely(!IS_OVERFLOW(lp))) {
-            rc = bad_page(mp, "big-node refs to non-overflow page (%u)\n",
-                          lp->mp_pgno);
-            continue;
+        if (unlikely(dsize <= mc->mc_dbx->md_vlen_min ||
+                     dsize > mc->mc_dbx->md_vlen_max))
+          rc = bad_page(
+              mp,
+              "big-node data size (%zu) <> min/max value-length (%zu/%zu)\n",
+              dsize, mc->mc_dbx->md_vlen_min, mc->mc_dbx->md_vlen_max);
+        if (unlikely(node_size_len(node_ks(node), dsize) <=
+                     mc->mc_txn->mt_env->me_leaf_nodemax))
+          poor_page(mp, "too small data (%zu bytes) for bigdata-node", dsize);
+
+        if ((mc->mc_checking & CC_RETIRING) == 0) {
+          const pgr_t lp =
+              page_get_large(mc, node_largedata_pgno(node), mp->mp_txnid);
+          if (unlikely(lp.err != MDBX_SUCCESS))
+            return lp.err;
+          mdbx_cassert(mc, PAGETYPE_WHOLE(lp.page) == P_OVERFLOW);
+          const unsigned npages = number_of_ovpages(env, dsize);
+          if (unlikely(lp.page->mp_pages != npages)) {
+            if (lp.page->mp_pages < npages)
+              rc = bad_page(lp.page,
+                            "too less n-pages %u for bigdata-node (%zu bytes)",
+                            lp.page->mp_pages, dsize);
+            else
+              poor_page(lp.page,
+                        "extra n-pages %u for bigdata-node (%zu bytes)",
+                        lp.page->mp_pages, dsize);
           }
-          if (unlikely(number_of_ovpages(env, dsize) > lp->mp_pages))
-            rc =
-                bad_page(mp, "big-node size (%zu) mismatch n-pages size (%u)\n",
-                         dsize, lp->mp_pages);
         }
         continue;
       }
@@ -21871,14 +22036,12 @@ __cold static int mdbx_page_check(MDBX_cursor *const mc,
         /* wrong, but already handled */
         continue;
       case 0 /* usual */:
-        if ((options & C_COPYING) == 0) {
-          if (unlikely(dsize < mc->mc_dbx->md_vlen_min ||
-                       dsize > mc->mc_dbx->md_vlen_max)) {
-            rc = bad_page(
-                mp, "node-data size (%zu) <> min/max value-length (%zu/%zu)\n",
-                dsize, mc->mc_dbx->md_vlen_min, mc->mc_dbx->md_vlen_max);
-            continue;
-          }
+        if (unlikely(dsize < mc->mc_dbx->md_vlen_min ||
+                     dsize > mc->mc_dbx->md_vlen_max)) {
+          rc = bad_page(
+              mp, "node-data size (%zu) <> min/max value-length (%zu/%zu)\n",
+              dsize, mc->mc_dbx->md_vlen_min, mc->mc_dbx->md_vlen_max);
+          continue;
         }
         break;
       case F_SUBDATA /* sub-db */:
@@ -21900,9 +22063,8 @@ __cold static int mdbx_page_check(MDBX_cursor *const mc,
           continue;
         } else {
           const MDBX_page *const sp = (MDBX_page *)data;
-          const char *const end_of_subpage = data + dsize;
-          const int nsubkeys = page_numkeys(sp);
-          switch (sp->mp_flags & /* ignore legacy P_DIRTY flag */ ~0x10) {
+          switch (sp->mp_flags &
+                  /* ignore legacy P_DIRTY flag */ ~P_LEGACY_DIRTY) {
           case P_LEAF | P_SUBP:
           case P_LEAF | P_LEAF2 | P_SUBP:
             break;
@@ -21911,6 +22073,13 @@ __cold static int mdbx_page_check(MDBX_cursor *const mc,
                           sp->mp_flags);
             continue;
           }
+
+          const char *const end_of_subpage = data + dsize;
+          const int nsubkeys = page_numkeys(sp);
+          if (unlikely(nsubkeys == 0) && !(mc->mc_checking & CC_UPDATING) &&
+              mc->mc_db->md_entries)
+            rc = bad_page(mp, "no keys on a %s-page\n",
+                          IS_LEAF2(sp) ? "leaf2-sub" : "leaf-sub");
 
           MDBX_val sub_here, sub_prev = {0, 0};
           for (int j = 0; j < nsubkeys; j++) {
@@ -21924,29 +22093,26 @@ __cold static int mdbx_page_check(MDBX_cursor *const mc,
                 continue;
               }
 
-              if ((options & C_COPYING) == 0) {
-                if (unlikely(sub_ksize != mc->mc_dbx->md_vlen_min)) {
-                  if (unlikely(sub_ksize < mc->mc_dbx->md_vlen_min ||
-                               sub_ksize > mc->mc_dbx->md_vlen_max)) {
-                    rc = bad_page(mp,
-                                  "nested-leaf2-key size (%zu) <> min/max "
-                                  "value-length (%zu/%zu)\n",
-                                  sub_ksize, mc->mc_dbx->md_vlen_min,
-                                  mc->mc_dbx->md_vlen_max);
-                    continue;
-                  }
+              if (unlikely(sub_ksize != mc->mc_dbx->md_vlen_min)) {
+                if (unlikely(sub_ksize < mc->mc_dbx->md_vlen_min ||
+                             sub_ksize > mc->mc_dbx->md_vlen_max))
+                  rc = bad_page(mp,
+                                "nested-leaf2-key size (%zu) <> min/max "
+                                "value-length (%zu/%zu)\n",
+                                sub_ksize, mc->mc_dbx->md_vlen_min,
+                                mc->mc_dbx->md_vlen_max);
+                else
                   mc->mc_dbx->md_vlen_min = mc->mc_dbx->md_vlen_max = sub_ksize;
-                }
-                if ((options & C_SKIPORD) == 0) {
-                  sub_here.iov_len = sub_ksize;
-                  sub_here.iov_base = sub_key;
-                  if (sub_prev.iov_base &&
-                      unlikely(mc->mc_dbx->md_dcmp(&sub_prev, &sub_here) >= 0))
-                    rc = bad_page(
-                        mp, "nested-leaf2-key #%u wrong order (%s >= %s)\n", j,
-                        DKEY(&sub_prev), DVAL(&sub_here));
-                  sub_prev = sub_here;
-                }
+              }
+              if ((mc->mc_checking & CC_SKIPORD) == 0) {
+                sub_here.iov_len = sub_ksize;
+                sub_here.iov_base = sub_key;
+                if (sub_prev.iov_base &&
+                    unlikely(mc->mc_dbx->md_dcmp(&sub_prev, &sub_here) >= 0))
+                  rc = bad_page(mp,
+                                "nested-leaf2-key #%u wrong order (%s >= %s)\n",
+                                j, DKEY(&sub_prev), DVAL(&sub_here));
+                sub_prev = sub_here;
               }
             } else {
               const MDBX_node *const sub_node = page_node(sp, j);
@@ -21965,25 +22131,22 @@ __cold static int mdbx_page_check(MDBX_cursor *const mc,
               size_t sub_dsize = node_ds(sub_node);
               /* char *sub_data = node_data(sub_node); */
 
-              if ((options & C_COPYING) == 0) {
-                if (unlikely(sub_ksize < mc->mc_dbx->md_vlen_min ||
-                             sub_ksize > mc->mc_dbx->md_vlen_max))
+              if (unlikely(sub_ksize < mc->mc_dbx->md_vlen_min ||
+                           sub_ksize > mc->mc_dbx->md_vlen_max))
+                rc = bad_page(mp,
+                              "nested-node-key size (%zu) <> min/max "
+                              "value-length (%zu/%zu)\n",
+                              sub_ksize, mc->mc_dbx->md_vlen_min,
+                              mc->mc_dbx->md_vlen_max);
+              if ((mc->mc_checking & CC_SKIPORD) == 0) {
+                sub_here.iov_len = sub_ksize;
+                sub_here.iov_base = sub_key;
+                if (sub_prev.iov_base &&
+                    unlikely(mc->mc_dbx->md_dcmp(&sub_prev, &sub_here) >= 0))
                   rc = bad_page(mp,
-                                "nested-node-key size (%zu) <> min/max "
-                                "value-length (%zu/%zu)\n",
-                                sub_ksize, mc->mc_dbx->md_vlen_min,
-                                mc->mc_dbx->md_vlen_max);
-
-                if ((options & C_SKIPORD) == 0) {
-                  sub_here.iov_len = sub_ksize;
-                  sub_here.iov_base = sub_key;
-                  if (sub_prev.iov_base &&
-                      unlikely(mc->mc_dbx->md_dcmp(&sub_prev, &sub_here) >= 0))
-                    rc = bad_page(
-                        mp, "nested-node-key #%u wrong order (%s >= %s)\n", j,
-                        DKEY(&sub_prev), DVAL(&sub_here));
-                  sub_prev = sub_here;
-                }
+                                "nested-node-key #%u wrong order (%s >= %s)\n",
+                                j, DKEY(&sub_prev), DVAL(&sub_here));
+                sub_prev = sub_here;
               }
               if (unlikely(sub_dsize != 0))
                 rc = bad_page(mp, "nested-node non-empty data size (%zu)\n",
@@ -22001,19 +22164,23 @@ __cold static int mdbx_page_check(MDBX_cursor *const mc,
   return rc;
 }
 
-__cold static int mdbx_cursor_check(MDBX_cursor *mc, unsigned options) {
+__cold static int mdbx_cursor_check(MDBX_cursor *mc) {
   mdbx_cassert(mc,
                mc->mc_txn->tw.dirtyroom + mc->mc_txn->tw.dirtylist->length ==
                    (mc->mc_txn->mt_parent
                         ? mc->mc_txn->mt_parent->tw.dirtyroom
                         : mc->mc_txn->mt_env->me_options.dp_limit));
-  mdbx_cassert(mc, mc->mc_top == mc->mc_snum - 1 || (options & C_UPDATING));
-  if (unlikely(mc->mc_top != mc->mc_snum - 1) && (options & C_UPDATING) == 0)
+  mdbx_cassert(mc, mc->mc_top == mc->mc_snum - 1 ||
+                       (mc->mc_checking & CC_UPDATING));
+  if (unlikely(mc->mc_top != mc->mc_snum - 1) &&
+      (mc->mc_checking & CC_UPDATING) == 0)
     return MDBX_CURSOR_FULL;
-  mdbx_cassert(mc, (options & C_UPDATING) ? mc->mc_snum <= mc->mc_db->md_depth
-                                          : mc->mc_snum == mc->mc_db->md_depth);
-  if (unlikely((options & C_UPDATING) ? mc->mc_snum > mc->mc_db->md_depth
-                                      : mc->mc_snum != mc->mc_db->md_depth))
+  mdbx_cassert(mc, (mc->mc_checking & CC_UPDATING)
+                       ? mc->mc_snum <= mc->mc_db->md_depth
+                       : mc->mc_snum == mc->mc_db->md_depth);
+  if (unlikely((mc->mc_checking & CC_UPDATING)
+                   ? mc->mc_snum > mc->mc_db->md_depth
+                   : mc->mc_snum != mc->mc_db->md_depth))
     return MDBX_CURSOR_FULL;
 
   for (int n = 0; n < (int)mc->mc_snum; ++n) {
@@ -22026,7 +22193,7 @@ __cold static int mdbx_cursor_check(MDBX_cursor *mc, unsigned options) {
     mdbx_cassert(mc, branch == expect_branch);
     if (unlikely(branch != expect_branch))
       return MDBX_CURSOR_FULL;
-    if ((options & C_UPDATING) == 0) {
+    if ((mc->mc_checking & CC_UPDATING) == 0) {
       mdbx_cassert(mc,
                    nkeys > mc->mc_ki[n] || (!branch && nkeys == mc->mc_ki[n] &&
                                             (mc->mc_flags & C_EOF) != 0));
@@ -22040,7 +22207,7 @@ __cold static int mdbx_cursor_check(MDBX_cursor *mc, unsigned options) {
         return MDBX_CURSOR_FULL;
     }
 
-    int err = mdbx_page_check(mc, mp, options);
+    int err = mdbx_page_check(mc, mp);
     if (unlikely(err != MDBX_SUCCESS))
       return err;
 
@@ -22052,21 +22219,29 @@ __cold static int mdbx_cursor_check(MDBX_cursor *mc, unsigned options) {
           return MDBX_CURSOR_FULL;
         pgno_t pgno = node_pgno(node);
         MDBX_page *np;
-        int rc = mdbx_page_get(mc, pgno, &np, pp_txnid4chk(mp, mc->mc_txn));
-        mdbx_cassert(mc, rc == MDBX_SUCCESS);
-        if (unlikely(rc != MDBX_SUCCESS))
-          return rc;
+        err = page_get(mc, pgno, &np, mp->mp_txnid);
+        mdbx_cassert(mc, err == MDBX_SUCCESS);
+        if (unlikely(err != MDBX_SUCCESS))
+          return err;
         const bool nested_leaf = IS_LEAF(np) ? true : false;
         mdbx_cassert(mc, nested_leaf == expect_nested_leaf);
         if (unlikely(nested_leaf != expect_nested_leaf))
           return MDBX_CURSOR_FULL;
-        err = mdbx_page_check(mc, np, options);
+        err = mdbx_page_check(mc, np);
         if (unlikely(err != MDBX_SUCCESS))
           return err;
       }
     }
   }
   return MDBX_SUCCESS;
+}
+
+__cold static int mdbx_cursor_check_updating(MDBX_cursor *mc) {
+  const uint8_t checking = mc->mc_checking;
+  mc->mc_checking |= CC_UPDATING;
+  const int rc = mdbx_cursor_check(mc);
+  mc->mc_checking = checking;
+  return rc;
 }
 
 /* Complete a delete operation started by mdbx_cursor_del(). */
@@ -22179,7 +22354,7 @@ static int mdbx_cursor_del0(MDBX_cursor *mc) {
 
   mdbx_cassert(mc, rc == MDBX_SUCCESS);
   if (mdbx_audit_enabled())
-    rc = mdbx_cursor_check(mc, 0);
+    rc = mdbx_cursor_check(mc);
   return rc;
 
 bailout:
@@ -22270,7 +22445,7 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
   const unsigned newindx = mc->mc_ki[mc->mc_top];
   unsigned nkeys = page_numkeys(mp);
   if (mdbx_audit_enabled()) {
-    rc = mdbx_cursor_check(mc, C_UPDATING);
+    rc = mdbx_cursor_check_updating(mc);
     if (unlikely(rc != MDBX_SUCCESS))
       return rc;
   }
@@ -22285,7 +22460,7 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
   mdbx_cassert(mc, nkeys + 1 >= minkeys * 2);
 
   /* Create a new sibling page. */
-  struct page_result npr = page_new(mc, mp->mp_flags);
+  pgr_t npr = page_new(mc, mp->mp_flags);
   if (unlikely(npr.err != MDBX_SUCCESS))
     return npr.err;
   MDBX_page *const sister = npr.page;
@@ -22332,7 +22507,7 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
     mc->mc_top++;
     ptop = 0;
     if (mdbx_audit_enabled()) {
-      rc = mdbx_cursor_check(mc, C_UPDATING);
+      rc = mdbx_cursor_check_updating(mc);
       if (unlikely(rc != MDBX_SUCCESS))
         goto done;
     }
@@ -22440,10 +22615,10 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
       }
 
       if (mdbx_audit_enabled()) {
-        rc = mdbx_cursor_check(mc, C_UPDATING);
+        rc = mdbx_cursor_check_updating(mc);
         if (unlikely(rc != MDBX_SUCCESS))
           goto done;
-        rc = mdbx_cursor_check(&mn, C_UPDATING);
+        rc = mdbx_cursor_check_updating(&mn);
         if (unlikely(rc != MDBX_SUCCESS))
           goto done;
       }
@@ -22570,7 +22745,7 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
       goto done;
     mdbx_cassert(mc, (int)mc->mc_snum - snum == mc->mc_db->md_depth - depth);
     if (mdbx_audit_enabled()) {
-      rc = mdbx_cursor_check(mc, C_UPDATING);
+      rc = mdbx_cursor_check_updating(mc);
       if (unlikely(rc != MDBX_SUCCESS))
         goto done;
     }
@@ -22646,7 +22821,7 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
   if (unlikely(pure_left | pure_right)) {
     mc->mc_pg[mc->mc_top] = sister;
     mc->mc_ki[mc->mc_top] = 0;
-    switch (PAGETYPE(sister)) {
+    switch (PAGETYPE_WHOLE(sister)) {
     case P_LEAF: {
       mdbx_cassert(mc, newpgno == 0 || newpgno == P_INVALID);
       rc = mdbx_node_add_leaf(mc, 0, newkey, newdata, nflags);
@@ -22657,7 +22832,7 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
       rc = mdbx_node_add_leaf2(mc, 0, newkey);
     } break;
     default:
-      rc = bad_page(sister, "wrong page-type %u\n", PAGETYPE(sister));
+      rc = bad_page(sister, "wrong page-type %u\n", PAGETYPE_WHOLE(sister));
     }
     if (unlikely(rc != MDBX_SUCCESS))
       goto done;
@@ -22672,12 +22847,12 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
               page_node(mc->mc_pg[mc->mc_top - i], mc->mc_ki[mc->mc_top - i]),
               &sepkey);
           if (mc->mc_dbx->md_cmp(newkey, &sepkey) < 0) {
-            mc->mc_top -= i;
+            mc->mc_top -= (uint8_t)i;
             mdbx_debug("update new-first on parent [%i] page %u key %s",
                        mc->mc_ki[mc->mc_top], mc->mc_pg[mc->mc_top]->mp_pgno,
                        DKEY(newkey));
             rc = mdbx_update_key(mc, newkey);
-            mc->mc_top += i;
+            mc->mc_top += (uint8_t)i;
             if (unlikely(rc != MDBX_SUCCESS))
               goto done;
           }
@@ -22718,7 +22893,7 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
         flags = node_flags(node);
       }
 
-      switch (PAGETYPE(sister)) {
+      switch (PAGETYPE_WHOLE(sister)) {
       case P_BRANCH: {
         mdbx_cassert(mc, 0 == (uint16_t)flags);
         /* First branch index doesn't need key data. */
@@ -22735,7 +22910,7 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
         rc = mdbx_node_add_leaf2(mc, n, &rkey);
       } break; */
       default:
-        rc = bad_page(sister, "wrong page-type %u\n", PAGETYPE(sister));
+        rc = bad_page(sister, "wrong page-type %u\n", PAGETYPE_WHOLE(sister));
       }
       if (unlikely(rc != MDBX_SUCCESS))
         goto done;
@@ -22843,7 +23018,7 @@ done:
     mc->mc_txn->mt_flags |= MDBX_TXN_ERROR;
   else {
     if (mdbx_audit_enabled())
-      rc = mdbx_cursor_check(mc, C_UPDATING);
+      rc = mdbx_cursor_check_updating(mc);
     if (unlikely(nflags & MDBX_RESERVE)) {
       MDBX_node *node = page_node(mc->mc_pg[mc->mc_top], mc->mc_ki[mc->mc_top]);
       if (!(node_flags(node) & F_BIGDATA))
@@ -22912,14 +23087,12 @@ int mdbx_put(MDBX_txn *txn, MDBX_dbi dbi, const MDBX_val *key, MDBX_val *data,
 /**** COPYING *****************************************************************/
 
 /* State needed for a double-buffering compacting copy. */
-typedef struct mdbx_copy {
+typedef struct mdbx_compacting_ctx {
   MDBX_env *mc_env;
   MDBX_txn *mc_txn;
   mdbx_condpair_t mc_condpair;
   uint8_t *mc_wbuf[2];
-  uint8_t *mc_over[2];
   size_t mc_wlen[2];
-  size_t mc_olen[2];
   mdbx_filehandle_t mc_fd;
   /* Error code.  Never cleared if set.  Both threads can set nonzero
    * to fail the copy.  Not mutex-protected, MDBX expects atomic int. */
@@ -22927,39 +23100,38 @@ typedef struct mdbx_copy {
   pgno_t mc_next_pgno;
   volatile unsigned mc_head;
   volatile unsigned mc_tail;
-} mdbx_copy;
+} mdbx_compacting_ctx;
 
 /* Dedicated writer thread for compacting copy. */
-__cold static THREAD_RESULT THREAD_CALL mdbx_env_copythr(void *arg) {
-  mdbx_copy *my = arg;
+__cold static THREAD_RESULT THREAD_CALL compacting_write_thread(void *arg) {
+  mdbx_compacting_ctx *const ctx = arg;
 
 #if defined(EPIPE) && !(defined(_WIN32) || defined(_WIN64))
   sigset_t sigset;
   sigemptyset(&sigset);
   sigaddset(&sigset, SIGPIPE);
-  my->mc_error = pthread_sigmask(SIG_BLOCK, &sigset, NULL);
+  ctx->mc_error = pthread_sigmask(SIG_BLOCK, &sigset, NULL);
 #endif /* EPIPE */
 
-  mdbx_condpair_lock(&my->mc_condpair);
-  while (!my->mc_error) {
-    while (my->mc_tail == my->mc_head && !my->mc_error) {
-      int err = mdbx_condpair_wait(&my->mc_condpair, true);
+  mdbx_condpair_lock(&ctx->mc_condpair);
+  while (!ctx->mc_error) {
+    while (ctx->mc_tail == ctx->mc_head && !ctx->mc_error) {
+      int err = mdbx_condpair_wait(&ctx->mc_condpair, true);
       if (err != MDBX_SUCCESS) {
-        my->mc_error = err;
+        ctx->mc_error = err;
         goto bailout;
       }
     }
-    const unsigned toggle = my->mc_tail & 1;
-    size_t wsize = my->mc_wlen[toggle];
+    const unsigned toggle = ctx->mc_tail & 1;
+    size_t wsize = ctx->mc_wlen[toggle];
     if (wsize == 0) {
-      my->mc_tail += 1;
+      ctx->mc_tail += 1;
       break /* EOF */;
     }
-    my->mc_wlen[toggle] = 0;
-    uint8_t *ptr = my->mc_wbuf[toggle];
-  again:
-    if (!my->mc_error) {
-      int err = mdbx_write(my->mc_fd, ptr, wsize);
+    ctx->mc_wlen[toggle] = 0;
+    uint8_t *ptr = ctx->mc_wbuf[toggle];
+    if (!ctx->mc_error) {
+      int err = mdbx_write(ctx->mc_fd, ptr, wsize);
       if (err != MDBX_SUCCESS) {
 #if defined(EPIPE) && !(defined(_WIN32) || defined(_WIN64))
         if (err == EPIPE) {
@@ -22969,134 +23141,158 @@ __cold static THREAD_RESULT THREAD_CALL mdbx_env_copythr(void *arg) {
           sigwait(&sigset, &unused);
         }
 #endif /* EPIPE */
-        my->mc_error = err;
+        ctx->mc_error = err;
         goto bailout;
       }
     }
-
-    /* If there's an overflow page tail, write it too */
-    wsize = my->mc_olen[toggle];
-    if (wsize) {
-      my->mc_olen[toggle] = 0;
-      ptr = my->mc_over[toggle];
-      goto again;
-    }
-    my->mc_tail += 1;
-    mdbx_condpair_signal(&my->mc_condpair, false);
+    ctx->mc_tail += 1;
+    mdbx_condpair_signal(&ctx->mc_condpair, false);
   }
 bailout:
-  mdbx_condpair_unlock(&my->mc_condpair);
+  mdbx_condpair_unlock(&ctx->mc_condpair);
   return (THREAD_RESULT)0;
 }
 
 /* Give buffer and/or MDBX_EOF to writer thread, await unused buffer. */
-__cold static int mdbx_env_cthr_toggle(mdbx_copy *my) {
-  mdbx_condpair_lock(&my->mc_condpair);
-  mdbx_assert(my->mc_env, my->mc_head - my->mc_tail < 2 || my->mc_error);
-  my->mc_head += 1;
-  mdbx_condpair_signal(&my->mc_condpair, true);
-  while (!my->mc_error &&
-         my->mc_head - my->mc_tail == 2 /* both buffers in use */) {
-    int err = mdbx_condpair_wait(&my->mc_condpair, false);
+__cold static int compacting_toggle_write_buffers(mdbx_compacting_ctx *ctx) {
+  mdbx_condpair_lock(&ctx->mc_condpair);
+  mdbx_assert(ctx->mc_env, ctx->mc_head - ctx->mc_tail < 2 || ctx->mc_error);
+  ctx->mc_head += 1;
+  mdbx_condpair_signal(&ctx->mc_condpair, true);
+  while (!ctx->mc_error &&
+         ctx->mc_head - ctx->mc_tail == 2 /* both buffers in use */) {
+    int err = mdbx_condpair_wait(&ctx->mc_condpair, false);
     if (err != MDBX_SUCCESS)
-      my->mc_error = err;
+      ctx->mc_error = err;
   }
-  mdbx_condpair_unlock(&my->mc_condpair);
-  return my->mc_error;
+  mdbx_condpair_unlock(&ctx->mc_condpair);
+  return ctx->mc_error;
 }
 
-/* Depth-first tree traversal for compacting copy.
- * [in] my control structure.
- * [in,out] pg database root.
- * [in] flags includes F_DUPDATA if it is a sorted-duplicate sub-DB. */
-__cold static int mdbx_env_cwalk(mdbx_copy *my, pgno_t *pg, int flags) {
-  MDBX_cursor_couple couple;
-  MDBX_page *mo, *mp, *leaf;
-  char *buf, *ptr;
-  int rc;
-  unsigned i;
+__cold static int compacting_walk_sdb(mdbx_compacting_ctx *ctx, MDBX_db *sdb);
 
-  /* Empty DB, nothing to do */
-  if (*pg == P_INVALID)
-    return MDBX_SUCCESS;
+static int compacting_put_bytes(mdbx_compacting_ctx *ctx, const void *src,
+                                size_t bytes, pgno_t pgno, pgno_t npages) {
+  assert(pgno == 0 || bytes > PAGEHDRSZ);
+  while (bytes > 0) {
+    const unsigned side = ctx->mc_head & 1;
+    const size_t left = (size_t)MDBX_ENVCOPY_WRITEBUF - ctx->mc_wlen[side];
+    if (left < (pgno ? PAGEHDRSZ : 1)) {
+      int err = compacting_toggle_write_buffers(ctx);
+      if (unlikely(err != MDBX_SUCCESS))
+        return err;
+      continue;
+    }
+    const size_t chunk = (bytes < left) ? bytes : left;
+    void *const dst = ctx->mc_wbuf[side] + ctx->mc_wlen[side];
+    if (src) {
+      memcpy(dst, src, chunk);
+      if (pgno) {
+        assert(chunk > PAGEHDRSZ);
+        MDBX_page *mp = dst;
+        mp->mp_pgno = pgno;
+        if (mp->mp_txnid == 0)
+          mp->mp_txnid = ctx->mc_txn->mt_txnid;
+        if (mp->mp_flags == P_OVERFLOW) {
+          assert(bytes <= pgno2bytes(ctx->mc_env, npages));
+          mp->mp_pages = npages;
+        }
+        pgno = 0;
+      }
+      src = (const char *)src + chunk;
+    } else
+      memset(dst, 0, chunk);
+    bytes -= chunk;
+    ctx->mc_wlen[side] += chunk;
+  }
+  return MDBX_SUCCESS;
+}
 
-  memset(&couple, 0, sizeof(couple));
-  couple.outer.mc_snum = 1;
-  couple.outer.mc_txn = my->mc_txn;
-  couple.outer.mc_flags = couple.inner.mx_cursor.mc_flags =
-      C_COPYING | C_SKIPORD;
+static int compacting_put_page(mdbx_compacting_ctx *ctx, const MDBX_page *mp,
+                               const size_t head_bytes, const size_t tail_bytes,
+                               const pgno_t npages) {
+  if (tail_bytes) {
+    assert(head_bytes + tail_bytes <= ctx->mc_env->me_psize);
+    assert(npages == 1 &&
+           (PAGETYPE_WHOLE(mp) == P_BRANCH || PAGETYPE_WHOLE(mp) == P_LEAF));
+  } else {
+    assert(head_bytes <= pgno2bytes(ctx->mc_env, npages));
+    assert((npages == 1 && PAGETYPE_WHOLE(mp) == (P_LEAF | P_LEAF2)) ||
+           PAGETYPE_WHOLE(mp) == P_OVERFLOW);
+  }
 
-  rc = mdbx_page_get(&couple.outer, *pg, &couple.outer.mc_pg[0],
-                     my->mc_txn->mt_txnid);
+  const pgno_t pgno = ctx->mc_next_pgno;
+  ctx->mc_next_pgno += npages;
+  int err = compacting_put_bytes(ctx, mp, head_bytes, pgno, npages);
+  if (unlikely(err != MDBX_SUCCESS))
+    return err;
+  err = compacting_put_bytes(
+      ctx, nullptr, pgno2bytes(ctx->mc_env, npages) - (head_bytes + tail_bytes),
+      0, 0);
+  if (unlikely(err != MDBX_SUCCESS))
+    return err;
+  return compacting_put_bytes(
+      ctx, (const char *)mp + ctx->mc_env->me_psize - tail_bytes, tail_bytes, 0,
+      0);
+}
+
+__cold static int compacting_walk_tree(mdbx_compacting_ctx *ctx,
+                                       MDBX_cursor *mc, pgno_t *root,
+                                       txnid_t parent_txnid) {
+  mc->mc_snum = 1;
+  int rc = page_get(mc, *root, &mc->mc_pg[0], parent_txnid);
   if (unlikely(rc != MDBX_SUCCESS))
     return rc;
-  rc = mdbx_page_search_root(&couple.outer, NULL, MDBX_PS_FIRST);
+
+  rc = mdbx_page_search_root(mc, nullptr, MDBX_PS_FIRST);
   if (unlikely(rc != MDBX_SUCCESS))
     return rc;
 
   /* Make cursor pages writable */
-  buf = ptr = mdbx_malloc(pgno2bytes(my->mc_env, couple.outer.mc_snum));
+  char *const buf = mdbx_malloc(pgno2bytes(ctx->mc_env, mc->mc_snum));
   if (buf == NULL)
     return MDBX_ENOMEM;
 
-  for (i = 0; i < couple.outer.mc_top; i++) {
-    mdbx_page_copy((MDBX_page *)ptr, couple.outer.mc_pg[i],
-                   my->mc_env->me_psize);
-    couple.outer.mc_pg[i] = (MDBX_page *)ptr;
-    ptr += my->mc_env->me_psize;
+  char *ptr = buf;
+  for (unsigned i = 0; i < mc->mc_top; i++) {
+    mdbx_page_copy((MDBX_page *)ptr, mc->mc_pg[i], ctx->mc_env->me_psize);
+    mc->mc_pg[i] = (MDBX_page *)ptr;
+    ptr += ctx->mc_env->me_psize;
   }
-
   /* This is writable space for a leaf page. Usually not needed. */
-  leaf = (MDBX_page *)ptr;
+  MDBX_page *const leaf = (MDBX_page *)ptr;
 
-  while (couple.outer.mc_snum > 0) {
-    mp = couple.outer.mc_pg[couple.outer.mc_top];
+  while (mc->mc_snum > 0) {
+    MDBX_page *mp = mc->mc_pg[mc->mc_top];
     unsigned n = page_numkeys(mp);
 
     if (IS_LEAF(mp)) {
-      if (!IS_LEAF2(mp) && !(flags & F_DUPDATA)) {
-        for (i = 0; i < n; i++) {
+      if (!(mc->mc_flags &
+            C_SUB) /* may have nested F_SUBDATA or F_BIGDATA nodes */) {
+        for (unsigned i = 0; i < n; i++) {
           MDBX_node *node = page_node(mp, i);
-          if (node_flags(node) & F_BIGDATA) {
-            MDBX_page *omp;
-
+          if (node_flags(node) == F_BIGDATA) {
             /* Need writable leaf */
             if (mp != leaf) {
-              couple.outer.mc_pg[couple.outer.mc_top] = leaf;
-              mdbx_page_copy(leaf, mp, my->mc_env->me_psize);
+              mc->mc_pg[mc->mc_top] = leaf;
+              mdbx_page_copy(leaf, mp, ctx->mc_env->me_psize);
               mp = leaf;
               node = page_node(mp, i);
             }
 
-            const pgno_t pgno = node_largedata_pgno(node);
-            poke_pgno(node_data(node), my->mc_next_pgno);
-            rc = mdbx_page_get(&couple.outer, pgno, &omp,
-                               pp_txnid4chk(mp, my->mc_txn));
+            const pgr_t lp =
+                page_get_large(mc, node_largedata_pgno(node), mp->mp_txnid);
+            if (unlikely((rc = lp.err) != MDBX_SUCCESS))
+              goto done;
+            const size_t datasize = node_ds(node);
+            const pgno_t npages = number_of_ovpages(ctx->mc_env, datasize);
+            poke_pgno(node_data(node), ctx->mc_next_pgno);
+            rc = compacting_put_page(ctx, lp.page, PAGEHDRSZ + datasize, 0,
+                                     npages);
             if (unlikely(rc != MDBX_SUCCESS))
               goto done;
-            unsigned toggle = my->mc_head & 1;
-            if (my->mc_wlen[toggle] + my->mc_env->me_psize >
-                ((size_t)(MDBX_ENVCOPY_WRITEBUF))) {
-              rc = mdbx_env_cthr_toggle(my);
-              if (unlikely(rc != MDBX_SUCCESS))
-                goto done;
-              toggle = my->mc_head & 1;
-            }
-            mo = (MDBX_page *)(my->mc_wbuf[toggle] + my->mc_wlen[toggle]);
-            memcpy(mo, omp, my->mc_env->me_psize);
-            mo->mp_pgno = my->mc_next_pgno;
-            my->mc_next_pgno += omp->mp_pages;
-            my->mc_wlen[toggle] += my->mc_env->me_psize;
-            if (omp->mp_pages > 1) {
-              my->mc_olen[toggle] = pgno2bytes(my->mc_env, omp->mp_pages - 1);
-              my->mc_over[toggle] = (uint8_t *)omp + my->mc_env->me_psize;
-              rc = mdbx_env_cthr_toggle(my);
-              if (unlikely(rc != MDBX_SUCCESS))
-                goto done;
-              toggle = my->mc_head & 1;
-            }
           } else if (node_flags(node) & F_SUBDATA) {
-            if (!MDBX_DISABLE_PAGECHECKS &&
+            if (!MDBX_DISABLE_VALIDATION &&
                 unlikely(node_ds(node) != sizeof(MDBX_db))) {
               rc = MDBX_CORRUPTED;
               goto done;
@@ -23104,66 +23300,84 @@ __cold static int mdbx_env_cwalk(mdbx_copy *my, pgno_t *pg, int flags) {
 
             /* Need writable leaf */
             if (mp != leaf) {
-              couple.outer.mc_pg[couple.outer.mc_top] = leaf;
-              mdbx_page_copy(leaf, mp, my->mc_env->me_psize);
+              mc->mc_pg[mc->mc_top] = leaf;
+              mdbx_page_copy(leaf, mp, ctx->mc_env->me_psize);
               mp = leaf;
               node = page_node(mp, i);
             }
 
-            MDBX_db db;
-            memcpy(&db, node_data(node), sizeof(MDBX_db));
-            rc = mdbx_env_cwalk(my, &db.md_root, node_flags(node) & F_DUPDATA);
-            if (rc)
+            MDBX_db *nested = nullptr;
+            if (node_flags(node) & F_DUPDATA) {
+              rc = mdbx_xcursor_init1(mc, node, mp);
+              if (likely(rc == MDBX_SUCCESS)) {
+                nested = &mc->mc_xcursor->mx_db;
+                rc = compacting_walk_tree(ctx, &mc->mc_xcursor->mx_cursor,
+                                          &nested->md_root, mp->mp_txnid);
+              }
+            } else {
+              mdbx_cassert(mc,
+                           (mc->mc_flags & C_SUB) == 0 && mc->mc_xcursor == 0);
+              MDBX_cursor_couple *couple =
+                  container_of(mc, MDBX_cursor_couple, outer);
+              mdbx_cassert(mc, couple->inner.mx_cursor.mc_signature ==
+                                       ~MDBX_MC_LIVE &&
+                                   !couple->inner.mx_cursor.mc_flags &&
+                                   !couple->inner.mx_cursor.mc_db &&
+                                   !couple->inner.mx_cursor.mc_dbx);
+              nested = &couple->inner.mx_db;
+              memcpy(nested, node_data(node), sizeof(MDBX_db));
+              rc = compacting_walk_sdb(ctx, nested);
+            }
+            if (unlikely(rc != MDBX_SUCCESS))
               goto done;
-            memcpy(node_data(node), &db, sizeof(MDBX_db));
+            memcpy(node_data(node), nested, sizeof(MDBX_db));
           }
         }
       }
     } else {
-      couple.outer.mc_ki[couple.outer.mc_top]++;
-      if (couple.outer.mc_ki[couple.outer.mc_top] < n) {
-      again:
-        rc = mdbx_page_get(
-            &couple.outer,
-            node_pgno(page_node(mp, couple.outer.mc_ki[couple.outer.mc_top])),
-            &mp, pp_txnid4chk(mp, my->mc_txn));
-        if (unlikely(rc != MDBX_SUCCESS))
-          goto done;
-        couple.outer.mc_top++;
-        couple.outer.mc_snum++;
-        couple.outer.mc_ki[couple.outer.mc_top] = 0;
-        if (IS_BRANCH(mp)) {
+      mc->mc_ki[mc->mc_top]++;
+      if (mc->mc_ki[mc->mc_top] < n) {
+        while (1) {
+          const MDBX_node *node = page_node(mp, mc->mc_ki[mc->mc_top]);
+          rc = page_get(mc, node_pgno(node), &mp, mp->mp_txnid);
+          if (unlikely(rc != MDBX_SUCCESS))
+            goto done;
+          mc->mc_top++;
+          mc->mc_snum++;
+          mc->mc_ki[mc->mc_top] = 0;
+          if (!IS_BRANCH(mp)) {
+            mc->mc_pg[mc->mc_top] = mp;
+            break;
+          }
           /* Whenever we advance to a sibling branch page,
            * we must proceed all the way down to its first leaf. */
-          mdbx_page_copy(couple.outer.mc_pg[couple.outer.mc_top], mp,
-                         my->mc_env->me_psize);
-          goto again;
-        } else
-          couple.outer.mc_pg[couple.outer.mc_top] = mp;
+          mdbx_page_copy(mc->mc_pg[mc->mc_top], mp, ctx->mc_env->me_psize);
+        }
         continue;
       }
     }
-    unsigned toggle = my->mc_head & 1;
-    if (my->mc_wlen[toggle] + my->mc_wlen[toggle] >
-        ((size_t)(MDBX_ENVCOPY_WRITEBUF))) {
-      rc = mdbx_env_cthr_toggle(my);
-      if (unlikely(rc != MDBX_SUCCESS))
-        goto done;
-      toggle = my->mc_head & 1;
+
+    const pgno_t pgno = ctx->mc_next_pgno;
+    if (likely(!IS_LEAF2(mp))) {
+      rc = compacting_put_page(
+          ctx, mp, PAGEHDRSZ + mp->mp_lower,
+          ctx->mc_env->me_psize - (PAGEHDRSZ + mp->mp_upper), 1);
+    } else {
+      rc = compacting_put_page(
+          ctx, mp, PAGEHDRSZ + page_numkeys(mp) * mp->mp_leaf2_ksize, 0, 1);
     }
-    mo = (MDBX_page *)(my->mc_wbuf[toggle] + my->mc_wlen[toggle]);
-    mdbx_page_copy(mo, mp, my->mc_env->me_psize);
-    mo->mp_pgno = my->mc_next_pgno++;
-    my->mc_wlen[toggle] += my->mc_env->me_psize;
-    if (couple.outer.mc_top) {
+    if (unlikely(rc != MDBX_SUCCESS))
+      goto done;
+
+    if (mc->mc_top) {
       /* Update parent if there is one */
-      node_set_pgno(page_node(couple.outer.mc_pg[couple.outer.mc_top - 1],
-                              couple.outer.mc_ki[couple.outer.mc_top - 1]),
-                    mo->mp_pgno);
-      mdbx_cursor_pop(&couple.outer);
+      node_set_pgno(
+          page_node(mc->mc_pg[mc->mc_top - 1], mc->mc_ki[mc->mc_top - 1]),
+          pgno);
+      mdbx_cursor_pop(mc);
     } else {
       /* Otherwise we're done */
-      *pg = mo->mp_pgno;
+      *root = pgno;
       break;
     }
   }
@@ -23172,7 +23386,33 @@ done:
   return rc;
 }
 
-__cold static void compact_fixup_meta(MDBX_env *env, MDBX_meta *meta) {
+__cold static int compacting_walk_sdb(mdbx_compacting_ctx *ctx, MDBX_db *sdb) {
+  if (unlikely(sdb->md_root == P_INVALID))
+    return MDBX_SUCCESS; /* empty db */
+
+  MDBX_cursor_couple couple;
+  memset(&couple, 0, sizeof(couple));
+  couple.inner.mx_cursor.mc_signature = ~MDBX_MC_LIVE;
+  MDBX_dbx dbx = {.md_klen_min = INT_MAX};
+  uint8_t dbistate = DBI_VALID | DBI_AUDITED;
+  int rc = mdbx_couple_init(&couple, ~0u, ctx->mc_txn, sdb, &dbx, &dbistate);
+  if (unlikely(rc != MDBX_SUCCESS))
+    return rc;
+
+  couple.outer.mc_checking |= CC_SKIPORD | CC_PAGECHECK;
+  couple.inner.mx_cursor.mc_checking |= CC_SKIPORD | CC_PAGECHECK;
+  if (!sdb->md_mod_txnid)
+    sdb->md_mod_txnid = ctx->mc_txn->mt_txnid;
+  return compacting_walk_tree(ctx, &couple.outer, &sdb->md_root,
+                              sdb->md_mod_txnid);
+}
+
+__cold static void compacting_fixup_meta(MDBX_env *env, MDBX_meta *meta) {
+  mdbx_assert(env, meta->mm_dbs[FREE_DBI].md_mod_txnid ||
+                       meta->mm_dbs[FREE_DBI].md_root == P_INVALID);
+  mdbx_assert(env, meta->mm_dbs[MAIN_DBI].md_mod_txnid ||
+                       meta->mm_dbs[MAIN_DBI].md_root == P_INVALID);
+
   /* Calculate filesize taking in account shrink/growing thresholds */
   if (meta->mm_geo.next != meta->mm_geo.now) {
     meta->mm_geo.now = meta->mm_geo.next;
@@ -23196,7 +23436,7 @@ __cold static void compact_fixup_meta(MDBX_env *env, MDBX_meta *meta) {
 }
 
 /* Make resizeable */
-__cold static void make_sizeable(MDBX_meta *meta) {
+__cold static void meta_make_sizeable(MDBX_meta *meta) {
   meta->mm_geo.lower = MIN_PAGENO;
   if (meta->mm_geo.grow_pv == 0) {
     const pgno_t step = 1 + (meta->mm_geo.upper - meta->mm_geo.lower) / 42;
@@ -23219,7 +23459,7 @@ __cold static int mdbx_env_compact(MDBX_env *env, MDBX_txn *read_txn,
   meta_set_txnid(env, meta, read_txn->mt_txnid);
 
   if (flags & MDBX_CP_FORCE_DYNAMIC_SIZE)
-    make_sizeable(meta);
+    meta_make_sizeable(meta);
 
   /* copy canary sequences if present */
   if (read_txn->mt_canary.v) {
@@ -23227,67 +23467,98 @@ __cold static int mdbx_env_compact(MDBX_env *env, MDBX_txn *read_txn,
     meta->mm_canary.v = constmeta_txnid(env, meta);
   }
 
-  /* Set metapage 1 with current main DB */
-  pgno_t new_root, root = read_txn->mt_dbs[MAIN_DBI].md_root;
-  if ((new_root = root) == P_INVALID) {
+  if (read_txn->mt_dbs[MAIN_DBI].md_root == P_INVALID) {
     /* When the DB is empty, handle it specially to
      * fix any breakage like page leaks from ITS#8174. */
     meta->mm_dbs[MAIN_DBI].md_flags = read_txn->mt_dbs[MAIN_DBI].md_flags;
-    compact_fixup_meta(env, meta);
+    compacting_fixup_meta(env, meta);
     if (dest_is_pipe) {
       int rc = mdbx_write(fd, buffer, meta_bytes);
-      if (rc != MDBX_SUCCESS)
+      if (unlikely(rc != MDBX_SUCCESS))
         return rc;
     }
   } else {
-    /* Count free pages + GC pages.  Subtract from last_pg
-     * to find the new last_pg, which also becomes the new root. */
-    pgno_t freecount = 0;
+    /* Count free pages + GC pages. */
     MDBX_cursor_couple couple;
-    MDBX_val key, data;
-
     int rc = mdbx_cursor_init(&couple.outer, read_txn, FREE_DBI);
     if (unlikely(rc != MDBX_SUCCESS))
       return rc;
-    while ((rc = mdbx_cursor_get(&couple.outer, &key, &data, MDBX_NEXT)) == 0)
-      freecount += *(pgno_t *)data.iov_base;
+    pgno_t gc = read_txn->mt_dbs[FREE_DBI].md_branch_pages +
+                read_txn->mt_dbs[FREE_DBI].md_leaf_pages +
+                read_txn->mt_dbs[FREE_DBI].md_overflow_pages;
+    MDBX_val key, data;
+    while ((rc = mdbx_cursor_get(&couple.outer, &key, &data, MDBX_NEXT)) ==
+           MDBX_SUCCESS) {
+      const MDBX_PNL pnl = data.iov_base;
+      if (unlikely(data.iov_len % sizeof(pgno_t) ||
+                   data.iov_len < MDBX_PNL_SIZEOF(pnl) ||
+                   !(mdbx_pnl_check(pnl, read_txn->mt_next_pgno))))
+        return MDBX_CORRUPTED;
+      gc += MDBX_PNL_SIZE(pnl);
+    }
     if (unlikely(rc != MDBX_NOTFOUND))
       return rc;
 
-    freecount += read_txn->mt_dbs[FREE_DBI].md_branch_pages +
-                 read_txn->mt_dbs[FREE_DBI].md_leaf_pages +
-                 read_txn->mt_dbs[FREE_DBI].md_overflow_pages;
-
-    new_root = read_txn->mt_next_pgno - 1 - freecount;
-    meta->mm_geo.next = new_root + 1;
+    /* Substract GC-pages from mt_next_pgno to find the new mt_next_pgno. */
+    meta->mm_geo.next = read_txn->mt_next_pgno - gc;
+    /* Set with current main DB */
     meta->mm_dbs[MAIN_DBI] = read_txn->mt_dbs[MAIN_DBI];
-    meta->mm_dbs[MAIN_DBI].md_root = new_root;
 
-    mdbx_copy ctx;
+    mdbx_compacting_ctx ctx;
     memset(&ctx, 0, sizeof(ctx));
     rc = mdbx_condpair_init(&ctx.mc_condpair);
     if (unlikely(rc != MDBX_SUCCESS))
       return rc;
 
-    memset(data_buffer, 0, ((size_t)(MDBX_ENVCOPY_WRITEBUF)) * 2);
+    memset(data_buffer, 0, 2 * (size_t)MDBX_ENVCOPY_WRITEBUF);
     ctx.mc_wbuf[0] = data_buffer;
-    ctx.mc_wbuf[1] = data_buffer + ((size_t)(MDBX_ENVCOPY_WRITEBUF));
+    ctx.mc_wbuf[1] = data_buffer + (size_t)MDBX_ENVCOPY_WRITEBUF;
     ctx.mc_next_pgno = NUM_METAS;
     ctx.mc_env = env;
     ctx.mc_fd = fd;
     ctx.mc_txn = read_txn;
 
     mdbx_thread_t thread;
-    int thread_err = mdbx_thread_create(&thread, mdbx_env_copythr, &ctx);
+    int thread_err = mdbx_thread_create(&thread, compacting_write_thread, &ctx);
     if (likely(thread_err == MDBX_SUCCESS)) {
       if (dest_is_pipe) {
-        compact_fixup_meta(env, meta);
+        if (!meta->mm_dbs[MAIN_DBI].md_mod_txnid)
+          meta->mm_dbs[MAIN_DBI].md_mod_txnid = read_txn->mt_txnid;
+        compacting_fixup_meta(env, meta);
         rc = mdbx_write(fd, buffer, meta_bytes);
       }
-      if (rc == MDBX_SUCCESS)
-        rc = mdbx_env_cwalk(&ctx, &root, 0);
-      mdbx_env_cthr_toggle(&ctx);
-      mdbx_env_cthr_toggle(&ctx);
+      if (likely(rc == MDBX_SUCCESS))
+        rc = compacting_walk_sdb(&ctx, &meta->mm_dbs[MAIN_DBI]);
+      if (ctx.mc_wlen[ctx.mc_head & 1])
+        /* toggle to flush non-empty buffers */
+        compacting_toggle_write_buffers(&ctx);
+
+      if (likely(rc == MDBX_SUCCESS) &&
+          unlikely(meta->mm_geo.next != ctx.mc_next_pgno)) {
+        if (ctx.mc_next_pgno > meta->mm_geo.next) {
+          mdbx_error(
+              "the source DB %s: post-compactification used pages %" PRIaPGNO
+              " %c expected %" PRIaPGNO,
+              "has double-used pages or other corruption", ctx.mc_next_pgno,
+              '>', meta->mm_geo.next);
+          rc = MDBX_CORRUPTED; /* corrupted DB */
+        }
+        if (ctx.mc_next_pgno < meta->mm_geo.next) {
+          mdbx_warning(
+              "the source DB %s: post-compactification used pages %" PRIaPGNO
+              " %c expected %" PRIaPGNO,
+              "has page leak(s)", ctx.mc_next_pgno, '<', meta->mm_geo.next);
+          if (dest_is_pipe)
+            /* the root within already written meta-pages is wrong */
+            rc = MDBX_CORRUPTED;
+        }
+        /* fixup meta */
+        meta->mm_geo.next = ctx.mc_next_pgno;
+      }
+
+      /* toggle with empty buffers to exit thread's loop */
+      mdbx_assert(env, (ctx.mc_wlen[ctx.mc_head & 1]) == 0);
+      compacting_toggle_write_buffers(&ctx);
       thread_err = mdbx_thread_join(thread);
       mdbx_assert(env, (ctx.mc_tail == ctx.mc_head &&
                         ctx.mc_wlen[ctx.mc_head & 1] == 0) ||
@@ -23300,32 +23571,8 @@ __cold static int mdbx_env_compact(MDBX_env *env, MDBX_txn *read_txn,
       return rc;
     if (unlikely(ctx.mc_error != MDBX_SUCCESS))
       return ctx.mc_error;
-
-    if (dest_is_pipe) {
-      if (unlikely(root != new_root)) {
-        mdbx_error("post-compactification root %" PRIaPGNO
-                   " NE expected %" PRIaPGNO
-                   " (source DB corrupted or has a page leak(s))",
-                   root, new_root);
-        return MDBX_CORRUPTED; /* page leak or corrupt DB */
-      }
-    } else {
-      if (unlikely(root > new_root)) {
-        mdbx_error("post-compactification root %" PRIaPGNO
-                   " GT expected %" PRIaPGNO " (source DB corrupted)",
-                   root, new_root);
-        return MDBX_CORRUPTED; /* page leak or corrupt DB */
-      }
-      if (unlikely(root < new_root)) {
-        mdbx_warning("post-compactification root %" PRIaPGNO
-                     " LT expected %" PRIaPGNO " (page leak(s) in source DB)",
-                     root, new_root);
-        /* fixup meta */
-        meta->mm_dbs[MAIN_DBI].md_root = root;
-        meta->mm_geo.next = root + 1;
-      }
-      compact_fixup_meta(env, meta);
-    }
+    if (!dest_is_pipe)
+      compacting_fixup_meta(env, meta);
   }
 
   /* Extend file if required */
@@ -23335,12 +23582,11 @@ __cold static int mdbx_env_compact(MDBX_env *env, MDBX_txn *read_txn,
       return mdbx_ftruncate(fd, whole_size);
 
     const size_t used_size = pgno2bytes(env, meta->mm_geo.next);
-    memset(data_buffer, 0, ((size_t)(MDBX_ENVCOPY_WRITEBUF)));
+    memset(data_buffer, 0, (size_t)MDBX_ENVCOPY_WRITEBUF);
     for (size_t offset = used_size; offset < whole_size;) {
-      const size_t chunk =
-          (((size_t)(MDBX_ENVCOPY_WRITEBUF)) < whole_size - offset)
-              ? ((size_t)(MDBX_ENVCOPY_WRITEBUF))
-              : whole_size - offset;
+      const size_t chunk = ((size_t)MDBX_ENVCOPY_WRITEBUF < whole_size - offset)
+                               ? (size_t)MDBX_ENVCOPY_WRITEBUF
+                               : whole_size - offset;
       /* copy to avoid EFAULT in case swapped-out */
       int rc = mdbx_write(fd, data_buffer, chunk);
       if (unlikely(rc != MDBX_SUCCESS))
@@ -23381,7 +23627,7 @@ __cold static int mdbx_env_copy_asis(MDBX_env *env, MDBX_txn *read_txn,
   mdbx_txn_unlock(env);
 
   if (flags & MDBX_CP_FORCE_DYNAMIC_SIZE)
-    make_sizeable(headcopy);
+    meta_make_sizeable(headcopy);
   /* Update signature to steady */
   unaligned_poke_u64(4, headcopy->mm_datasync_sign, meta_sign(headcopy));
 
@@ -23441,10 +23687,9 @@ __cold static int mdbx_env_copy_asis(MDBX_env *env, MDBX_txn *read_txn,
 #endif /* MDBX_USE_COPYFILERANGE */
 
     /* fallback to portable */
-    const size_t chunk =
-        (((size_t)(MDBX_ENVCOPY_WRITEBUF)) < used_size - offset)
-            ? ((size_t)(MDBX_ENVCOPY_WRITEBUF))
-            : used_size - offset;
+    const size_t chunk = ((size_t)MDBX_ENVCOPY_WRITEBUF < used_size - offset)
+                             ? (size_t)MDBX_ENVCOPY_WRITEBUF
+                             : used_size - offset;
     /* copy to avoid EFAULT in case swapped-out */
     memcpy(data_buffer, env->me_map + offset, chunk);
     rc = mdbx_write(fd, data_buffer, chunk);
@@ -23456,12 +23701,12 @@ __cold static int mdbx_env_copy_asis(MDBX_env *env, MDBX_txn *read_txn,
     if (!dest_is_pipe)
       rc = mdbx_ftruncate(fd, whole_size);
     else {
-      memset(data_buffer, 0, ((size_t)(MDBX_ENVCOPY_WRITEBUF)));
+      memset(data_buffer, 0, (size_t)MDBX_ENVCOPY_WRITEBUF);
       for (size_t offset = used_size;
            rc == MDBX_SUCCESS && offset < whole_size;) {
         const size_t chunk =
-            (((size_t)(MDBX_ENVCOPY_WRITEBUF)) < whole_size - offset)
-                ? ((size_t)(MDBX_ENVCOPY_WRITEBUF))
+            ((size_t)MDBX_ENVCOPY_WRITEBUF < whole_size - offset)
+                ? (size_t)MDBX_ENVCOPY_WRITEBUF
                 : whole_size - offset;
         /* copy to avoid EFAULT in case swapped-out */
         rc = mdbx_write(fd, data_buffer, chunk);
@@ -23492,8 +23737,8 @@ __cold int mdbx_env_copy2fd(MDBX_env *env, mdbx_filehandle_t fd,
   const size_t buffer_size =
       pgno_align2os_bytes(env, NUM_METAS) +
       ceil_powerof2(((flags & MDBX_CP_COMPACT)
-                         ? ((size_t)(MDBX_ENVCOPY_WRITEBUF)) * 2
-                         : ((size_t)(MDBX_ENVCOPY_WRITEBUF))),
+                         ? 2 * (size_t)MDBX_ENVCOPY_WRITEBUF
+                         : (size_t)MDBX_ENVCOPY_WRITEBUF),
                     env->me_os_psize);
 
   uint8_t *buffer = NULL;
@@ -24252,7 +24497,7 @@ static int dbi_open(MDBX_txn *txn, const char *table_name, unsigned user_flags,
       rc = MDBX_INCOMPATIBLE;
       goto early_bailout;
     }
-    if (!MDBX_DISABLE_PAGECHECKS && unlikely(data.iov_len != sizeof(MDBX_db))) {
+    if (!MDBX_DISABLE_VALIDATION && unlikely(data.iov_len != sizeof(MDBX_db))) {
       rc = MDBX_CORRUPTED;
       goto early_bailout;
     }
@@ -24475,7 +24720,7 @@ static int mdbx_drop_tree(MDBX_cursor *mc, const bool may_have_subDBs) {
 
     /* DUPSORT sub-DBs have no ovpages/DBs. Omit scanning leaves.
      * This also avoids any P_LEAF2 pages, which have no nodes.
-     * Also if the DB doesn't have sub-DBs and has no overflow
+     * Also if the DB doesn't have sub-DBs and has no large/overflow
      * pages, omit scanning leaves. */
     if (!(may_have_subDBs | mc->mc_db->md_overflow_pages))
       mdbx_cursor_pop(mc);
@@ -24496,7 +24741,7 @@ static int mdbx_drop_tree(MDBX_cursor *mc, const bool may_have_subDBs) {
         for (unsigned i = 0; i < nkeys; i++) {
           MDBX_node *node = page_node(mp, i);
           if (node_flags(node) & F_BIGDATA) {
-            rc = mdbx_page_retire_ex(mc, node_largedata_pgno(node), NULL, 0);
+            rc = mdbx_page_retire_ex(mc, node_largedata_pgno(node), nullptr, 0);
             if (unlikely(rc != MDBX_SUCCESS))
               goto bailout;
             if (!(may_have_subDBs | mc->mc_db->md_overflow_pages))
@@ -24516,9 +24761,8 @@ static int mdbx_drop_tree(MDBX_cursor *mc, const bool may_have_subDBs) {
         }
       } else {
         mdbx_cassert(mc, mc->mc_snum < mc->mc_db->md_depth);
-        if (mdbx_audit_enabled())
-          mc->mc_flags |= C_RETIRING;
-        const int pagetype =
+        mc->mc_checking |= CC_RETIRING;
+        const unsigned pagetype =
             (IS_FROZEN(txn, mp) ? P_FROZEN : 0) +
             ((mc->mc_snum + 1 == mc->mc_db->md_depth) ? P_LEAF : P_BRANCH);
         for (unsigned i = 0; i < nkeys; i++) {
@@ -24526,12 +24770,11 @@ static int mdbx_drop_tree(MDBX_cursor *mc, const bool may_have_subDBs) {
           mdbx_tassert(txn, (node_flags(node) &
                              (F_BIGDATA | F_SUBDATA | F_DUPDATA)) == 0);
           const pgno_t pgno = node_pgno(node);
-          rc = mdbx_page_retire_ex(mc, pgno, NULL, pagetype);
+          rc = mdbx_page_retire_ex(mc, pgno, nullptr, pagetype);
           if (unlikely(rc != MDBX_SUCCESS))
             goto bailout;
         }
-        if (mdbx_audit_enabled())
-          mc->mc_flags -= C_RETIRING;
+        mc->mc_checking -= CC_RETIRING;
       }
       if (!mc->mc_top)
         break;
@@ -24886,69 +25129,51 @@ __cold int mdbx_setup_debug(int loglevel, int flags, MDBX_debug_func *logger) {
   return rc;
 }
 
-__cold static txnid_t mdbx_kick_longlived_readers(MDBX_env *env,
-                                                  const txnid_t laggard) {
+__cold static txnid_t kick_longlived_readers(MDBX_env *env,
+                                             const txnid_t laggard) {
   mdbx_debug("DB size maxed out by reading #%" PRIaTXN, laggard);
-
-  int retry;
-  for (retry = 0; retry < INT_MAX; ++retry) {
-    txnid_t oldest = constmeta_txnid(env, constmeta_prefer_steady(env));
+  MDBX_hsr_func *const callback = env->me_hsr_callback;
+  txnid_t oldest = 0;
+  bool notify_eof_of_loop = false;
+  int retry = 0;
+  do {
+    env->me_lck->mti_readers_refresh_flag.weak = /* force refresh */ true;
+    oldest = find_oldest_reader(env);
     mdbx_assert(env, oldest < env->me_txn0->mt_txnid);
     mdbx_assert(env, oldest >= laggard);
     mdbx_assert(env, oldest >= env->me_lck->mti_oldest_reader.weak);
+
+    const txnid_t steady = meta_txnid(env, meta_prefer_steady(env));
     MDBX_lockinfo *const lck = env->me_lck_mmap.lck;
-    if (oldest == laggard || unlikely(!lck /* without-LCK mode */))
-      return oldest;
+    if (oldest == steady || oldest > laggard || /* without-LCK mode */ !lck)
+      break;
 
     if (MDBX_IS_ERROR(mdbx_cleanup_dead_readers(env, false, NULL)))
       break;
 
-    MDBX_reader *asleep = nullptr;
-    uint64_t oldest_retired = UINT64_MAX;
-    const unsigned snap_nreaders =
-        atomic_load32(&lck->mti_numreaders, mo_AcquireRelease);
-    for (unsigned i = 0; i < snap_nreaders; ++i) {
-    retry:
-      if (atomic_load32(&lck->mti_readers[i].mr_pid, mo_AcquireRelease)) {
-        /* mdbx_jitter4testing(true); */
-        const uint64_t snap_retired = atomic_load64(
-            &lck->mti_readers[i].mr_snapshot_pages_retired, mo_Relaxed);
-        const txnid_t snap_txnid = safe64_read(&lck->mti_readers[i].mr_txnid);
-        if (unlikely(snap_retired !=
-                         atomic_load64(
-                             &lck->mti_readers[i].mr_snapshot_pages_retired,
-                             mo_AcquireRelease) ||
-                     snap_txnid != safe64_read(&lck->mti_readers[i].mr_txnid)))
-          goto retry;
-        if (oldest > snap_txnid &&
-            laggard <= /* ignore pending updates */ snap_txnid) {
-          oldest = snap_txnid;
-          oldest_retired = snap_retired;
-          asleep = &lck->mti_readers[i];
-        }
-      }
-    }
-
-    if (laggard < oldest || !asleep) {
-      if (retry && env->me_hsr_callback) {
-        /* LY: notify end of hsr-loop */
-        const txnid_t gap = oldest - laggard;
-        env->me_hsr_callback(env, env->me_txn, 0, 0, laggard,
-                             (gap < UINT_MAX) ? (unsigned)gap : UINT_MAX, 0,
-                             -retry);
-      }
-      mdbx_notice("hsr-kick: update oldest %" PRIaTXN " -> %" PRIaTXN,
-                  lck->mti_oldest_reader.weak, oldest);
-      mdbx_assert(env, lck->mti_oldest_reader.weak <= oldest);
-      return atomic_store64(&lck->mti_oldest_reader, oldest, mo_Relaxed);
-    }
-
-    if (!env->me_hsr_callback)
+    if (!callback)
       break;
 
-    uint32_t pid = atomic_load32(&asleep->mr_pid, mo_AcquireRelease);
-    uint64_t tid = asleep->mr_tid.weak;
-    if (safe64_read(&asleep->mr_txnid) != laggard || pid <= 0)
+    MDBX_reader *stucked = nullptr;
+    uint64_t hold_retired = 0;
+    for (unsigned i = 0; i < lck->mti_numreaders.weak; ++i) {
+      const uint64_t snap_retired = atomic_load64(
+          &lck->mti_readers[i].mr_snapshot_pages_retired, mo_Relaxed);
+      const txnid_t rtxn = safe64_read(&lck->mti_readers[i].mr_txnid);
+      if (rtxn == laggard &&
+          atomic_load32(&lck->mti_readers[i].mr_pid, mo_AcquireRelease)) {
+        hold_retired = snap_retired;
+        stucked = &lck->mti_readers[i];
+      }
+    }
+
+    if (!stucked)
+      break;
+
+    uint32_t pid = atomic_load32(&stucked->mr_pid, mo_AcquireRelease);
+    uint64_t tid = atomic_load64(&stucked->mr_tid, mo_AcquireRelease);
+    if (safe64_read(&stucked->mr_txnid) != laggard || !pid ||
+        stucked->mr_snapshot_pages_retired.weak != hold_retired)
       continue;
 
     const MDBX_meta *head_meta = constmeta_prefer_last(env);
@@ -24957,32 +25182,41 @@ __cold static txnid_t mdbx_kick_longlived_readers(MDBX_env *env,
     const uint64_t head_retired =
         unaligned_peek_u64(4, head_meta->mm_pages_retired);
     const size_t space =
-        (head_retired > oldest_retired)
-            ? pgno2bytes(env, (pgno_t)(head_retired - oldest_retired))
+        (head_retired > hold_retired)
+            ? pgno2bytes(env, (pgno_t)(head_retired - hold_retired))
             : 0;
-    int rc = env->me_hsr_callback(
-        env, env->me_txn, pid, (mdbx_tid_t)tid, laggard,
-        (gap < UINT_MAX) ? (unsigned)gap : UINT_MAX, space, retry);
+    int rc =
+        callback(env, env->me_txn, pid, (mdbx_tid_t)tid, laggard,
+                 (gap < UINT_MAX) ? (unsigned)gap : UINT_MAX, space, retry);
     if (rc < 0)
+      /* hsr returned error and/or agree MDBX_MAP_FULL error */
       break;
 
     if (rc > 0) {
       if (rc == 1) {
-        safe64_reset_compare(&asleep->mr_txnid, laggard);
+        /* hsr reported transaction (will be) aborted asynchronous */
+        safe64_reset_compare(&stucked->mr_txnid, laggard);
       } else {
-        safe64_reset(&asleep->mr_txnid, true);
-        atomic_store64(&asleep->mr_tid, 0, mo_Relaxed);
-        atomic_store32(&asleep->mr_pid, 0, mo_Relaxed);
+        /* hsr reported reader process was killed and slot should be cleared */
+        safe64_reset(&stucked->mr_txnid, true);
+        atomic_store64(&stucked->mr_tid, 0, mo_Relaxed);
+        atomic_store32(&stucked->mr_pid, 0, mo_AcquireRelease);
       }
-      atomic_store32(&lck->mti_readers_refresh_flag, true, mo_Relaxed);
-    }
-  }
+    } else
+      notify_eof_of_loop = true;
 
-  if (retry && env->me_hsr_callback) {
-    /* LY: notify end of hsr-loop */
-    env->me_hsr_callback(env, env->me_txn, 0, 0, laggard, 0, 0, -retry);
+  } while (++retry < INT_MAX);
+
+  if (notify_eof_of_loop) {
+    /* notify end of hsr-loop */
+    const txnid_t turn = oldest - laggard;
+    if (turn)
+      mdbx_notice("hsr-kick: done turn %" PRIaTXN " -> %" PRIaTXN " +%" PRIaTXN,
+                  laggard, oldest, turn);
+    callback(env, env->me_txn, 0, 0, laggard,
+             (turn < UINT_MAX) ? (unsigned)turn : UINT_MAX, 0, -retry);
   }
-  return find_oldest_reader(env);
+  return oldest;
 }
 
 #ifndef LIBMDBX_NO_EXPORTS_LEGACY_API
@@ -25052,7 +25286,7 @@ typedef struct mdbx_walk_ctx {
   bool mw_dont_check_keys_ordering;
 } mdbx_walk_ctx_t;
 
-__cold static int mdbx_walk_sdb(mdbx_walk_ctx_t *ctx, MDBX_db *const db,
+__cold static int mdbx_walk_sdb(mdbx_walk_ctx_t *ctx, MDBX_db *const sdb,
                                 const char *name, int deep);
 
 static MDBX_page_type_t walk_page_type(const MDBX_page *mp) {
@@ -25078,42 +25312,21 @@ __cold static int mdbx_walk_tree(mdbx_walk_ctx_t *ctx, const pgno_t pgno,
                                  txnid_t parent_txnid) {
   assert(pgno != P_INVALID);
   MDBX_page *mp = nullptr;
-  int rc, err = mdbx_page_get(ctx->mw_cursor, pgno, &mp, parent_txnid);
-  if (err == MDBX_SUCCESS)
-    err = mdbx_page_check(ctx->mw_cursor, mp, 0);
+  int err = page_get(ctx->mw_cursor, pgno, &mp, parent_txnid);
 
   MDBX_page_type_t type = walk_page_type(mp);
-  const int nentries = (mp && !IS_OVERFLOW(mp)) ? page_numkeys(mp) : 1;
-  unsigned npages = (mp && IS_OVERFLOW(mp)) ? mp->mp_pages : 1;
+  const unsigned nentries = mp ? page_numkeys(mp) : 0;
+  unsigned npages = 1;
   size_t pagesize = pgno2bytes(ctx->mw_txn->mt_env, npages);
-  size_t header_size = (mp && !IS_LEAF2(mp) && !IS_OVERFLOW(mp))
-                           ? PAGEHDRSZ + mp->mp_lower
-                           : PAGEHDRSZ;
+  size_t header_size =
+      (mp && !IS_LEAF2(mp)) ? PAGEHDRSZ + mp->mp_lower : PAGEHDRSZ;
   size_t payload_size = 0;
   size_t unused_size =
-      (mp && !IS_OVERFLOW(mp) ? page_room(mp) : pagesize - header_size) -
-      payload_size;
+      (mp ? page_room(mp) : pagesize - header_size) - payload_size;
   size_t align_bytes = 0;
 
-  if (err == MDBX_SUCCESS) {
-    /* LY: Don't use mask here, e.g bitwise
-     * (P_BRANCH|P_LEAF|P_LEAF2|P_META|P_OVERFLOW|P_SUBP).
-     * Pages should not me marked dirty/loose or otherwise. */
-    switch (mp->mp_flags) {
-    default:
-      err = MDBX_CORRUPTED;
-      break;
-    case P_BRANCH:
-      if (unlikely(nentries < 2))
-        err = MDBX_CORRUPTED;
-    case P_LEAF:
-    case P_LEAF | P_LEAF2:
-      break;
-    }
-  }
-
-  for (int i = 0; err == MDBX_SUCCESS && i < nentries;
-       align_bytes += ((payload_size + align_bytes) & 1), i++) {
+  for (unsigned i = 0; err == MDBX_SUCCESS && i < nentries;
+       align_bytes += ((payload_size + align_bytes) & 1), ++i) {
     if (type == MDBX_page_dupfixed_leaf) {
       /* LEAF2 pages have no mp_ptrs[] or node headers */
       payload_size += mp->mp_leaf2_ksize;
@@ -25141,26 +25354,19 @@ __cold static int mdbx_walk_tree(mdbx_walk_ctx_t *ctx, const pgno_t pgno,
       const size_t over_header = PAGEHDRSZ;
       npages = 1;
 
-      MDBX_page *op;
-      err = mdbx_page_get(ctx->mw_cursor, large_pgno, &op,
-                          pp_txnid4chk(mp, ctx->mw_txn));
-      if (err == MDBX_SUCCESS)
-        err = mdbx_page_check(ctx->mw_cursor, op, 0);
+      assert(err == MDBX_SUCCESS);
+      pgr_t lp = page_get_large(ctx->mw_cursor, large_pgno, mp->mp_txnid);
+      err = lp.err;
       if (err == MDBX_SUCCESS) {
-        /* LY: Don't use mask here, e.g bitwise
-         * (P_BRANCH|P_LEAF|P_LEAF2|P_META|P_OVERFLOW|P_SUBP).
-         * Pages should not me marked dirty/loose or otherwise. */
-        if (unlikely(P_OVERFLOW != op->mp_flags))
-          err = bad_page(mp, "wrong page type %d for large data", op->mp_flags);
-        else
-          npages = op->mp_pages;
+        mdbx_cassert(ctx->mw_cursor, PAGETYPE_WHOLE(lp.page) == P_OVERFLOW);
+        npages = lp.page->mp_pages;
       }
 
       pagesize = pgno2bytes(ctx->mw_txn->mt_env, npages);
       const size_t over_unused = pagesize - over_payload - over_header;
-      rc = ctx->mw_visitor(large_pgno, npages, ctx->mw_user, deep, name,
-                           pagesize, MDBX_page_large, err, 1, over_payload,
-                           over_header, over_unused);
+      const int rc = ctx->mw_visitor(large_pgno, npages, ctx->mw_user, deep,
+                                     name, pagesize, MDBX_page_large, err, 1,
+                                     over_payload, over_header, over_unused);
       if (unlikely(rc != MDBX_SUCCESS))
         return (rc == MDBX_RESULT_TRUE) ? MDBX_SUCCESS : rc;
     } break;
@@ -25168,24 +25374,29 @@ __cold static int mdbx_walk_tree(mdbx_walk_ctx_t *ctx, const pgno_t pgno,
     case F_SUBDATA /* sub-db */: {
       const size_t namelen = node_ks(node);
       payload_size += node_ds(node);
-      if (unlikely(namelen == 0 || node_ds(node) != sizeof(MDBX_db)))
+      if (unlikely(namelen == 0 || node_ds(node) != sizeof(MDBX_db))) {
+        assert(err == MDBX_CORRUPTED);
         err = MDBX_CORRUPTED;
+      }
     } break;
 
     case F_SUBDATA | F_DUPDATA /* dupsorted sub-tree */:
       payload_size += sizeof(MDBX_db);
-      if (unlikely(node_ds(node) != sizeof(MDBX_db)))
+      if (unlikely(node_ds(node) != sizeof(MDBX_db))) {
+        assert(err == MDBX_CORRUPTED);
         err = MDBX_CORRUPTED;
+      }
       break;
 
     case F_DUPDATA /* short sub-page */: {
       if (unlikely(node_ds(node) <= PAGEHDRSZ)) {
+        assert(err == MDBX_CORRUPTED);
         err = MDBX_CORRUPTED;
         break;
       }
 
       MDBX_page *sp = node_data(node);
-      const int nsubkeys = page_numkeys(sp);
+      const unsigned nsubkeys = page_numkeys(sp);
       size_t subheader_size =
           IS_LEAF2(sp) ? PAGEHDRSZ : PAGEHDRSZ + sp->mp_lower;
       size_t subunused_size = page_room(sp);
@@ -25193,7 +25404,7 @@ __cold static int mdbx_walk_tree(mdbx_walk_ctx_t *ctx, const pgno_t pgno,
       size_t subalign_bytes = 0;
       MDBX_page_type_t subtype;
 
-      switch (sp->mp_flags & /* ignore legacy P_DIRTY flag */ ~0x10) {
+      switch (sp->mp_flags & /* ignore legacy P_DIRTY flag */ ~P_LEGACY_DIRTY) {
       case P_LEAF | P_SUBP:
         subtype = MDBX_subpage_leaf;
         break;
@@ -25201,12 +25412,13 @@ __cold static int mdbx_walk_tree(mdbx_walk_ctx_t *ctx, const pgno_t pgno,
         subtype = MDBX_subpage_dupfixed_leaf;
         break;
       default:
+        assert(err == MDBX_CORRUPTED);
         subtype = MDBX_subpage_broken;
         err = MDBX_CORRUPTED;
       }
 
-      for (int j = 0; err == MDBX_SUCCESS && j < nsubkeys;
-           subalign_bytes += ((subpayload_size + subalign_bytes) & 1), j++) {
+      for (unsigned j = 0; err == MDBX_SUCCESS && j < nsubkeys;
+           subalign_bytes += ((subpayload_size + subalign_bytes) & 1), ++j) {
 
         if (subtype == MDBX_subpage_dupfixed_leaf) {
           /* LEAF2 pages have no mp_ptrs[] or node headers */
@@ -25215,14 +25427,17 @@ __cold static int mdbx_walk_tree(mdbx_walk_ctx_t *ctx, const pgno_t pgno,
           assert(subtype == MDBX_subpage_leaf);
           MDBX_node *subnode = page_node(sp, j);
           subpayload_size += NODESIZE + node_ks(subnode) + node_ds(subnode);
-          if (unlikely(node_flags(subnode) != 0))
+          if (unlikely(node_flags(subnode) != 0)) {
+            assert(err == MDBX_CORRUPTED);
             err = MDBX_CORRUPTED;
+          }
         }
       }
 
-      rc = ctx->mw_visitor(pgno, 0, ctx->mw_user, deep + 1, name, node_ds(node),
-                           subtype, err, nsubkeys, subpayload_size,
-                           subheader_size, subunused_size + subalign_bytes);
+      const int rc =
+          ctx->mw_visitor(pgno, 0, ctx->mw_user, deep + 1, name, node_ds(node),
+                          subtype, err, nsubkeys, subpayload_size,
+                          subheader_size, subunused_size + subalign_bytes);
       if (unlikely(rc != MDBX_SUCCESS))
         return (rc == MDBX_RESULT_TRUE) ? MDBX_SUCCESS : rc;
       header_size += subheader_size;
@@ -25232,24 +25447,25 @@ __cold static int mdbx_walk_tree(mdbx_walk_ctx_t *ctx, const pgno_t pgno,
     } break;
 
     default:
+      assert(err == MDBX_CORRUPTED);
       err = MDBX_CORRUPTED;
     }
   }
 
-  rc = ctx->mw_visitor(pgno, 1, ctx->mw_user, deep, name,
-                       ctx->mw_txn->mt_env->me_psize, type, err, nentries,
-                       payload_size, header_size, unused_size + align_bytes);
+  const int rc = ctx->mw_visitor(
+      pgno, 1, ctx->mw_user, deep, name, ctx->mw_txn->mt_env->me_psize, type,
+      err, nentries, payload_size, header_size, unused_size + align_bytes);
   if (unlikely(rc != MDBX_SUCCESS))
     return (rc == MDBX_RESULT_TRUE) ? MDBX_SUCCESS : rc;
 
-  for (int i = 0; err == MDBX_SUCCESS && i < nentries; i++) {
+  for (unsigned i = 0; err == MDBX_SUCCESS && i < nentries; ++i) {
     if (type == MDBX_page_dupfixed_leaf)
       continue;
 
     MDBX_node *node = page_node(mp, i);
     if (type == MDBX_page_branch) {
-      err = mdbx_walk_tree(ctx, node_pgno(node), name, deep + 1,
-                           pp_txnid4chk(mp, ctx->mw_txn));
+      assert(err == MDBX_SUCCESS);
+      err = mdbx_walk_tree(ctx, node_pgno(node), name, deep + 1, mp->mp_txnid);
       if (unlikely(err != MDBX_SUCCESS)) {
         if (err == MDBX_RESULT_TRUE)
           break;
@@ -25267,6 +25483,7 @@ __cold static int mdbx_walk_tree(mdbx_walk_ctx_t *ctx, const pgno_t pgno,
     case F_SUBDATA /* sub-db */: {
       const size_t namelen = node_ks(node);
       if (unlikely(namelen == 0 || node_ds(node) != sizeof(MDBX_db))) {
+        assert(err == MDBX_CORRUPTED);
         err = MDBX_CORRUPTED;
         break;
       }
@@ -25275,34 +25492,37 @@ __cold static int mdbx_walk_tree(mdbx_walk_ctx_t *ctx, const pgno_t pgno,
       char *const sub_name = (namelen < sizeof(namebuf_onstask))
                                  ? namebuf_onstask
                                  : mdbx_malloc(namelen + 1);
-      if (sub_name) {
-        memcpy(sub_name, node_key(node), namelen);
-        sub_name[namelen] = 0;
-        memcpy(&db, node_data(node), sizeof(db));
-        err = mdbx_walk_sdb(ctx, &db, sub_name, deep + 1);
-        if (sub_name != namebuf_onstask)
-          mdbx_free(sub_name);
-      } else {
-        err = MDBX_ENOMEM;
-      }
+      if (unlikely(!sub_name))
+        return MDBX_ENOMEM;
+      memcpy(sub_name, node_key(node), namelen);
+      sub_name[namelen] = 0;
+      memcpy(&db, node_data(node), sizeof(db));
+      assert(err == MDBX_SUCCESS);
+      err = mdbx_walk_sdb(ctx, &db, sub_name, deep + 1);
+      if (sub_name != namebuf_onstask)
+        mdbx_free(sub_name);
     } break;
 
     case F_SUBDATA | F_DUPDATA /* dupsorted sub-tree */:
       if (unlikely(node_ds(node) != sizeof(MDBX_db) ||
-                   ctx->mw_cursor->mc_xcursor == NULL))
+                   ctx->mw_cursor->mc_xcursor == NULL)) {
+        assert(err == MDBX_CORRUPTED);
         err = MDBX_CORRUPTED;
-      else {
+      } else {
         memcpy(&db, node_data(node), sizeof(db));
         assert(ctx->mw_cursor->mc_xcursor ==
                &container_of(ctx->mw_cursor, MDBX_cursor_couple, outer)->inner);
-        ctx->mw_cursor = &ctx->mw_cursor->mc_xcursor->mx_cursor;
-        err = mdbx_walk_tree(ctx, db.md_root, name, deep + 1,
-                             pp_txnid4chk(mp, ctx->mw_txn));
-        MDBX_xcursor *inner_xcursor =
-            container_of(ctx->mw_cursor, MDBX_xcursor, mx_cursor);
-        MDBX_cursor_couple *couple =
-            container_of(inner_xcursor, MDBX_cursor_couple, inner);
-        ctx->mw_cursor = &couple->outer;
+        assert(err == MDBX_SUCCESS);
+        err = mdbx_xcursor_init1(ctx->mw_cursor, node, mp);
+        if (likely(err == MDBX_SUCCESS)) {
+          ctx->mw_cursor = &ctx->mw_cursor->mc_xcursor->mx_cursor;
+          err = mdbx_walk_tree(ctx, db.md_root, name, deep + 1, mp->mp_txnid);
+          MDBX_xcursor *inner_xcursor =
+              container_of(ctx->mw_cursor, MDBX_xcursor, mx_cursor);
+          MDBX_cursor_couple *couple =
+              container_of(inner_xcursor, MDBX_cursor_couple, inner);
+          ctx->mw_cursor = &couple->outer;
+        }
       }
       break;
     }
@@ -25311,25 +25531,29 @@ __cold static int mdbx_walk_tree(mdbx_walk_ctx_t *ctx, const pgno_t pgno,
   return MDBX_SUCCESS;
 }
 
-__cold static int mdbx_walk_sdb(mdbx_walk_ctx_t *ctx, MDBX_db *const db,
+__cold static int mdbx_walk_sdb(mdbx_walk_ctx_t *ctx, MDBX_db *const sdb,
                                 const char *name, int deep) {
-  if (unlikely(db->md_root == P_INVALID))
+  if (unlikely(sdb->md_root == P_INVALID))
     return MDBX_SUCCESS; /* empty db */
 
   MDBX_cursor_couple couple;
   MDBX_dbx dbx = {.md_klen_min = INT_MAX};
   uint8_t dbistate = DBI_VALID | DBI_AUDITED;
-  int rc = mdbx_couple_init(&couple, ~0u, ctx->mw_txn, db, &dbx, &dbistate);
+  int rc = mdbx_couple_init(&couple, ~0u, ctx->mw_txn, sdb, &dbx, &dbistate);
   if (unlikely(rc != MDBX_SUCCESS))
     return rc;
 
-  if (ctx->mw_dont_check_keys_ordering) {
-    couple.outer.mc_flags |= C_SKIPORD;
-    couple.inner.mx_cursor.mc_flags |= C_SKIPORD;
-  }
+  couple.outer.mc_checking |= ctx->mw_dont_check_keys_ordering
+                                  ? CC_SKIPORD | CC_PAGECHECK
+                                  : CC_PAGECHECK;
+  couple.inner.mx_cursor.mc_checking |= ctx->mw_dont_check_keys_ordering
+                                            ? CC_SKIPORD | CC_PAGECHECK
+                                            : CC_PAGECHECK;
   couple.outer.mc_next = ctx->mw_cursor;
   ctx->mw_cursor = &couple.outer;
-  rc = mdbx_walk_tree(ctx, db->md_root, name, deep, ctx->mw_txn->mt_txnid);
+  rc = mdbx_walk_tree(ctx, sdb->md_root, name, deep,
+                      sdb->md_mod_txnid ? sdb->md_mod_txnid
+                                        : ctx->mw_txn->mt_txnid);
   ctx->mw_cursor = couple.outer.mc_next;
   return rc;
 }
@@ -26904,9 +27128,9 @@ __dll_export
     " MDBX_TRUST_RTC=" MDBX_TRUST_RTC_CONFIG
     " MDBX_ENABLE_REFUND=" MDBX_STRINGIFY(MDBX_ENABLE_REFUND)
     " MDBX_ENABLE_MADVISE=" MDBX_STRINGIFY(MDBX_ENABLE_MADVISE)
-#if MDBX_DISABLE_PAGECHECKS
-    " MDBX_DISABLE_PAGECHECKS=YES"
-#endif /* MDBX_DISABLE_PAGECHECKS */
+#if MDBX_DISABLE_VALIDATION
+    " MDBX_DISABLE_VALIDATION=YES"
+#endif /* MDBX_DISABLE_VALIDATION */
 #ifdef __SANITIZE_ADDRESS__
     " SANITIZE_ADDRESS=YES"
 #endif /* __SANITIZE_ADDRESS__ */
@@ -29686,9 +29910,9 @@ __dll_export
         0,
         12,
         0,
-        15,
-        {"2022-07-02T22:53:48+03:00", "1e54d366d625b41753de2675f4c9c107e1765354", "d61c0963138577d5097f4e5287d5ceb906ae9d32",
-         "v0.12.0-15-gd61c0963"},
+        64,
+        {"2022-07-11T20:29:33+03:00", "2ad21076e2f88add78d9b55de027408491f9e0b4", "0018164fef048b68dd84d503fde95dab5fdea94b",
+         "v0.12.0-64-g0018164f"},
         sourcery};
 
 __dll_export

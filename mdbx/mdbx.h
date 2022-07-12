@@ -1023,6 +1023,13 @@ LIBMDBX_API void mdbx_assert_fail(const MDBX_env *env, const char *msg,
 enum MDBX_env_flags_t {
   MDBX_ENV_DEFAULTS = 0,
 
+  /** Extra validation of DB structure and pages content.
+   *
+   * The `MDBX_VALIDATION` enabled the simple safe/careful mode for working
+   * with damaged or untrusted DB. However, a notable performance
+   * degradation should be expected. */
+  MDBX_VALIDATION = UINT32_C(0x00002000),
+
   /** No environment directory.
    *
    * By default, MDBX creates its environment in a directory whose pathname is
@@ -5067,11 +5074,12 @@ LIBMDBX_API int mdbx_thread_unregister(const MDBX_env *env);
  *                     this value into account to evaluate the impact that
  *                     a long-running transaction has.
  * \param [in] retry   A retry number starting from 0.
- *                     If callback has returned 0 at least once, then at end
- *                     of current handling loop the callback function will be
- *                     called additionally with negative value to notify about
- *                     the end of loop. The callback function can use this value
- *                     to implement timeout logic while waiting for readers.
+ *                     If callback has returned 0 at least once, then at end of
+ *                     current handling loop the callback function will be
+ *                     called additionally with negative `retry` value to notify
+ *                     about the end of loop. The callback function can use this
+ *                     fact to implement timeout reset logic while waiting for
+ *                     a readers.
  *
  * \returns The RETURN CODE determines the further actions libmdbx and must
  *          match the action which was executed by the callback:
@@ -5094,7 +5102,7 @@ LIBMDBX_API int mdbx_thread_unregister(const MDBX_env *env);
  * \retval 1           Transaction aborted asynchronous and reader slot
  *                     should be cleared immediately, i.e. read transaction
  *                     will not continue but \ref mdbx_txn_abort()
- *                     or \ref mdbx_txn_reset() will be called later.
+ *                     nor \ref mdbx_txn_reset() will be called later.
  *
  * \retval 2 or great  The reader process was terminated or killed,
  *                     and libmdbx should entirely reset reader registration.
