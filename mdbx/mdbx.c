@@ -19557,6 +19557,7 @@ static int __must_check_result mdbx_node_add_leaf2(MDBX_cursor *mc,
   const intptr_t upper = mp->mp_upper - (ksize - sizeof(indx_t));
   if (unlikely(lower > upper)) {
     mc->mc_txn->mt_flags |= MDBX_TXN_ERROR;
+    abort();
     return MDBX_PAGE_FULL;
   }
   mp->mp_lower = (indx_t)lower;
@@ -19599,6 +19600,7 @@ static int __must_check_result mdbx_node_add_branch(MDBX_cursor *mc,
   const intptr_t upper = mp->mp_upper - (branch_bytes - sizeof(indx_t));
   if (unlikely(lower > upper)) {
     mc->mc_txn->mt_flags |= MDBX_TXN_ERROR;
+    abort();
     return MDBX_PAGE_FULL;
   }
   mp->mp_lower = (indx_t)lower;
@@ -19679,6 +19681,7 @@ static int __must_check_result mdbx_node_add_leaf(MDBX_cursor *mc,
   const intptr_t upper = mp->mp_upper - (node_bytes - sizeof(indx_t));
   if (unlikely(lower > upper)) {
     mc->mc_txn->mt_flags |= MDBX_TXN_ERROR;
+    abort();
     return MDBX_PAGE_FULL;
   }
   mp->mp_lower = (indx_t)lower;
