@@ -88,7 +88,6 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 /* *INDENT-OFF* */
 /* clang-format off */
-
 /**
  \file mdbx.h
  \brief The libmdbx C API header file
@@ -171,7 +170,6 @@ as a duplicates or as like a multiple values corresponds to keys.
  \defgroup c_rqest Range query estimation
  \defgroup c_extra Extra operations
 */
-
 /* *INDENT-ON* */
 /* clang-format on */
 
@@ -628,9 +626,9 @@ typedef mode_t mdbx_mode_t;
 extern "C" {
 #endif
 
-/* MDBX version 0.11.x */
+/* MDBX version 0.12.x */
 #define MDBX_VERSION_MAJOR 0
-#define MDBX_VERSION_MINOR 11
+#define MDBX_VERSION_MINOR 12
 
 #ifndef LIBMDBX_API
 #if defined(LIBMDBX_EXPORTS)
@@ -826,13 +824,21 @@ enum MDBX_constants {
 /* THE FILES *******************************************************************
  * At the file system level, the environment corresponds to a pair of files. */
 
-/** \brief The name of the lock file in the environment */
+#ifndef MDBX_LOCKNAME
+/** \brief The name of the lock file in the environment
+ * without using \ref MDBX_NOSUBDIR */
 #define MDBX_LOCKNAME "/mdbx.lck"
-/** \brief The name of the data file in the environment */
+#endif
+#ifndef MDBX_DATANAME
+/** \brief The name of the data file in the environment
+ * without using \ref MDBX_NOSUBDIR */
 #define MDBX_DATANAME "/mdbx.dat"
+#endif
 
+#ifndef MDBX_LOCK_SUFFIX
 /** \brief The suffix of the lock file when \ref MDBX_NOSUBDIR is used */
 #define MDBX_LOCK_SUFFIX "-lck"
+#endif
 
 /* DEBUG & LOGGING ************************************************************/
 
@@ -1004,6 +1010,10 @@ LIBMDBX_API const char *mdbx_dump_val(const MDBX_val *key, char *const buf,
 /** \brief Panics with message and causes abnormal process termination. */
 LIBMDBX_API void mdbx_panic(const char *fmt, ...) MDBX_PRINTF_ARGS(1, 2);
 
+/** \brief Panics with asserton failed message and causes abnormal process
+ * termination. */
+LIBMDBX_API void mdbx_assert_fail(const MDBX_env *env, const char *msg,
+                                  const char *func, unsigned line);
 /** end of c_debug @} */
 
 /** \brief Environment flags
@@ -1012,6 +1022,13 @@ LIBMDBX_API void mdbx_panic(const char *fmt, ...) MDBX_PRINTF_ARGS(1, 2);
  * \see mdbx_env_open() \see mdbx_env_set_flags() */
 enum MDBX_env_flags_t {
   MDBX_ENV_DEFAULTS = 0,
+
+  /** Extra validation of DB structure and pages content.
+   *
+   * The `MDBX_VALIDATION` enabled the simple safe/careful mode for working
+   * with damaged or untrusted DB. However, a notable performance
+   * degradation should be expected. */
+  MDBX_VALIDATION = UINT32_C(0x00002000),
 
   /** No environment directory.
    *
@@ -1085,8 +1102,8 @@ enum MDBX_env_flags_t {
    * while opening the database/environment which is already used by another
    * process(es) with unknown mode/flags. In such cases, if there is a
    * difference in the specified flags (\ref MDBX_NOMETASYNC,
-   * \ref MDBX_SAFE_NOSYNC, \ref MDBX_UTTERLY_NOSYNC, \ref MDBX_LIFORECLAIM,
-   * \ref MDBX_COALESCE and \ref MDBX_NORDAHEAD), instead of returning an error,
+   * \ref MDBX_SAFE_NOSYNC, \ref MDBX_UTTERLY_NOSYNC, \ref MDBX_LIFORECLAIM
+   * and \ref MDBX_NORDAHEAD), instead of returning an error,
    * the database will be opened in a compatibility with the already used mode.
    *
    * `MDBX_ACCEDE` has no effect if the current process is the only one either
@@ -1193,6 +1210,7 @@ enum MDBX_env_flags_t {
   MDBX_NOMEMINIT = UINT32_C(0x1000000),
 
   /** Aims to coalesce a Garbage Collection items.
+   * \note Always enabled since v0.12
    *
    * With `MDBX_COALESCE` flag MDBX will aims to coalesce items while recycling
    * a Garbage Collection. Technically, when possible short lists of pages
@@ -2480,6 +2498,9 @@ struct MDBX_envinfo {
     uint64_t unspill; /**< Quantity of unspilled/reloaded pages */
     uint64_t wops;    /**< Number of explicit write operations (not a pages)
                            to a disk */
+    uint64_t
+        gcrtime_seconds16dot16; /**< Time spent loading and searching inside
+                                     GC (aka FreeDB) in 1/65536 of second. */
   } mi_pgop_stat;
 };
 #ifndef __cplusplus
@@ -5053,11 +5074,12 @@ LIBMDBX_API int mdbx_thread_unregister(const MDBX_env *env);
  *                     this value into account to evaluate the impact that
  *                     a long-running transaction has.
  * \param [in] retry   A retry number starting from 0.
- *                     If callback has returned 0 at least once, then at end
- *                     of current handling loop the callback function will be
- *                     called additionally with negative value to notify about
- *                     the end of loop. The callback function can use this value
- *                     to implement timeout logic while waiting for readers.
+ *                     If callback has returned 0 at least once, then at end of
+ *                     current handling loop the callback function will be
+ *                     called additionally with negative `retry` value to notify
+ *                     about the end of loop. The callback function can use this
+ *                     fact to implement timeout reset logic while waiting for
+ *                     a readers.
  *
  * \returns The RETURN CODE determines the further actions libmdbx and must
  *          match the action which was executed by the callback:
@@ -5080,7 +5102,7 @@ LIBMDBX_API int mdbx_thread_unregister(const MDBX_env *env);
  * \retval 1           Transaction aborted asynchronous and reader slot
  *                     should be cleared immediately, i.e. read transaction
  *                     will not continue but \ref mdbx_txn_abort()
- *                     or \ref mdbx_txn_reset() will be called later.
+ *                     nor \ref mdbx_txn_reset() will be called later.
  *
  * \retval 2 or great  The reader process was terminated or killed,
  *                     and libmdbx should entirely reset reader registration.
