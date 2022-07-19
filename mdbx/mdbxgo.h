@@ -5,6 +5,12 @@
 #ifndef _MDBXGO_H_
 #define _MDBXGO_H_
 
+#if defined(__APPLE__)
+#include <AvailabilityMacros.h>
+// Go 1.17 requires macOS 10.13 High Sierra or later
+#define MAC_OS_X_VERSION_MIN_REQUIRED MAC_OS_X_VERSION_10_13
+#endif
+
 #include "mdbx.h"
 
 /* Proxy functions for lmdb get/put operations. The functions are defined to
