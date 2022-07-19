@@ -134,6 +134,8 @@ package mdbx
 #cgo !windows CFLAGS: -O2 -g -DMDBX_BUILD_FLAGS='' -DNDEBUG=1 -std=gnu11 -fvisibility=hidden -ffast-math  -fPIC -pthread -Wno-error=attributes -W -Wall -Werror -Wextra -Wpedantic -Wno-deprecated-declarations -Wno-format -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-format-extra-args -Wno-missing-field-initializers
 #cgo windows CFLAGS:  -O2 -g -DMDBX_BUILD_FLAGS='' -DNDEBUG=1 -std=gnu11 -fvisibility=hidden -ffast-math -fexceptions -fno-common -W -Wno-deprecated-declarations -Wno-bad-function-cast -Wno-cast-function-type -Wall -Wno-format -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-format-extra-args -Wno-missing-field-initializers
 
+#cgo darwin CFLAGS: -mmacosx-version-min=10.13
+
 #cgo windows LDFLAGS: -lntdll
 #cgo linux LDFLAGS: -lrt
 */
