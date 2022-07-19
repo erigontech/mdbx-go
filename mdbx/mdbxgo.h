@@ -7,6 +7,8 @@
 
 #if defined(__APPLE__)
 #include <AvailabilityMacros.h>
+// Go 1.17 requires macOS 10.13 High Sierra or later
+#define MAC_OS_X_VERSION_MIN_REQUIRED MAC_OS_X_VERSION_10_13
 #endif
 
 #include "mdbx.h"
