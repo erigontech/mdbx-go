@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY dfb45f31874a2f337ccc28b7a4abfed87757c461dd8da293616ef48d62e71235_v0_12_0_64_g0018164f
+#define MDBX_BUILD_SOURCERY 99d371079af9d05b2f0e8751b4ee8fd75986ecba45c5a7f9807d154a86cff0eb_v0_12_0_71_g1cac6536
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -4152,6 +4152,7 @@ page_room(const MDBX_page *mp) {
   return mp->mp_upper - mp->mp_lower;
 }
 
+/* Maximum free space in an empty page */
 MDBX_NOTHROW_PURE_FUNCTION static __always_inline unsigned
 page_space(const MDBX_env *env) {
   STATIC_ASSERT(PAGEHDRSZ % 2 == 0);
@@ -21110,6 +21111,7 @@ static int mdbx_node_move(MDBX_cursor *csrc, MDBX_cursor *cdst, bool fromleft) {
   } break;
 
   default:
+    assert(false);
     goto bailout;
   }
 
@@ -22527,6 +22529,7 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
       (newindx < nkeys)
           ? /* split at the middle */ (nkeys + 1) / 2
           : /* split at the end (i.e. like append-mode ) */ nkeys - minkeys + 1;
+  mdbx_assert(env, split_indx >= minkeys && split_indx <= nkeys - minkeys + 1);
 
   mdbx_cassert(mc, !IS_BRANCH(mp) || newindx > 0);
   /* It is reasonable and possible to split the page at the begin */
@@ -22624,17 +22627,16 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
           goto done;
       }
     } else {
-      /* Maximum free space in an empty page */
-      const unsigned max_space = page_space(env);
-      const size_t new_size = IS_LEAF(mp) ? leaf_size(env, newkey, newdata)
-                                          : branch_size(env, newkey);
-
       /* grab a page to hold a temporary copy */
       tmp_ki_copy = mdbx_page_malloc(mc->mc_txn, 1);
       if (unlikely(tmp_ki_copy == NULL)) {
         rc = MDBX_ENOMEM;
         goto done;
       }
+
+      const unsigned max_space = page_space(env);
+      const size_t new_size = IS_LEAF(mp) ? leaf_size(env, newkey, newdata)
+                                          : branch_size(env, newkey);
 
       /* prepare to insert */
       for (unsigned j = i = 0; i < nkeys; ++i, ++j) {
@@ -22648,34 +22650,35 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
       tmp_ki_copy->mp_lower = 0;
       tmp_ki_copy->mp_upper = (indx_t)max_space;
 
-      /* When items are relatively large the split point needs
-       * to be checked, because being off-by-one will make the
-       * difference between success or failure in mdbx_node_add.
+      /* Добавляемый узел может не поместиться в страницу-половину вместе
+       * с количественной половиной узлов из исходной страницы. В худшем случае,
+       * в страницу-половину с добавляемым узлом могут попасть самые больше узлы
+       * из исходной страницы, а другую половину только узлы с самыми короткими
+       * ключами и с пустыми данными. Поэтому, чтобы найти подходящую границу
+       * разреза требуется итерировать узлы и считая их объем.
        *
-       * It's also relevant if a page happens to be laid out
-       * such that one half of its nodes are all "small" and
-       * the other half of its nodes are "large". If the new
-       * item is also "large" and falls on the half with
-       * "large" nodes, it also may not fit.
-       *
-       * As a final tweak, if the new item goes on the last
-       * spot on the page (and thus, onto the new page), bias
-       * the split so the new page is emptier than the old page.
-       * This yields better packing during sequential inserts. */
+       * Однако, при простом количественном делении (без учета размера ключей
+       * и данных) на страницах-половинах будет примерно вдвое меньше узлов.
+       * Поэтому добавляемый узел точно поместится, если его размер не больше
+       * чем место "освобождающееся" от заголовков узлов, которые переедут
+       * в другую страницу-половину. Кроме этого, как минимум по одному байту
+       * будет в каждом ключе, в худшем случае кроме одного, который может быть
+       * нулевого размера. */
 
-      if (nkeys < 32 || new_size > max_space / 16) {
+      if (newindx == split_indx && split_indx + minkeys <= nkeys)
+        split_indx += 1;
+      mdbx_assert(env,
+                  split_indx >= minkeys && split_indx <= nkeys - minkeys + 1);
+      const unsigned dim_nodes =
+          (newindx >= split_indx) ? split_indx : nkeys - split_indx;
+      const unsigned dim_used = (sizeof(indx_t) + NODESIZE + 1) * dim_nodes;
+      if (new_size >= dim_used) {
         /* Find split point */
-        int dir;
-        if (newindx <= split_indx) {
-          i = 0;
-          dir = 1;
-        } else {
-          i = nkeys;
-          dir = -1;
-        }
+        i = (newindx < split_indx) ? 0 : nkeys;
+        int dir = (newindx < split_indx) ? 1 : -1;
         size_t before = 0, after = new_size + page_used(env, mp);
-        int best = split_indx;
-        int best_offset = nkeys + 1;
+        unsigned best_split = split_indx;
+        unsigned best_offset = INT_MAX;
 
         mdbx_trace("seek separator from %u, step %i, default %u, new-idx %u, "
                    "new-size %zu",
@@ -22688,8 +22691,8 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
                 (MDBX_node *)((char *)mp + tmp_ki_copy->mp_ptrs[i] + PAGEHDRSZ);
             size = NODESIZE + node_ks(node) + sizeof(indx_t);
             if (IS_LEAF(mp))
-              size += F_ISSET(node_flags(node), F_BIGDATA) ? sizeof(pgno_t)
-                                                           : node_ds(node);
+              size += (node_flags(node) & F_BIGDATA) ? sizeof(pgno_t)
+                                                     : node_ds(node);
             size = EVEN(size);
           }
 
@@ -22699,21 +22702,23 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
                      size, before, after, max_space);
 
           if (before <= max_space && after <= max_space) {
-            int offset = branchless_abs(split_indx - i);
-            if (offset >= best_offset)
-              break;
-            best_offset = offset;
-            best = i;
+            const unsigned split = i + (dir > 0);
+            if (split >= minkeys && split <= nkeys + 1 - minkeys) {
+              const unsigned offset = branchless_abs(split_indx - split);
+              if (offset >= best_offset)
+                break;
+              best_offset = offset;
+              best_split = split;
+            }
           }
           i += dir;
         } while (i < nkeys);
 
-        split_indx = best + (dir > 0);
-        split_indx = (split_indx <= nkeys - minkeys + 1) ? split_indx
-                                                         : nkeys - minkeys + 1;
-        split_indx = (split_indx >= minkeys) ? split_indx : minkeys;
+        split_indx = best_split;
         mdbx_trace("chosen %u", split_indx);
       }
+      mdbx_assert(env,
+                  split_indx >= minkeys && split_indx <= nkeys - minkeys + 1);
 
       sepkey.iov_len = newkey->iov_len;
       sepkey.iov_base = newkey->iov_base;
@@ -29911,9 +29916,9 @@ __dll_export
         0,
         12,
         0,
-        64,
-        {"2022-07-11T20:29:33+03:00", "2ad21076e2f88add78d9b55de027408491f9e0b4", "0018164fef048b68dd84d503fde95dab5fdea94b",
-         "v0.12.0-64-g0018164f"},
+        71,
+        {"2022-07-28T09:57:31+07:00", "9a6d7e5b917e5fbd14dc51835fa749d092aa1d72", "1cac65363763e7523ed3b52eed8f2c617cead973",
+         "v0.12.0-71-g1cac6536"},
         sourcery};
 
 __dll_export
