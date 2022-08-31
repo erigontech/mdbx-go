@@ -20,3 +20,7 @@ func NewDuration16dot16(duration time.Duration) Duration16dot16 {
 func toDuration(seconds16dot16 C.uint32_t) time.Duration {
 	return Duration16dot16(seconds16dot16).ToDuration()
 }
+
+func toDurationU64(seconds16dot16 C.uint64_t) time.Duration {
+	return Duration16dot16(seconds16dot16).ToDuration()
+}
