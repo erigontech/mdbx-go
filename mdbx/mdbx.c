@@ -12,7 +12,11 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
+<<<<<<< Updated upstream
 #define MDBX_BUILD_SOURCERY 1bf366ce33eb707175432c0aefecd41f8202286751b82467019c4efce9aa922c_v0_12_0_devel_35_g0ccec204
+=======
+#define MDBX_BUILD_SOURCERY 82d50538090463338af94844989f1421a31f6c831393dbfa3e10b1e87a63d3b8_v0_12_1_5_g14d5af3a
+>>>>>>> Stashed changes
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1893,6 +1897,25 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
  *  otherwise detects ones availability automatically. */
 #ifndef MDBX_HAVE_C11ATOMICS
 #endif /* MDBX_HAVE_C11ATOMICS */
+
+/** If defined then enables use the GCC's `__builtin_cpu_supports()`
+ *  for runtime dispatching depending on the CPU's capabilities. */
+#ifndef MDBX_HAVE_BUILTIN_CPU_SUPPORTS
+#if defined(__APPLE__) || defined(BIONIC)
+/* Never use any modern features on Apple's or Google's OSes
+ * since a lot of troubles with compatibility and/or performance */
+#define MDBX_HAVE_BUILTIN_CPU_SUPPORTS 0
+#elif __has_builtin(__builtin_cpu_supports) ||                                 \
+    defined(__BUILTIN_CPU_SUPPORTS__) ||                                       \
+    (defined(__ia32__) && __GNUC_PREREQ(4, 8) && __GLIBC_PREREQ(2, 23))
+#define MDBX_HAVE_BUILTIN_CPU_SUPPORTS 1
+#else
+#define MDBX_HAVE_BUILTIN_CPU_SUPPORTS 0
+#endif
+#elif !(MDBX_HAVE_BUILTIN_CPU_SUPPORTS == 0 ||                                 \
+        MDBX_HAVE_BUILTIN_CPU_SUPPORTS == 1)
+#error MDBX_HAVE_BUILTIN_CPU_SUPPORTS must be defined as 0 or 1
+#endif /* MDBX_HAVE_BUILTIN_CPU_SUPPORTS */
 
 //------------------------------------------------------------------------------
 
@@ -4764,7 +4787,11 @@ static __inline int rthc_atexit(void (*dtor)(void *), void *obj,
 #ifndef MDBX_HAVE_CXA_THREAD_ATEXIT_IMPL
 #if defined(LIBCXXABI_HAS_CXA_THREAD_ATEXIT_IMPL) ||                           \
     defined(HAVE___CXA_THREAD_ATEXIT_IMPL) || __GLIBC_PREREQ(2, 18) ||         \
+<<<<<<< Updated upstream
     defined(ANDROID)
+=======
+    defined(BIONIC)
+>>>>>>> Stashed changes
 #define MDBX_HAVE_CXA_THREAD_ATEXIT_IMPL 1
 #else
 #define MDBX_HAVE_CXA_THREAD_ATEXIT_IMPL 0
@@ -8404,8 +8431,16 @@ static int txn_spill(MDBX_txn *const txn, MDBX_cursor *const m0,
     txn->tw.dirtyroom += spilled;
     tASSERT(txn, dirtylist_check(txn));
 
+<<<<<<< Updated upstream
     if (ctx.iov_items)
       rc = iov_write(txn, &ctx);
+=======
+    if (ctx.iov_items) {
+      /* iov_page() frees dirty-pages and reset iov_items in case of failure. */
+      tASSERT(txn, rc == MDBX_SUCCESS);
+      rc = iov_write(txn, &ctx);
+    }
+>>>>>>> Stashed changes
 
     if (unlikely(rc != MDBX_SUCCESS))
       goto bailout;
@@ -9819,10 +9854,14 @@ __hot static pgno_t *scan4seq_neon(pgno_t *range, const size_t len,
 
 #ifdef scan4seq
 /* The scan4seq() is the best or no alternatives */
+<<<<<<< Updated upstream
 #else
 #if !(__has_builtin(__builtin_cpu_supports) ||                                 \
       defined(__BUILTIN_CPU_SUPPORTS__) ||                                     \
       (defined(__ia32__) && __GNUC_PREREQ(4, 8) && __GLIBC_PREREQ(2, 23)))
+=======
+#elif !MDBX_HAVE_BUILTIN_CPU_SUPPORTS
+>>>>>>> Stashed changes
 /* The scan4seq_default() will be used  since no cpu-features detection support
  * from compiler. Please don't ask to implement cpuid-based detection and don't
  * make such PRs. */
@@ -9859,7 +9898,10 @@ static pgno_t *scan4seq_resolver(pgno_t *range, const size_t len,
   scan4seq = choice ? choice : scan4seq_default;
   return scan4seq(range, len, seq);
 }
+<<<<<<< Updated upstream
 #endif /* __has_builtin(__builtin_cpu_supports */
+=======
+>>>>>>> Stashed changes
 #endif /* scan4seq */
 
 //------------------------------------------------------------------------------
@@ -9897,21 +9939,30 @@ static pgr_t page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
 
   const unsigned coalesce_threshold = env->me_maxgc_ov1page >> 2;
   if (likely(flags & MDBX_ALLOC_GC)) {
+<<<<<<< Updated upstream
     flags |= env->me_flags & MDBX_LIFORECLAIM;
     if (txn->mt_dbs[FREE_DBI].md_branch_pages &&
         MDBX_PNL_SIZE(txn->tw.reclaimed_pglist) < coalesce_threshold)
       flags |= MDBX_ALLOC_COALESCE;
+=======
+>>>>>>> Stashed changes
     if (unlikely(
             /* If mc is updating the GC, then the retired-list cannot play
                catch-up with itself by growing while trying to save it. */
-            (mc->mc_flags & C_RECLAIMING) ||
+            (mc->mc_flags & (C_RECLAIMING | C_GCFREEZE)) ||
             /* avoid (recursive) search inside empty tree and while tree is
                updating, todo4recovery://erased_by_github/libmdbx/issues/31 */
             txn->mt_dbs[FREE_DBI].md_entries == 0 ||
             /* If our dirty list is already full, we can't touch GC */
             (txn->tw.dirtyroom < txn->mt_dbs[FREE_DBI].md_depth &&
              !(txn->mt_dbistate[FREE_DBI] & DBI_DIRTY))))
-      flags &= ~(MDBX_ALLOC_GC | MDBX_ALLOC_COALESCE);
+      flags -= MDBX_ALLOC_GC;
+    else {
+      flags |= env->me_flags & MDBX_LIFORECLAIM;
+      if (mc->mc_dbi != FREE_DBI && txn->mt_dbs[FREE_DBI].md_branch_pages &&
+          MDBX_PNL_SIZE(txn->tw.reclaimed_pglist) < coalesce_threshold)
+        flags |= MDBX_ALLOC_COALESCE;
+    }
   }
 
   eASSERT(env, pnl_check_allocated(txn->tw.reclaimed_pglist,
@@ -12220,10 +12271,13 @@ static int txn_end(MDBX_txn *txn, const unsigned mode) {
         names[mode & MDBX_END_OPMASK], txn->mt_txnid,
         (txn->mt_flags & MDBX_TXN_RDONLY) ? 'r' : 'w', (void *)txn, (void *)env,
         txn->mt_dbs[MAIN_DBI].md_root, txn->mt_dbs[FREE_DBI].md_root);
+<<<<<<< Updated upstream
 
   ENSURE(env, txn->mt_txnid >=
                   /* paranoia is appropriate here */ env->me_lck
                       ->mti_oldest_reader.weak);
+=======
+>>>>>>> Stashed changes
 
   if (!(mode & MDBX_END_EOTDONE)) /* !(already closed cursors) */
     cursors_eot(txn, false);
@@ -12234,6 +12288,12 @@ static int txn_end(MDBX_txn *txn, const unsigned mode) {
       MDBX_reader *slot = txn->to.reader;
       eASSERT(env, slot->mr_pid.weak == env->me_pid);
       if (likely(!(txn->mt_flags & MDBX_TXN_FINISHED))) {
+<<<<<<< Updated upstream
+=======
+        ENSURE(env, txn->mt_txnid >=
+                        /* paranoia is appropriate here */ env->me_lck
+                            ->mti_oldest_reader.weak);
+>>>>>>> Stashed changes
         eASSERT(env,
                 txn->mt_txnid == slot->mr_txnid.weak &&
                     slot->mr_txnid.weak >= env->me_lck->mti_oldest_reader.weak);
@@ -12262,6 +12322,12 @@ static int txn_end(MDBX_txn *txn, const unsigned mode) {
     txn->mt_flags = MDBX_TXN_RDONLY | MDBX_TXN_FINISHED;
     txn->mt_owner = 0;
   } else if (!(txn->mt_flags & MDBX_TXN_FINISHED)) {
+<<<<<<< Updated upstream
+=======
+    ENSURE(env, txn->mt_txnid >=
+                    /* paranoia is appropriate here */ env->me_lck
+                        ->mti_oldest_reader.weak);
+>>>>>>> Stashed changes
 #if defined(MDBX_USE_VALGRIND) || defined(__SANITIZE_ADDRESS__)
     if (txn == env->me_txn0)
       txn_valgrind(env, nullptr);
@@ -13493,8 +13559,16 @@ static int txn_write(MDBX_txn *txn, struct iov_ctx *ctx) {
       break;
   }
 
+<<<<<<< Updated upstream
   if (ctx->iov_items)
     rc = iov_write(txn, ctx);
+=======
+  if (ctx->iov_items) {
+    /* iov_page() frees dirty-pages and reset iov_items in case of failure. */
+    tASSERT(txn, rc == MDBX_SUCCESS);
+    rc = iov_write(txn, ctx);
+  }
+>>>>>>> Stashed changes
 
   while (r <= dl->length)
     dl->items[++w] = dl->items[r++];
@@ -19157,7 +19231,7 @@ __hot int mdbx_cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
           mc->mc_ki[mc->mc_top]++; /* step forward for appending */
           rc = MDBX_NOTFOUND;
         } else {
-          if (unlikely(rc != MDBX_SUCCESS || !(flags & MDBX_APPENDDUP)))
+          if (unlikely(rc != MDBX_SUCCESS))
             /* new-key < last-key
              * or new-key == last-key without MDBX_APPENDDUP */
             return MDBX_EKEYMISMATCH;
@@ -29701,10 +29775,17 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         12,
+<<<<<<< Updated upstream
         0,
         35,
         {"2022-08-20T01:54:11+03:00", "4a409250880939d437417ba547511edbf4b45a1c", "0ccec204096864f9694e117f6056d26b73a68bcc",
          "v0.12.0-devel-35-g0ccec204"},
+=======
+        1,
+        5,
+        {"2022-09-02T13:45:11+03:00", "f84d40af1874c87961828554f5608ecbfb9efee7", "14d5af3a97f33e189fb4257dd5b31e9681184b61",
+         "v0.12.1-5-g14d5af3a"},
+>>>>>>> Stashed changes
         sourcery};
 
 __dll_export
@@ -30754,9 +30835,12 @@ static int lck_op(const mdbx_filehandle_t fd, int cmd, const int lck,
          ((uint64_t)offset + (uint64_t)len));
   for (;;) {
     struct flock lock_op;
-    STATIC_ASSERT(sizeof(off_t) <= sizeof(lock_op.l_start) &&
-                  sizeof(off_t) <= sizeof(lock_op.l_len) &&
-                  OFF_T_MAX == (off_t)OFF_T_MAX);
+    STATIC_ASSERT_MSG(sizeof(off_t) <= sizeof(lock_op.l_start) &&
+                          sizeof(off_t) <= sizeof(lock_op.l_len) &&
+                          OFF_T_MAX == (off_t)OFF_T_MAX,
+                      "Support for large/64-bit-sized files is misconfigured "
+                      "for the target system and/or toolchain. "
+                      "Please fix it or at least disable it completely.");
     memset(&lock_op, 0, sizeof(lock_op));
     lock_op.l_type = lck;
     lock_op.l_whence = SEEK_SET;
