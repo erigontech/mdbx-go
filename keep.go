@@ -1,1 +1,1 @@
-package mdbxdist
+package mdbx_go
