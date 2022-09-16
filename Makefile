@@ -9,17 +9,17 @@ deps: lintci-deps
 all: deps
 
 test:
-	go test ./...
+	go test ./mdbx ./exp/mdbxpool
 
 race:
-	go test -race ./...
+	go test -race ./mdbx ./exp/mdbxpool
 
 lint:
 	./build/bin/golangci-lint run --new-from-rev=$(MASTER_COMMIT) ./...
 
 lintci-deps:
 	rm -f ./build/bin/golangci-lint
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./build/bin v1.46.2
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./build/bin v1.49.0
 
 clean:
 	cd mdbxdist && make clean
