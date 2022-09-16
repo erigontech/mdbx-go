@@ -128,12 +128,12 @@ In MDBX repo: `make dist && cp -R ./dist/* ./../mdbx-go/mdbxdist/`. Then in mdbx
 
 ## Build binaries
 
-In mdbx-go repo: `make tools`
+In mdbx-go repo: `MDBX_BUILD_TIMESTAMP=unknown make tools`
 
 Or if use mdbx-go as a library:
 
 ```
-go mod vendor && cd vendor/github.com/ledgerwatch/mdbx-go && make tools 
+go mod vendor && cd vendor/github.com/torquem-ch/mdbx-go && make tools 
 rm -rf vendor
 ```
 

@@ -1,6 +1,8 @@
 
 .PHONY: deps all test race bin
 
+MASTER_COMMIT=`git rev-parse --short origin/master`
+
 deps: lintci-deps
 	go get -d ./...
 
@@ -23,7 +25,7 @@ clean:
 	cd mdbxdist && make clean
 
 tools: clean
-	cd mdbxdist && make tools
+	cd mdbxdist && MDBX_BUILD_TIMESTAMP=unknown make tools
 
 cp:
 	cp mdbxdist/mdbx.h mdbx/
