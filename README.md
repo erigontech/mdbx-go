@@ -92,7 +92,7 @@ Use NoReadahead if Data > RAM
   [documentation](https://libmdbx.dqdkfa.ru) so they are aware of these caveats. And even better if read
   through [mdbx.h](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h).
 
-### Advantages of MDBX
+### Advantages of LMDB over BoltDB
 
 - Keys can contain multiple values using the DupSort flag.
 
@@ -112,11 +112,30 @@ Use NoReadahead if Data > RAM
 - As a C library, applications in any language can interact with MDBX databases. Mission critical Go applications can
   use a database while Python scripts perform analysis on the side.
 
+### Advantages of MDBX over LMDB
+
+See in mdbx's readme.md
+
 ## Build
 
 On FreeBSD 10, you must explicitly set `CC` (otherwise it will fail with a cryptic error), for example:
 
     CC=clang go test -v ./...
+
+## Maintainance, update .c code
+
+In MDBX repo: `make dist && cp -R ./dist/* ./../mdbx-go/mdbxdist/`. Then in mdbx-go repo: `make cp`
+
+## Build binaries
+
+In mdbx-go repo: `make tools`
+
+Or if use mdbx-go as a library:
+
+```
+go mod vendor && cd vendor/github.com/ledgerwatch/mdbx-go && make tools 
+rm -rf vendor
+```
 
 ## Documentation
 
