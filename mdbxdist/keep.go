@@ -1,1 +1,3 @@
 package mdbxdist
+
+import "C"
