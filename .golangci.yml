@@ -14,7 +14,6 @@ linters:
     - goconst
     - gofmt
     - govet
-    - structcheck
     - stylecheck
     - staticcheck
 #    - goerr113

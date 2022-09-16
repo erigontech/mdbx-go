@@ -1,0 +1,3 @@
+package mdbxdist
+
+import "C"
