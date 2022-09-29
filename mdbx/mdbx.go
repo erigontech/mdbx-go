@@ -8,8 +8,7 @@ reference.
 	http://www.lmdb.tech/doc/starting.html
 	http://www.lmdb.tech/doc/modules.html
 
-
-Environment
+# Environment
 
 An LMDB environment holds named databases (key-value stores).  An environment
 is represented as one file on the filesystem (though often a corresponding lock
@@ -25,8 +24,7 @@ Note that the package lmdb forces all Env objects to be opened with the NoTLS
 (in the author's opinion).  However, even for environments opened with this
 flag there are caveats regarding how transactions are used (see Caveats below).
 
-
-Databases
+# Databases
 
 A database in an LMDB environment is an ordered key-value store that holds
 arbitrary binary data.  Typically the keys are unique but duplicate keys may be
@@ -43,8 +41,7 @@ closed but it is not required.  Typically, applications acquire handles for all
 their databases immediately after opening an environment and retain them for
 the lifetime of the process.
 
-
-Transactions
+# Transactions
 
 View (readonly) transactions in LMDB operate on a snapshot of the database at
 the time the transaction began.  The number of simultaneously active view
@@ -108,8 +105,7 @@ uses a finalizer to abort unreachable Txn objects.  But of course, applications
 must still be careful not to leak unterminated Txn objects in a way such that
 they fail get garbage collected.
 
-
-Caveats
+# Caveats
 
 Write transactions (those created without the Readonly flag) must be created in
 a goroutine that has been locked to its thread by calling the function
@@ -131,8 +127,8 @@ details about dealing with such situations.
 package mdbx
 
 /*
-#cgo !windows CFLAGS: -O2 -g -DMDBX_BUILD_FLAGS='' -DNDEBUG=1 -std=gnu11 -fvisibility=hidden -ffast-math  -fPIC -pthread -Wno-error=attributes -W -Wall -Werror -Wextra -Wpedantic -Wno-deprecated-declarations -Wno-format -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-format-extra-args -Wno-missing-field-initializers
-#cgo windows CFLAGS:  -O2 -g -DMDBX_BUILD_FLAGS='' -DNDEBUG=1 -std=gnu11 -fvisibility=hidden -ffast-math -fexceptions -fno-common -W -Wno-deprecated-declarations -Wno-bad-function-cast -Wno-cast-function-type -Wall -Wno-format -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-format-extra-args -Wno-missing-field-initializers
+#cgo !windows CFLAGS: -DMDBX_BUILD_FLAGS='' -DNDEBUG=1 -std=gnu11 -fvisibility=hidden -ffast-math  -fPIC -pthread -Wno-error=attributes -W -Wall -Werror -Wextra -Wpedantic -Wno-deprecated-declarations -Wno-format -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-format-extra-args -Wno-missing-field-initializers
+#cgo windows CFLAGS:  -DMDBX_BUILD_FLAGS='' -DNDEBUG=1 -std=gnu11 -fvisibility=hidden -ffast-math -fexceptions -fno-common -W -Wno-deprecated-declarations -Wno-bad-function-cast -Wno-cast-function-type -Wall -Wno-format -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-format-extra-args -Wno-missing-field-initializers
 
 #cgo windows LDFLAGS: -lntdll
 #cgo linux LDFLAGS: -lrt
