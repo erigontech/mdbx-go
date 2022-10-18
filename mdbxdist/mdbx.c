@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 3958e2aaa38cd7e72045ae4e998a644ba5042d346c8d8716cde8c42ad965b4f6_v0_12_1_55_g8501286a
+#define MDBX_BUILD_SOURCERY a8611116cc88e257a4c5b419045cbbe47a0ba034606ad677c74ad479a5e2ebbb_v0_12_1_65_ga5e8187e
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1396,6 +1396,47 @@ MDBX_MAYBE_UNUSED static __inline void jitter4testing(bool tiny);
 #define MAX_WRITE UINT32_C(0x04000000)
 #else
 #define MAX_WRITE UINT32_C(0x3f000000)
+
+#if defined(F_GETLK64) && defined(F_SETLK64) && defined(F_SETLKW64) &&         \
+    !defined(__ANDROID_API__)
+#define MDBX_F_SETLK F_SETLK64
+#define MDBX_F_SETLKW F_SETLKW64
+#define MDBX_F_GETLK F_GETLK64
+#if (__GLIBC_PREREQ(2, 28) &&                                                  \
+     (defined(__USE_LARGEFILE64) || defined(__LARGEFILE64_SOURCE) ||           \
+      defined(_USE_LARGEFILE64) || defined(_LARGEFILE64_SOURCE))) ||           \
+    defined(fcntl64)
+#define MDBX_FCNTL fcntl64
+#else
+#define MDBX_FCNTL fcntl
+#endif
+#define MDBX_STRUCT_FLOCK struct flock64
+#ifndef OFF_T_MAX
+#define OFF_T_MAX UINT64_C(0x7fffFFFFfff00000)
+#endif /* OFF_T_MAX */
+#else
+#define MDBX_F_SETLK F_SETLK
+#define MDBX_F_SETLKW F_SETLKW
+#define MDBX_F_GETLK F_GETLK
+#define MDBX_FCNTL fcntl
+#define MDBX_STRUCT_FLOCK struct flock
+#endif /* MDBX_F_SETLK, MDBX_F_SETLKW, MDBX_F_GETLK */
+
+#if defined(F_OFD_SETLK64) && defined(F_OFD_SETLKW64) &&                       \
+    defined(F_OFD_GETLK64) && !defined(__ANDROID_API__)
+#define MDBX_F_OFD_SETLK F_OFD_SETLK64
+#define MDBX_F_OFD_SETLKW F_OFD_SETLKW64
+#define MDBX_F_OFD_GETLK F_OFD_GETLK64
+#else
+#define MDBX_F_OFD_SETLK F_OFD_SETLK
+#define MDBX_F_OFD_SETLKW F_OFD_SETLKW
+#define MDBX_F_OFD_GETLK F_OFD_GETLK
+#ifndef OFF_T_MAX
+#define OFF_T_MAX                                                              \
+  (((sizeof(off_t) > 4) ? INT64_MAX : INT32_MAX) & ~(size_t)0xFffff)
+#endif /* OFF_T_MAX */
+#endif /* MDBX_F_OFD_SETLK64, MDBX_F_OFD_SETLKW64, MDBX_F_OFD_GETLK64 */
+
 #endif
 
 #if defined(__linux__) || defined(__gnu_linux__)
@@ -2121,7 +2162,10 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 /** Advanced: Using POSIX OFD-locks (autodetection by default). */
 #ifndef MDBX_USE_OFDLOCKS
-#if defined(F_OFD_SETLK) && defined(F_OFD_SETLKW) && defined(F_OFD_GETLK) &&   \
+#if ((defined(F_OFD_SETLK) && defined(F_OFD_SETLKW) &&                         \
+      defined(F_OFD_GETLK)) ||                                                 \
+     (defined(F_OFD_SETLK64) && defined(F_OFD_SETLKW64) &&                     \
+      defined(F_OFD_GETLK64))) &&                                              \
     !defined(MDBX_SAFE4QEMU) &&                                                \
     !defined(__sun) /* OFD-lock are broken on Solaris */
 #define MDBX_USE_OFDLOCKS 1
@@ -2207,13 +2251,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #endif /* MDBX_64BIT_ATOMIC */
 
 #ifndef MDBX_64BIT_CAS
-#if defined(ATOMIC_LLONG_LOCK_FREE)
-#if ATOMIC_LLONG_LOCK_FREE > 1
-#define MDBX_64BIT_CAS 1
-#else
-#define MDBX_64BIT_CAS 0
-#endif
-#elif defined(__GCC_ATOMIC_LLONG_LOCK_FREE)
+#if defined(__GCC_ATOMIC_LLONG_LOCK_FREE)
 #if __GCC_ATOMIC_LLONG_LOCK_FREE > 1
 #define MDBX_64BIT_CAS 1
 #else
@@ -2221,6 +2259,12 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #endif
 #elif defined(__CLANG_ATOMIC_LLONG_LOCK_FREE)
 #if __CLANG_ATOMIC_LLONG_LOCK_FREE > 1
+#define MDBX_64BIT_CAS 1
+#else
+#define MDBX_64BIT_CAS 0
+#endif
+#elif defined(ATOMIC_LLONG_LOCK_FREE)
+#if ATOMIC_LLONG_LOCK_FREE > 1
 #define MDBX_64BIT_CAS 1
 #else
 #define MDBX_64BIT_CAS 0
@@ -2459,7 +2503,7 @@ MDBX_MAYBE_UNUSED static __always_inline uint32_t atomic_load32(
 /* FROZEN: The version number for a database's datafile format. */
 #define MDBX_DATA_VERSION 3
 /* The version number for a database's lockfile format. */
-#define MDBX_LOCK_VERSION 4
+#define MDBX_LOCK_VERSION 5
 
 /* handle for the DB used to track free pages. */
 #define FREE_DBI 0
@@ -2841,19 +2885,19 @@ typedef struct MDBX_lockinfo {
 
   atomic_txnid_t mti_oldest_reader;
 
-  /* Timestamp of the last steady sync. Value is represented in a suitable
-   * system-dependent form, for example clock_gettime(CLOCK_BOOTTIME) or
-   * clock_gettime(CLOCK_MONOTONIC). */
-  MDBX_atomic_uint64_t mti_sync_timestamp;
+  /* Timestamp of entering an out-of-sync state. Value is represented in a
+   * suitable system-dependent form, for example clock_gettime(CLOCK_BOOTTIME)
+   * or clock_gettime(CLOCK_MONOTONIC). */
+  MDBX_atomic_uint64_t mti_eoos_timestamp;
 
   /* Number un-synced-with-disk pages for auto-sync feature. */
-  atomic_pgno_t mti_unsynced_pages;
-
-  /* Number of page which was discarded last time by madvise(MADV_FREE). */
-  atomic_pgno_t mti_discarded_tail;
+  MDBX_atomic_uint64_t mti_unsynced_pages;
 
   /* Timestamp of the last readers check. */
   MDBX_atomic_uint64_t mti_reader_check_timestamp;
+
+  /* Number of page which was discarded last time by madvise(MADV_FREE). */
+  atomic_pgno_t mti_discarded_tail;
 
   /* Shared anchor for tracking readahead edge and enabled/disabled status. */
   pgno_t mti_readahead_anchor;
@@ -4732,14 +4776,7 @@ static __always_inline bool atomic_cas64(MDBX_atomic_uint64_t *p, uint64_t c,
                                          uint64_t v) {
 #ifdef MDBX_HAVE_C11ATOMICS
   STATIC_ASSERT(sizeof(long long) >= sizeof(uint64_t));
-#ifdef ATOMIC_LLONG_LOCK_FREE
-  STATIC_ASSERT(ATOMIC_LLONG_LOCK_FREE > 0);
-#if ATOMIC_LLONG_LOCK_FREE < 2
   assert(atomic_is_lock_free(MDBX_c11a_rw(uint64_t, p)));
-#endif /* ATOMIC_LLONG_LOCK_FREE < 2 */
-#else  /* defined(ATOMIC_LLONG_LOCK_FREE) */
-  assert(atomic_is_lock_free(MDBX_c11a_rw(uint64_t, p)));
-#endif
   return atomic_compare_exchange_strong(MDBX_c11a_rw(uint64_t, p), &c, v);
 #elif defined(__GNUC__) || defined(__clang__)
   return __sync_bool_compare_and_swap(&p->weak, c, v);
@@ -4758,14 +4795,7 @@ static __always_inline bool atomic_cas32(MDBX_atomic_uint32_t *p, uint32_t c,
                                          uint32_t v) {
 #ifdef MDBX_HAVE_C11ATOMICS
   STATIC_ASSERT(sizeof(int) >= sizeof(uint32_t));
-#ifdef ATOMIC_INT_LOCK_FREE
-  STATIC_ASSERT(ATOMIC_INT_LOCK_FREE > 0);
-#if ATOMIC_INT_LOCK_FREE < 2
   assert(atomic_is_lock_free(MDBX_c11a_rw(uint32_t, p)));
-#endif
-#else
-  assert(atomic_is_lock_free(MDBX_c11a_rw(uint32_t, p)));
-#endif
   return atomic_compare_exchange_strong(MDBX_c11a_rw(uint32_t, p), &c, v);
 #elif defined(__GNUC__) || defined(__clang__)
   return __sync_bool_compare_and_swap(&p->weak, c, v);
@@ -4784,14 +4814,7 @@ static __always_inline uint32_t atomic_add32(MDBX_atomic_uint32_t *p,
                                              uint32_t v) {
 #ifdef MDBX_HAVE_C11ATOMICS
   STATIC_ASSERT(sizeof(int) >= sizeof(uint32_t));
-#ifdef ATOMIC_INT_LOCK_FREE
-  STATIC_ASSERT(ATOMIC_INT_LOCK_FREE > 0);
-#if ATOMIC_INT_LOCK_FREE < 2
   assert(atomic_is_lock_free(MDBX_c11a_rw(uint32_t, p)));
-#endif
-#else
-  assert(atomic_is_lock_free(MDBX_c11a_rw(uint32_t, p)));
-#endif
   return atomic_fetch_add(MDBX_c11a_rw(uint32_t, p), v);
 #elif defined(__GNUC__) || defined(__clang__)
   return __sync_fetch_and_add(&p->weak, v);
@@ -8300,6 +8323,8 @@ __must_check_result static int iov_write(iov_ctx_t *ctx) {
 #if MDBX_ENABLE_PGOP_STAT
   ctx->env->me_lck->mti_pgop_stat.wops.weak += r.wops;
 #endif /* MDBX_ENABLE_PGOP_STAT */
+  if (!ctx->env->me_lck->mti_eoos_timestamp.weak)
+    ctx->env->me_lck->mti_eoos_timestamp.weak = osal_monotime();
   ctx->err = r.err;
   if (unlikely(ctx->err != MDBX_SUCCESS))
     ERROR("Write error: %s", mdbx_strerror(ctx->err));
@@ -10587,6 +10612,7 @@ static pgr_t page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
             atomic_load32(&env->me_lck->mti_autosync_threshold, mo_Relaxed);
         const uint64_t autosync_period =
             atomic_load64(&env->me_lck->mti_autosync_period, mo_Relaxed);
+        uint64_t eoos_timestamp;
         /* wipe the last steady-point if one of:
          *  - UTTERLY_NOSYNC mode AND auto-sync threshold is NOT specified
          *  - UTTERLY_NOSYNC mode AND free space at steady-point is exhausted
@@ -10606,13 +10632,12 @@ static pgr_t page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
                            meta_prefer_steady(env, &txn->tw.troika).ptr_c);
         } else if ((flags & (MDBX_ALLOC_BACKLOG | MDBX_ALLOC_NEW)) == 0 ||
                    (autosync_threshold &&
-                    atomic_load32(&env->me_lck->mti_unsynced_pages,
+                    atomic_load64(&env->me_lck->mti_unsynced_pages,
                                   mo_Relaxed) >= autosync_threshold) ||
                    (autosync_period &&
-                    osal_monotime() -
-                            atomic_load64(&env->me_lck->mti_sync_timestamp,
-                                          mo_Relaxed) >=
-                        autosync_period) ||
+                    (eoos_timestamp = atomic_load64(
+                         &env->me_lck->mti_eoos_timestamp, mo_Relaxed)) &&
+                    osal_monotime() - eoos_timestamp >= autosync_period) ||
                    next >= txn->mt_geo.upper ||
                    (next >= txn->mt_end_pgno &&
                     (autosync_threshold | autosync_period) == 0)) {
@@ -11111,8 +11136,8 @@ retry:;
     const meta_troika_t troika = meta_tap(env);
     head = meta_recent(env, &troika);
   }
-  const pgno_t unsynced_pages =
-      atomic_load32(&env->me_lck->mti_unsynced_pages, mo_Relaxed);
+  const uint64_t unsynced_pages =
+      atomic_load64(&env->me_lck->mti_unsynced_pages, mo_Relaxed);
   if (unsynced_pages == 0) {
     const uint32_t synched_meta_txnid_u32 =
         atomic_load32(&env->me_lck->mti_meta_sync_txnid, mo_Relaxed);
@@ -11120,15 +11145,16 @@ retry:;
       goto bailout;
   }
 
-  const pgno_t autosync_threshold =
+  const size_t autosync_threshold =
       atomic_load32(&env->me_lck->mti_autosync_threshold, mo_Relaxed);
   const uint64_t autosync_period =
       atomic_load64(&env->me_lck->mti_autosync_period, mo_Relaxed);
+  uint64_t eoos_timestamp;
   if (force || (autosync_threshold && unsynced_pages >= autosync_threshold) ||
       (autosync_period &&
-       osal_monotime() -
-               atomic_load64(&env->me_lck->mti_sync_timestamp, mo_Relaxed) >=
-           autosync_period))
+       (eoos_timestamp =
+            atomic_load64(&env->me_lck->mti_eoos_timestamp, mo_Relaxed)) &&
+       osal_monotime() - eoos_timestamp >= autosync_period))
     flags &= MDBX_WRITEMAP /* clear flags for full steady sync */;
 
   if (!inside_txn) {
@@ -11196,7 +11222,7 @@ retry:;
   eASSERT(env, !inside_txn || (flags & MDBX_SHRINK_ALLOWED) == 0);
 
   if (!head.is_steady || ((flags & MDBX_SAFE_NOSYNC) == 0 && unsynced_pages)) {
-    DEBUG("meta-head %" PRIaPGNO ", %s, sync_pending %" PRIaPGNO,
+    DEBUG("meta-head %" PRIaPGNO ", %s, sync_pending %" PRIu64,
           data_page(head.ptr_c)->mp_pgno, durable_caption(head.ptr_c),
           unsynced_pages);
     MDBX_meta meta = *head.ptr_c;
@@ -15211,13 +15237,14 @@ static int sync_locked(MDBX_env *env, unsigned flags, MDBX_meta *const pending,
         atomic_load32(&env->me_lck->mti_autosync_threshold, mo_Relaxed);
     const uint64_t autosync_period =
         atomic_load64(&env->me_lck->mti_autosync_period, mo_Relaxed);
+    uint64_t eoos_timestamp;
     if ((autosync_threshold &&
-         atomic_load32(&env->me_lck->mti_unsynced_pages, mo_Relaxed) >=
+         atomic_load64(&env->me_lck->mti_unsynced_pages, mo_Relaxed) >=
              autosync_threshold) ||
         (autosync_period &&
-         osal_monotime() -
-                 atomic_load64(&env->me_lck->mti_sync_timestamp, mo_Relaxed) >=
-             autosync_period))
+         (eoos_timestamp =
+              atomic_load64(&env->me_lck->mti_eoos_timestamp, mo_Relaxed)) &&
+         osal_monotime() - eoos_timestamp >= autosync_period))
       flags &= MDBX_WRITEMAP | MDBX_SHRINK_ALLOWED; /* force steady */
   }
 
@@ -15329,7 +15356,7 @@ static int sync_locked(MDBX_env *env, unsigned flags, MDBX_meta *const pending,
 
   /* LY: step#1 - sync previously written/updated data-pages */
   rc = MDBX_RESULT_FALSE /* carry steady */;
-  if (atomic_load32(&env->me_lck->mti_unsynced_pages, mo_Relaxed)) {
+  if (atomic_load64(&env->me_lck->mti_unsynced_pages, mo_Relaxed)) {
     eASSERT(env, ((flags ^ env->me_flags) & MDBX_WRITEMAP) == 0);
     enum osal_syncmode_bits mode_bits = MDBX_SYNC_NONE;
     unsigned sync_op = 0;
@@ -15364,10 +15391,9 @@ static int sync_locked(MDBX_env *env, unsigned flags, MDBX_meta *const pending,
 
   /* Steady or Weak */
   if (rc == MDBX_RESULT_FALSE /* carry steady */) {
-    atomic_store64(&env->me_lck->mti_sync_timestamp, osal_monotime(),
-                   mo_Relaxed);
     unaligned_poke_u64(4, pending->mm_sign, meta_sign(pending));
-    atomic_store32(&env->me_lck->mti_unsynced_pages, 0, mo_Relaxed);
+    atomic_store64(&env->me_lck->mti_eoos_timestamp, 0, mo_Relaxed);
+    atomic_store64(&env->me_lck->mti_unsynced_pages, 0, mo_Relaxed);
   } else {
     assert(rc == MDBX_RESULT_TRUE /* carry non-steady */);
     unaligned_poke_u64(4, pending->mm_sign, MDBX_DATASIGN_WEAK);
@@ -16522,8 +16548,9 @@ __cold static int setup_dxb(MDBX_env *env, const int lck_rc,
                 "rollback NOT needed, steady-sync NEEDED%s",
                 "opening after an unclean shutdown", bootid.x, bootid.y, "");
         header = clone;
-        atomic_store32(&env->me_lck->mti_unsynced_pages, header.mm_geo.next,
-                       mo_Relaxed);
+        env->me_lck->mti_unsynced_pages.weak = header.mm_geo.next;
+        if (!env->me_lck->mti_eoos_timestamp.weak)
+          env->me_lck->mti_eoos_timestamp.weak = osal_monotime();
         break;
       }
       if (unlikely(!prefer_steady.is_steady)) {
@@ -24398,30 +24425,25 @@ LIBMDBX_API int mdbx_env_copyW(MDBX_env *env, const wchar_t *dest_path,
 #endif
   );
 
-  if (rc == MDBX_SUCCESS) {
 #if defined(_WIN32) || defined(_WIN64)
-    OVERLAPPED ov;
-    memset(&ov, 0, sizeof(ov));
-    if (!LockFileEx(newfd, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
-                    0, 0, INT32_MAX, &ov))
-      rc = GetLastError();
+  /* no locking required since the file opened with ShareMode == 0 */
 #else
-    struct flock lock_op;
+  if (rc == MDBX_SUCCESS) {
+    MDBX_STRUCT_FLOCK lock_op;
     memset(&lock_op, 0, sizeof(lock_op));
     lock_op.l_type = F_WRLCK;
     lock_op.l_whence = SEEK_SET;
     lock_op.l_start = 0;
-    lock_op.l_len =
-        (sizeof(lock_op.l_len) > 4 ? INT64_MAX : INT32_MAX) & ~(size_t)0xffff;
-    if (fcntl(newfd, F_SETLK, &lock_op)
+    lock_op.l_len = OFF_T_MAX;
+    if (MDBX_FCNTL(newfd, MDBX_F_SETLK, &lock_op)
 #if (defined(__linux__) || defined(__gnu_linux__)) && defined(LOCK_EX) &&      \
     (!defined(__ANDROID_API__) || __ANDROID_API__ >= 24)
         || flock(newfd, LOCK_EX | LOCK_NB)
 #endif /* Linux */
     )
       rc = errno;
-#endif /* Windows / POSIX */
   }
+#endif /* Windows / POSIX */
 
   if (rc == MDBX_SUCCESS)
     rc = mdbx_env_copy2fd(env, newfd, flags);
@@ -24817,8 +24839,8 @@ __cold static int fetch_envinfo_ex(const MDBX_env *env, const MDBX_txn *txn,
   arg->mi_geo.upper = pgno2bytes(env, txn_meta->mm_geo.upper);
   arg->mi_geo.shrink = pgno2bytes(env, pv2pages(txn_meta->mm_geo.shrink_pv));
   arg->mi_geo.grow = pgno2bytes(env, pv2pages(txn_meta->mm_geo.grow_pv));
-  const pgno_t unsynced_pages =
-      atomic_load32(&env->me_lck->mti_unsynced_pages, mo_Relaxed) +
+  const uint64_t unsynced_pages =
+      atomic_load64(&env->me_lck->mti_unsynced_pages, mo_Relaxed) +
       (atomic_load32(&env->me_lck->mti_meta_sync_txnid, mo_Relaxed) !=
        (uint32_t)arg->mi_recent_txnid);
 
@@ -24833,9 +24855,9 @@ __cold static int fetch_envinfo_ex(const MDBX_env *env, const MDBX_txn *txn,
   arg->mi_sys_pagesize = env->me_os_psize;
 
   if (likely(bytes > size_before_bootid)) {
-    arg->mi_unsync_volume = pgno2bytes(env, unsynced_pages);
+    arg->mi_unsync_volume = pgno2bytes(env, (size_t)unsynced_pages);
     const uint64_t monotime_now = osal_monotime();
-    uint64_t ts = atomic_load64(&lck->mti_sync_timestamp, mo_Relaxed);
+    uint64_t ts = atomic_load64(&lck->mti_eoos_timestamp, mo_Relaxed);
     arg->mi_since_sync_seconds16dot16 =
         ts ? osal_monotime_to_16dot16_noUnderflow(monotime_now - ts) : 0;
     ts = atomic_load64(&lck->mti_reader_check_timestamp, mo_Relaxed);
@@ -25577,8 +25599,8 @@ __cold int mdbx_reader_list(const MDBX_env *env, MDBX_reader_list_func *func,
                                                         reader_pages_retired))
                              : 0;
       }
-      rc = func(ctx, ++serial, (unsigned)i, pid, (mdbx_tid_t)tid, txnid, lag,
-                bytes_used, bytes_retained);
+      rc = func(ctx, ++serial, (unsigned)i, pid, (mdbx_tid_t)((intptr_t)tid),
+                txnid, lag, bytes_used, bytes_retained);
       if (unlikely(rc != MDBX_SUCCESS))
         break;
     }
@@ -25813,7 +25835,7 @@ __cold static txnid_t kick_longlived_readers(MDBX_env *env,
             ? pgno2bytes(env, (pgno_t)(head_retired - hold_retired))
             : 0;
     int rc =
-        callback(env, env->me_txn, pid, (mdbx_tid_t)tid, laggard,
+        callback(env, env->me_txn, pid, (mdbx_tid_t)((intptr_t)tid), laggard,
                  (gap < UINT_MAX) ? (unsigned)gap : UINT_MAX, space, retry);
     if (rc < 0)
       /* hsr returned error and/or agree MDBX_MAP_FULL error */
@@ -29995,6 +30017,7 @@ MDBX_INTERNAL_FUNC int osal_mmap(const int flags, osal_mmap_t *map,
     map->limit = 0;
     map->current = 0;
     map->address = nullptr;
+    assert(errno != 0);
     return errno;
   }
   map->limit = limit;
@@ -30033,8 +30056,10 @@ MDBX_INTERNAL_FUNC int osal_munmap(osal_mmap_t *map) {
   if (!NT_SUCCESS(rc))
     ntstatus2errcode(rc);
 #else
-  if (unlikely(munmap(map->address, map->limit)))
+  if (unlikely(munmap(map->address, map->limit))) {
+    assert(errno != 0);
     return errno;
+  }
 #endif /* ! Windows */
 
   map->limit = 0;
@@ -30257,8 +30282,10 @@ retry_mapview:;
   if (limit < map->limit) {
     /* unmap an excess at end of mapping. */
     // coverity[offset_free : FALSE]
-    if (unlikely(munmap(map->dxb + limit, map->limit - limit)))
+    if (unlikely(munmap(map->dxb + limit, map->limit - limit))) {
+      assert(errno != 0);
       return errno;
+    }
     map->limit = limit;
     return rc;
   }
@@ -30270,14 +30297,19 @@ retry_mapview:;
   assert(limit > map->limit);
   uint8_t *ptr = MAP_FAILED;
 
-#if defined(MREMAP_MAYMOVE)
+#if (defined(__linux__) || defined(__gnu_linux__)) && defined(_GNU_SOURCE)
   ptr = mremap(map->address, map->limit, limit,
-               (flags & MDBX_MRESIZE_MAY_MOVE) ? MREMAP_MAYMOVE : 0);
+#if defined(MREMAP_MAYMOVE)
+               (flags & MDBX_MRESIZE_MAY_MOVE) ? MREMAP_MAYMOVE :
+#endif /* MREMAP_MAYMOVE */
+                                               0);
   if (ptr == MAP_FAILED) {
     err = errno;
+    assert(err != 0);
     switch (err) {
     default:
       return err;
+    case 0 /* paranoia */:
     case EAGAIN:
     case ENOMEM:
       return MDBX_UNABLE_EXTEND_MAPSIZE;
@@ -30285,7 +30317,7 @@ retry_mapview:;
       break;
     }
   }
-#endif /* MREMAP_MAYMOVE */
+#endif /* Linux & _GNU_SOURCE */
 
   const unsigned mmap_flags =
       MAP_CONCEAL | MAP_SHARED | MAP_FILE | MAP_NORESERVE |
@@ -30298,17 +30330,22 @@ retry_mapview:;
     ptr = mmap(map->dxb + map->limit, limit - map->limit, mmap_prot,
                mmap_flags | MAP_FIXED_NOREPLACE, map->fd, map->limit);
     if (ptr == map->dxb + map->limit)
+      /* успешно прилепили отображение в конец */
       ptr = map->dxb;
     else if (ptr != MAP_FAILED) {
       /* the desired address is busy, unmap unsuitable one */
-      if (unlikely(munmap(ptr, limit - map->limit)))
+      if (unlikely(munmap(ptr, limit - map->limit))) {
+        assert(errno != 0);
         return errno;
+      }
       ptr = MAP_FAILED;
     } else {
       err = errno;
+      assert(err != 0);
       switch (err) {
       default:
         return err;
+      case 0 /* paranoia */:
       case EAGAIN:
       case ENOMEM:
         return MDBX_UNABLE_EXTEND_MAPSIZE;
@@ -30327,8 +30364,10 @@ retry_mapview:;
       return MDBX_UNABLE_EXTEND_MAPSIZE;
     }
 
-    if (unlikely(munmap(map->address, map->limit)))
+    if (unlikely(munmap(map->address, map->limit))) {
+      assert(errno != 0);
       return errno;
+    }
 
     // coverity[pass_freed_arg : FALSE]
     ptr = mmap(map->address, limit, mmap_prot,
@@ -30372,6 +30411,7 @@ retry_mapview:;
         map->limit = 0;
         map->current = 0;
         map->address = nullptr;
+        assert(errno != 0);
         return errno;
       }
       rc = MDBX_UNABLE_EXTEND_MAPSIZE;
@@ -30398,8 +30438,10 @@ retry_mapview:;
 
 #if MDBX_ENABLE_MADVISE
 #ifdef MADV_DONTFORK
-  if (unlikely(madvise(map->address, map->limit, MADV_DONTFORK) != 0))
+  if (unlikely(madvise(map->address, map->limit, MADV_DONTFORK) != 0)) {
+    assert(errno != 0);
     return errno;
+  }
 #endif /* MADV_DONTFORK */
 #ifdef MADV_NOHUGEPAGE
   (void)madvise(map->address, map->limit, MADV_NOHUGEPAGE);
@@ -30408,6 +30450,9 @@ retry_mapview:;
 
 #endif /* POSIX / Windows */
 
+  assert(rc != MDBX_SUCCESS ||
+         (map->address != nullptr && map->address != MAP_FAILED &&
+          map->current == size && map->limit == limit));
   return rc;
 }
 
@@ -31127,9 +31172,9 @@ __dll_export
         0,
         12,
         1,
-        55,
-        {"2022-10-10T23:23:40+03:00", "ff929a0261600dce54afb9d7a7cfebbcdcbf64aa", "8501286aaffea39a142529db135dd1ba941ee2fe",
-         "v0.12.1-55-g8501286a"},
+        65,
+        {"2022-10-14T13:29:04+03:00", "105f478f734a33ced3015933e80cf9ce2d6b99c3", "a5e8187e6d071753ea64310c979b65c8c67d3824",
+         "v0.12.1-65-ga5e8187e"},
         sourcery};
 
 __dll_export
@@ -32198,25 +32243,20 @@ __cold static void choice_fcntl(void) {
                            of reliability reasons */
 #endif                  /* linux */
   ) {
-    op_setlk = F_OFD_SETLK;
-    op_setlkw = F_OFD_SETLKW;
-    op_getlk = F_OFD_GETLK;
+    op_setlk = MDBX_F_OFD_SETLK;
+    op_setlkw = MDBX_F_OFD_SETLKW;
+    op_getlk = MDBX_F_OFD_GETLK;
     return;
   }
-  op_setlk = F_SETLK;
-  op_setlkw = F_SETLKW;
-  op_getlk = F_GETLK;
+  op_setlk = MDBX_F_SETLK;
+  op_setlkw = MDBX_F_SETLKW;
+  op_getlk = MDBX_F_GETLK;
 }
 #else
-#define op_setlk F_SETLK
-#define op_setlkw F_SETLKW
-#define op_getlk F_GETLK
+#define op_setlk MDBX_F_SETLK
+#define op_setlkw MDBX_F_SETLKW
+#define op_getlk MDBX_F_GETLK
 #endif /* MDBX_USE_OFDLOCKS */
-
-#ifndef OFF_T_MAX
-#define OFF_T_MAX                                                              \
-  (((sizeof(off_t) > 4) ? INT64_MAX : INT32_MAX) & ~(size_t)0xffff)
-#endif
 
 static int lck_op(const mdbx_filehandle_t fd, int cmd, const int lck,
                   const off_t offset, off_t len) {
@@ -32240,7 +32280,7 @@ static int lck_op(const mdbx_filehandle_t fd, int cmd, const int lck,
   assert((uint64_t)((off_t)((uint64_t)offset + (uint64_t)len)) ==
          ((uint64_t)offset + (uint64_t)len));
   for (;;) {
-    struct flock lock_op;
+    MDBX_STRUCT_FLOCK lock_op;
     STATIC_ASSERT_MSG(sizeof(off_t) <= sizeof(lock_op.l_start) &&
                           sizeof(off_t) <= sizeof(lock_op.l_len) &&
                           OFF_T_MAX == (off_t)OFF_T_MAX,
@@ -32252,7 +32292,7 @@ static int lck_op(const mdbx_filehandle_t fd, int cmd, const int lck,
     lock_op.l_whence = SEEK_SET;
     lock_op.l_start = offset;
     lock_op.l_len = len;
-    int rc = fcntl(fd, cmd, &lock_op);
+    int rc = MDBX_FCNTL(fd, cmd, &lock_op);
     jitter4testing(true);
     if (rc != -1) {
       if (cmd == op_getlk) {
@@ -32266,18 +32306,18 @@ static int lck_op(const mdbx_filehandle_t fd, int cmd, const int lck,
     }
     rc = errno;
 #if MDBX_USE_OFDLOCKS
-    if (rc == EINVAL &&
-        (cmd == F_OFD_SETLK || cmd == F_OFD_SETLKW || cmd == F_OFD_GETLK)) {
+    if (rc == EINVAL && (cmd == MDBX_F_OFD_SETLK || cmd == MDBX_F_OFD_SETLKW ||
+                         cmd == MDBX_F_OFD_GETLK)) {
       /* fallback to non-OFD locks */
-      if (cmd == F_OFD_SETLK)
-        cmd = F_SETLK;
-      else if (cmd == F_OFD_SETLKW)
-        cmd = F_SETLKW;
+      if (cmd == MDBX_F_OFD_SETLK)
+        cmd = MDBX_F_SETLK;
+      else if (cmd == MDBX_F_OFD_SETLKW)
+        cmd = MDBX_F_SETLKW;
       else
-        cmd = F_GETLK;
-      op_setlk = F_SETLK;
-      op_setlkw = F_SETLKW;
-      op_getlk = F_GETLK;
+        cmd = MDBX_F_GETLK;
+      op_setlk = MDBX_F_SETLK;
+      op_setlkw = MDBX_F_SETLKW;
+      op_getlk = MDBX_F_GETLK;
       continue;
     }
 #endif /* MDBX_USE_OFDLOCKS */
