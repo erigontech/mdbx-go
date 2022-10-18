@@ -315,15 +315,18 @@ type EnvInfoGeo struct {
 	Grow    uint64
 }
 type EnfInfoPageOps struct {
-	Newly   uint64        /**< Quantity of a new pages added */
-	Cow     uint64        /**< Quantity of pages copied for update */
-	Clone   uint64        /**< Quantity of parent's dirty pages clones for nested transactions */
-	Split   uint64        /**< Page splits */
-	Merge   uint64        /**< Page merges */
-	Spill   uint64        /**< Quantity of spilled dirty pages */
-	Unspill uint64        /**< Quantity of unspilled/reloaded pages */
-	Wops    uint64        /**< Number of explicit write operations (not a pages) to a disk */
-	Gcrtime time.Duration /**< Time spent loading and searching inside GC */
+	Newly    uint64        /**< Quantity of a new pages added */
+	Cow      uint64        /**< Quantity of pages copied for update */
+	Clone    uint64        /**< Quantity of parent's dirty pages clones for nested transactions */
+	Split    uint64        /**< Page splits */
+	Merge    uint64        /**< Page merges */
+	Spill    uint64        /**< Quantity of spilled dirty pages */
+	Unspill  uint64        /**< Quantity of unspilled/reloaded pages */
+	Wops     uint64        /**< Number of explicit write operations (not a pages) to a disk */
+	Gcrtime  time.Duration /**< Time spent loading and searching inside GC */
+	Gcrloops uint64
+	Gcwloops uint64
+	Gcxpages uint64
 }
 
 // EnvInfo contains information an environment.
@@ -378,15 +381,18 @@ func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
 			Grow:    uint64(_info.mi_geo.grow),
 		},
 		PageOps: EnfInfoPageOps{
-			Newly:   uint64(_info.mi_pgop_stat.newly),
-			Cow:     uint64(_info.mi_pgop_stat.cow),
-			Clone:   uint64(_info.mi_pgop_stat.clone),
-			Split:   uint64(_info.mi_pgop_stat.split),
-			Merge:   uint64(_info.mi_pgop_stat.merge),
-			Spill:   uint64(_info.mi_pgop_stat.spill),
-			Unspill: uint64(_info.mi_pgop_stat.unspill),
-			Wops:    uint64(_info.mi_pgop_stat.wops),
-			Gcrtime: toDurationU64(_info.mi_pgop_stat.gcrtime_seconds16dot16),
+			Newly:    uint64(_info.mi_pgop_stat.newly),
+			Cow:      uint64(_info.mi_pgop_stat.cow),
+			Clone:    uint64(_info.mi_pgop_stat.clone),
+			Split:    uint64(_info.mi_pgop_stat.split),
+			Merge:    uint64(_info.mi_pgop_stat.merge),
+			Spill:    uint64(_info.mi_pgop_stat.spill),
+			Unspill:  uint64(_info.mi_pgop_stat.unspill),
+			Wops:     uint64(_info.mi_pgop_stat.wops),
+			Gcrtime:  toDurationU64(_info.mi_pgop_stat.gcrtime_seconds16dot16),
+			Gcrloops: uint64(_info.mi_pgop_stat.gc_rloops),
+			Gcwloops: uint64(_info.mi_pgop_stat.gc_wloops),
+			Gcxpages: uint64(_info.mi_pgop_stat.gc_xpages),
 		},
 		LastPNO:        int64(_info.mi_last_pgno),
 		LastTxnID:      int64(_info.mi_recent_txnid),
