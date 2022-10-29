@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY a8611116cc88e257a4c5b419045cbbe47a0ba034606ad677c74ad479a5e2ebbb_v0_12_1_65_ga5e8187e
+#define MDBX_BUILD_SOURCERY d70a1c281e455f25a8933e713296b918e94683e7a3b4e0e7c0215d203aa31e57_v0_12_1_77_g7d9091e4
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -398,8 +398,10 @@ __extern_C key_t ftok(const char *, int);
 #include <sys/ipc.h>
 #include <sys/mman.h>
 #include <sys/param.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/time.h>
 #include <sys/uio.h>
 
 #endif /*---------------------------------------------------------------------*/
@@ -2726,16 +2728,36 @@ typedef struct {
   MDBX_atomic_uint64_t
       wops; /* Number of explicit write operations (not a pages) to a disk */
   MDBX_atomic_uint64_t
-      gcrtime; /* Time spending for reading/searching GC (aka FreeDB). The
-                  unit/scale is platform-depended, see osal_monotime(). */
-  MDBX_atomic_uint64_t
       msync; /* Number of explicit msync/flush-to-disk operations */
   MDBX_atomic_uint64_t
       fsync; /* Number of explicit fsync/flush-to-disk operations */
 
-  MDBX_atomic_uint64_t gc_rloops;
-  MDBX_atomic_uint64_t gc_wloops;
-  MDBX_atomic_uint64_t gc_xpages;
+  struct {
+    /* Время затраченное на чтение и поиск внтури GC
+     * для целей поддержки и обновления самой GC. */
+    MDBX_atomic_uint64_t self_rtime;
+    /* Время затраченное на чтение и поиск внтури GC
+     * ради данных пользователя. */
+    MDBX_atomic_uint64_t work_rtime;
+
+    /* Количество циклов поиска внутри GC при выделении страниц
+     * для целей поддержки и обновления самой GC. */
+    MDBX_atomic_uint32_t self_rloops;
+    /* Количество циклов поиска внутри GC при выделении страниц
+     * ради данных пользователя. */
+    MDBX_atomic_uint32_t work_rloops;
+
+    /* Количество запросов на выделение последовательностей страниц
+     * для самой GC. */
+    MDBX_atomic_uint32_t self_xpages;
+    /* Количество запросов на выделение последовательностей страниц
+     * ради данных пользователя. */
+    MDBX_atomic_uint32_t work_xpages;
+
+    /* Количество итераций обновления GC,
+     * больше 1 если были повторы/перезапуски. */
+    MDBX_atomic_uint32_t self_wloops;
+  } gc_details;
 } MDBX_pgop_stat_t;
 #endif /* MDBX_ENABLE_PGOP_STAT */
 
@@ -2867,6 +2889,11 @@ typedef struct MDBX_lockinfo {
 
   /* Marker to distinguish uniqueness of DB/CLK. */
   MDBX_atomic_uint64_t mti_bait_uniqueness;
+
+  /* Counter of processes which had mlock()'ed some of mmapped DB pages.
+   * Non-zero means at least one process lock at leat one page,
+   * and therefore madvise() could return EINVAL. */
+  MDBX_atomic_uint32_t mti_mlock_counter;
 
   MDBX_ALIGNAS(MDBX_CACHELINE_SIZE) /* cacheline ----------------------------*/
 
@@ -3306,7 +3333,8 @@ struct MDBX_env {
   unsigned me_psize;          /* DB page size, initialized from me_os_psize */
   unsigned me_leaf_nodemax;   /* max size of a leaf-node */
   unsigned me_branch_nodemax; /* max size of a branch-node */
-  uint8_t me_psize2log;       /* log2 of DB page size */
+  atomic_pgno_t me_mlocked_pgno;
+  uint8_t me_psize2log; /* log2 of DB page size */
   int8_t me_stuck_meta; /* recovery-only: target meta page or less that zero */
   uint16_t me_merge_threshold,
       me_merge_threshold_gc;  /* pages emptier than this are candidates for
@@ -3716,12 +3744,12 @@ typedef struct MDBX_node {
 #error "Oops, some flags overlapped or wrong"
 #endif
 
-/* max number of pages to commit in one writev() call */
-#define MDBX_COMMIT_PAGES 64
-#if defined(IOV_MAX) && IOV_MAX < MDBX_COMMIT_PAGES /* sysconf(_SC_IOV_MAX) */
-#undef MDBX_COMMIT_PAGES
-#define MDBX_COMMIT_PAGES IOV_MAX
-#endif
+/* Max length of iov-vector passed to writev() call, used for auxilary writes */
+#define MDBX_AUXILARY_IOV_MAX 64
+#if defined(IOV_MAX) && IOV_MAX < MDBX_AUXILARY_IOV_MAX
+#undef MDBX_AUXILARY_IOV_MAX
+#define MDBX_AUXILARY_IOV_MAX IOV_MAX
+#endif /* MDBX_AUXILARY_IOV_MAX */
 
 /*
  *                /
@@ -7885,15 +7913,15 @@ __cold static void kill_page(MDBX_txn *txn, MDBX_page *mp, pgno_t pgno,
     if ((txn->mt_flags & MDBX_WRITEMAP) == 0)
       osal_pwrite(env->me_lazy_fd, mp, bytes, pgno2bytes(env, pgno));
   } else {
-    struct iovec iov[MDBX_COMMIT_PAGES];
+    struct iovec iov[MDBX_AUXILARY_IOV_MAX];
     iov[0].iov_len = env->me_psize;
     iov[0].iov_base = (char *)env->me_pbuf + env->me_psize;
     size_t iov_off = pgno2bytes(env, pgno), n = 1;
     while (--npages) {
       iov[n] = iov[0];
-      if (++n == MDBX_COMMIT_PAGES) {
-        osal_pwritev(env->me_lazy_fd, iov, MDBX_COMMIT_PAGES, iov_off);
-        iov_off += pgno2bytes(env, MDBX_COMMIT_PAGES);
+      if (++n == MDBX_AUXILARY_IOV_MAX) {
+        osal_pwritev(env->me_lazy_fd, iov, MDBX_AUXILARY_IOV_MAX, iov_off);
+        iov_off += pgno2bytes(env, MDBX_AUXILARY_IOV_MAX);
         n = 0;
       }
     }
@@ -9399,7 +9427,7 @@ MDBX_MAYBE_UNUSED static __always_inline int ignore_enosys(int err) {
 
 #if MDBX_ENABLE_MADVISE
 /* Turn on/off readahead. It's harmful when the DB is larger than RAM. */
-__cold static int set_readahead(MDBX_env *env, const pgno_t edge,
+__cold static int set_readahead(const MDBX_env *env, const pgno_t edge,
                                 const bool enable, const bool force_whole) {
   eASSERT(env, edge >= NUM_METAS && edge <= MAX_PAGENO + 1);
   eASSERT(env, (enable & 1) == (enable != 0));
@@ -9525,6 +9553,82 @@ __cold static int set_readahead(MDBX_env *env, const pgno_t edge,
 }
 #endif /* MDBX_ENABLE_MADVISE */
 
+__cold static void update_mlocked(const MDBX_env *env,
+                                  const pgno_t new_aligned_mlocked_pgno,
+                                  const bool lock_not_release) {
+  for (;;) {
+    const pgno_t mlock_pgno_snap =
+        atomic_load32(&env->me_mlocked_pgno, mo_AcquireRelease);
+    eASSERT(env, pgno_align2os_pgno(env, mlock_pgno_snap) == mlock_pgno_snap);
+    eASSERT(env, pgno_align2os_pgno(env, new_aligned_mlocked_pgno) ==
+                     new_aligned_mlocked_pgno);
+    if (lock_not_release ? (mlock_pgno_snap >= new_aligned_mlocked_pgno)
+                         : (mlock_pgno_snap <= new_aligned_mlocked_pgno))
+      break;
+    if (likely(atomic_cas32(&((MDBX_env *)env)->me_mlocked_pgno,
+                            mlock_pgno_snap, new_aligned_mlocked_pgno)))
+      for (;;) {
+        MDBX_atomic_uint32_t *const mlock_counter =
+            &env->me_lck->mti_mlock_counter;
+        const uint32_t snap_counter = atomic_load32(mlock_counter, mo_Relaxed);
+        if (mlock_pgno_snap == 0 && snap_counter < INT_MAX) {
+          eASSERT(env, lock_not_release);
+          if (unlikely(
+                  !atomic_cas32(mlock_counter, snap_counter, snap_counter + 1)))
+            continue;
+        }
+        if (new_aligned_mlocked_pgno == 0 && snap_counter > 0) {
+          eASSERT(env, !lock_not_release);
+          if (unlikely(
+                  !atomic_cas32(mlock_counter, snap_counter, snap_counter - 1)))
+            continue;
+        }
+        NOTICE("%s-pages %u..%u, mlocked-process(es) %u -> %u",
+               lock_not_release ? "lock" : "unlock",
+               lock_not_release ? mlock_pgno_snap : new_aligned_mlocked_pgno,
+               lock_not_release ? new_aligned_mlocked_pgno : mlock_pgno_snap,
+               snap_counter, atomic_load32(mlock_counter, mo_Relaxed));
+        return;
+      }
+  }
+}
+
+__cold static void munlock_after(const MDBX_env *env, const pgno_t aligned_pgno,
+                                 const size_t end_bytes) {
+  if (atomic_load32(&env->me_mlocked_pgno, mo_AcquireRelease) > aligned_pgno) {
+    int err = MDBX_ENOSYS;
+    const size_t munlock_begin = pgno2bytes(env, aligned_pgno);
+    const size_t munlock_size = end_bytes - munlock_begin;
+    eASSERT(env, end_bytes % env->me_os_psize == 0 &&
+                     munlock_begin % env->me_os_psize == 0 &&
+                     munlock_size % env->me_os_psize == 0);
+#if defined(_WIN32) || defined(_WIN64)
+    err = VirtualUnlock(env->me_map + munlock_begin, munlock_size)
+              ? MDBX_SUCCESS
+              : (int)GetLastError();
+    if (err == ERROR_NOT_LOCKED)
+      err = MDBX_SUCCESS;
+#elif defined(_POSIX_MEMLOCK_RANGE)
+    err = munlock(env->me_map + munlock_begin, munlock_size) ? errno
+                                                             : MDBX_SUCCESS;
+#endif
+    if (likely(err == MDBX_SUCCESS))
+      update_mlocked(env, aligned_pgno, false);
+    else {
+#if defined(_WIN32) || defined(_WIN64)
+      WARNING("VirtualUnlock(%zu, %zu) error %d", munlock_begin, munlock_size,
+              err);
+#else
+      WARNING("munlock(%zu, %zu) error %d", munlock_begin, munlock_size, err);
+#endif
+    }
+  }
+}
+
+__cold static void munlock_all(const MDBX_env *env) {
+  munlock_after(env, 0, bytes_align2os_bytes(env, env->me_dxb_mmap.current));
+}
+
 __cold static int map_resize(MDBX_env *env, const pgno_t used_pgno,
                              const pgno_t size_pgno, const pgno_t limit_pgno,
                              const bool implicit) {
@@ -9628,6 +9732,12 @@ __cold static int map_resize(MDBX_env *env, const pgno_t used_pgno,
       goto bailout;
   }
 
+  const pgno_t aligned_munlock_pgno =
+      (mresize_flags & (MDBX_MRESIZE_MAY_UNMAP | MDBX_MRESIZE_MAY_MOVE))
+          ? 0
+          : bytes2pgno(env, size_bytes);
+  munlock_after(env, aligned_munlock_pgno, size_bytes);
+
 #if MDBX_ENABLE_MADVISE
   if (size_bytes < prev_size) {
     NOTICE("resize-MADV_%s %u..%u",
@@ -9658,10 +9768,23 @@ __cold static int map_resize(MDBX_env *env, const pgno_t used_pgno,
                                        prev_size - size_bytes,
                                        POSIX_FADV_DONTNEED));
 #endif /* MADV_DONTNEED */
-    if (unlikely(MDBX_IS_ERROR(rc)))
-      goto bailout;
-    if (env->me_lck->mti_discarded_tail.weak > size_pgno)
-      env->me_lck->mti_discarded_tail.weak = size_pgno;
+    uint32_t snap_mlock_counter;
+    if (unlikely(rc == MDBX_EINVAL) &&
+        (snap_mlock_counter =
+             atomic_load32(&env->me_lck->mti_mlock_counter, mo_Relaxed)) > 0) {
+      NOTICE("%s-madvise: ignore EINVAL (%d) since some pages locked (have %u "
+             "mlocked-process(es))",
+             "resize", rc, snap_mlock_counter);
+    } else {
+      if (unlikely(MDBX_IS_ERROR(rc))) {
+        ERROR("%s-madvise(%s, %zu..%zu), %u mlocked-process(es), err %d",
+              "mresize", "DONTNEED", size_bytes, prev_size - size_bytes,
+              atomic_load32(&env->me_lck->mti_mlock_counter, mo_Relaxed), rc);
+        goto bailout;
+      }
+      if (env->me_lck->mti_discarded_tail.weak > size_pgno)
+        env->me_lck->mti_discarded_tail.weak = size_pgno;
+    }
   }
 #endif /* MDBX_ENABLE_MADVISE */
 
@@ -10347,9 +10470,6 @@ static pgr_t page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
     }
   }
 
-  if (num > 1 && mc->mc_dbi == FREE_DBI)
-    env->me_lck->mti_pgop_stat.gc_xpages.weak += 1;
-
   eASSERT(env, pnl_check_allocated(txn->tw.reclaimed_pglist,
                                    txn->mt_next_pgno - MDBX_ENABLE_REFUND));
   pgno_t pgno, *re_list = txn->tw.reclaimed_pglist;
@@ -10358,6 +10478,11 @@ static pgr_t page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
   txnid_t detent = 0, last = 0;
 #if MDBX_ENABLE_PGOP_STAT
   uint64_t timestamp = 0;
+  if (num > 1)
+    ((mc->mc_dbi == FREE_DBI)
+         ? &env->me_lck->mti_pgop_stat.gc_details.self_xpages
+         : &env->me_lck->mti_pgop_stat.gc_details.work_xpages)
+        ->weak += 1;
 #endif /* MDBX_ENABLE_PGOP_STAT */
 
   while (true) { /* hsr-kick retry loop */
@@ -10414,8 +10539,12 @@ static pgr_t page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
         key.iov_base = &last;
         key.iov_len = sizeof(last);
       } else {
-        if (mc->mc_dbi == FREE_DBI)
-          env->me_lck->mti_pgop_stat.gc_rloops.weak += 1;
+#if MDBX_ENABLE_PGOP_STAT
+        ((mc->mc_dbi == FREE_DBI)
+             ? &env->me_lck->mti_pgop_stat.gc_details.self_rloops
+             : &env->me_lck->mti_pgop_stat.gc_details.work_rloops)
+            ->weak += 1;
+#endif /* MDBX_ENABLE_PGOP_STAT */
       }
 
       if (!(flags & MDBX_LIFORECLAIM)) {
@@ -10564,7 +10693,10 @@ static pgr_t page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
         DEBUG("early-return NULL-page for %s mode", "MDBX_ALLOC_SLOT");
 #if MDBX_ENABLE_PGOP_STAT
         eASSERT(env, timestamp != 0);
-        env->me_lck->mti_pgop_stat.gcrtime.weak += osal_monotime() - timestamp;
+        ((mc->mc_dbi == FREE_DBI)
+             ? &env->me_lck->mti_pgop_stat.gc_details.self_rtime
+             : &env->me_lck->mti_pgop_stat.gc_details.work_rtime)
+            ->weak += osal_monotime() - timestamp;
 #endif /* MDBX_ENABLE_PGOP_STAT */
         ret.err = MDBX_SUCCESS;
         ret.page = NULL;
@@ -10702,7 +10834,10 @@ static pgr_t page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
   fail:
 #if MDBX_ENABLE_PGOP_STAT
     if (timestamp)
-      env->me_lck->mti_pgop_stat.gcrtime.weak += osal_monotime() - timestamp;
+      ((mc->mc_dbi == FREE_DBI)
+           ? &env->me_lck->mti_pgop_stat.gc_details.self_rtime
+           : &env->me_lck->mti_pgop_stat.gc_details.work_rtime)
+          ->weak += osal_monotime() - timestamp;
 #endif /* MDBX_ENABLE_PGOP_STAT */
     eASSERT(env, pnl_check_allocated(txn->tw.reclaimed_pglist,
                                      txn->mt_next_pgno - MDBX_ENABLE_REFUND));
@@ -10730,8 +10865,13 @@ done:
   eASSERT(env, !(flags & MDBX_ALLOC_SLOT));
   ENSURE(env, pgno >= NUM_METAS);
 #if MDBX_ENABLE_PGOP_STAT
-  if (likely(timestamp))
-    env->me_lck->mti_pgop_stat.gcrtime.weak += osal_monotime() - timestamp;
+  if (likely(timestamp)) {
+    ((mc->mc_dbi == FREE_DBI)
+         ? &env->me_lck->mti_pgop_stat.gc_details.self_rtime
+         : &env->me_lck->mti_pgop_stat.gc_details.work_rtime)
+        ->weak += osal_monotime() - timestamp;
+    timestamp = 0;
+  }
 #endif /* MDBX_ENABLE_PGOP_STAT */
   if (unlikely(flags & MDBX_ALLOC_RESERVE)) {
     DEBUG("return NULL for %u pages %s reservation", num, "gc-slot/backlog");
@@ -14008,7 +14148,9 @@ bailout:
   txn->mt_cursors[FREE_DBI] = ctx->cursor.outer.mc_next;
 
   MDBX_PNL_SETSIZE(txn->tw.reclaimed_pglist, 0);
-  env->me_lck->mti_pgop_stat.gc_wloops.weak += ctx->loop;
+#if MDBX_ENABLE_PGOP_STAT
+  env->me_lck->mti_pgop_stat.gc_details.self_wloops.weak += ctx->loop;
+#endif /* MDBX_ENABLE_PGOP_STAT */
   TRACE("<<< %zu loops, rc = %d", ctx->loop, rc);
   return rc;
 }
@@ -14780,6 +14922,36 @@ provide_latency:
         (ts_2 && AUDIT_ENABLED()) ? osal_monotime_to_16dot16(ts_3 - ts_2) : 0;
     latency->write = (ts_3 && ts_4) ? osal_monotime_to_16dot16(ts_4 - ts_3) : 0;
     latency->sync = (ts_4 && ts_5) ? osal_monotime_to_16dot16(ts_5 - ts_4) : 0;
+
+#if MDBX_ENABLE_PGOP_STAT
+    MDBX_pgop_stat_t *const ptr = &env->me_lck->mti_pgop_stat;
+    latency->gc_details.work_rtime =
+        osal_monotime_to_16dot16(ptr->gc_details.work_rtime.weak);
+    latency->gc_details.work_rloops = ptr->gc_details.work_rloops.weak;
+    latency->gc_details.work_xpages = ptr->gc_details.work_xpages.weak;
+    ptr->gc_details.work_rtime.weak = 0;
+    ptr->gc_details.work_rloops.weak = 0;
+    ptr->gc_details.work_xpages.weak = 0;
+
+    latency->gc_details.self_rtime =
+        osal_monotime_to_16dot16(ptr->gc_details.self_rtime.weak);
+    latency->gc_details.self_rloops = ptr->gc_details.self_rloops.weak;
+    latency->gc_details.self_xpages = ptr->gc_details.self_xpages.weak;
+    latency->gc_details.self_wloops = ptr->gc_details.self_wloops.weak;
+    ptr->gc_details.self_rtime.weak = 0;
+    ptr->gc_details.self_rloops.weak = 0;
+    ptr->gc_details.self_xpages.weak = 0;
+    ptr->gc_details.self_wloops.weak = 0;
+#else
+    latency->gc_details.self_rtime = 0;
+    latency->gc_details.work_rtime = 0;
+    latency->gc_details.self_rloops = 0;
+    latency->gc_details.work_rloops = 0;
+    latency->gc_details.self_xpages = 0;
+    latency->gc_details.work_xpages = 0;
+    latency->gc_details.self_wloops = 0;
+#endif /* MDBX_ENABLE_PGOP_STAT */
+
     const uint64_t ts_6 = osal_monotime();
     latency->ending = ts_5 ? osal_monotime_to_16dot16(ts_6 - ts_5) : 0;
     latency->whole = osal_monotime_to_16dot16_noUnderflow(ts_6 - ts_0);
@@ -15282,13 +15454,15 @@ static int sync_locked(MDBX_env *env, unsigned flags, MDBX_meta *const pending,
     const pgno_t prev_discarded_pgno =
         atomic_load32(&env->me_lck->mti_discarded_tail, mo_Relaxed);
     if (prev_discarded_pgno >= discard_edge_pgno + bytes2pgno(env, threshold)) {
-      NOTICE("open-MADV_%s %u..%u", "DONTNEED", largest_pgno,
+      NOTICE("shrink-MADV_%s %u..%u", "DONTNEED", largest_pgno,
              prev_discarded_pgno);
       atomic_store32(&env->me_lck->mti_discarded_tail, discard_edge_pgno,
                      mo_Relaxed);
       const size_t prev_discarded_bytes =
           ceil_powerof2(pgno2bytes(env, prev_discarded_pgno), env->me_os_psize);
       ENSURE(env, prev_discarded_bytes > discard_edge_bytes);
+      munlock_after(env, discard_edge_pgno,
+                    bytes_align2os_bytes(env, env->me_dxb_mmap.current));
 #if defined(MADV_DONTNEED)
       int advise = MADV_DONTNEED;
 #if defined(MADV_FREE) &&                                                      \
@@ -15305,8 +15479,23 @@ static int sync_locked(MDBX_env *env, unsigned flags, MDBX_meta *const pending,
           env->me_map + discard_edge_bytes,
           prev_discarded_bytes - discard_edge_bytes, POSIX_MADV_DONTNEED));
 #endif
-      if (unlikely(MDBX_IS_ERROR(err)))
+      uint32_t snap_mlock_counter;
+      if (unlikely(err == MDBX_EINVAL) &&
+          (snap_mlock_counter = atomic_load32(&env->me_lck->mti_mlock_counter,
+                                              mo_Relaxed)) > 0) {
+        NOTICE("%s-madvise: ignore EINVAL (%d) since some pages locked (have "
+               "%u mlocked-process(es))",
+               "shrink", err, snap_mlock_counter);
+      } else if (unlikely(MDBX_IS_ERROR(err))) {
+        ERROR("%s-madvise(%s, %zu..%zu), err %d", "shrink", "DONTNEED",
+              discard_edge_bytes, prev_discarded_bytes - discard_edge_bytes,
+              err);
+        ERROR("%s-madvise(%s, %zu..%zu), %u mlocked-process(es), err %d",
+              "shrink", "DONTNEED", discard_edge_bytes,
+              prev_discarded_bytes - discard_edge_bytes,
+              atomic_load32(&env->me_lck->mti_mlock_counter, mo_Relaxed), err);
         return err;
+      }
     }
 #endif /* MDBX_ENABLE_MADVISE && (MADV_DONTNEED || POSIX_MADV_DONTNEED) */
 
@@ -15372,6 +15561,8 @@ static int sync_locked(MDBX_env *env, unsigned flags, MDBX_meta *const pending,
     if (!MDBX_AVOID_MSYNC && (flags & MDBX_WRITEMAP)) {
 #if MDBX_ENABLE_PGOP_STAT
       env->me_lck->mti_pgop_stat.msync.weak += sync_op;
+#else
+      (void)sync_op;
 #endif /* MDBX_ENABLE_PGOP_STAT */
       rc =
           osal_msync(&env->me_dxb_mmap, 0,
@@ -15379,6 +15570,8 @@ static int sync_locked(MDBX_env *env, unsigned flags, MDBX_meta *const pending,
     } else {
 #if MDBX_ENABLE_PGOP_STAT
       env->me_lck->mti_pgop_stat.fsync.weak += sync_op;
+#else
+      (void)sync_op;
 #endif /* MDBX_ENABLE_PGOP_STAT */
       rc = osal_fsync(env->me_lazy_fd, mode_bits);
     }
@@ -17810,17 +18003,21 @@ __cold static int env_close(MDBX_env *env) {
   }
 
   env->me_flags &= ~ENV_INTERNAL_FLAGS;
-  env->me_lck = nullptr;
   if (flags & MDBX_ENV_TXKEY) {
     rthc_remove(env->me_txkey);
     env->me_txkey = (osal_thread_key_t)0;
   }
 
+  munlock_all(env);
+  osal_ioring_destroy(&env->me_ioring);
+
   lcklist_lock();
   const int rc = lcklist_detach_locked(env);
   lcklist_unlock();
 
-  osal_ioring_destroy(&env->me_ioring);
+  env->me_lck = nullptr;
+  if (env->me_lck_mmap.lck)
+    osal_munmap(&env->me_lck_mmap);
 
   if (env->me_map) {
     osal_munmap(&env->me_dxb_mmap);
@@ -17847,9 +18044,6 @@ __cold static int env_close(MDBX_env *env) {
     (void)osal_closefile(env->me_lazy_fd);
     env->me_lazy_fd = INVALID_HANDLE_VALUE;
   }
-
-  if (env->me_lck_mmap.lck)
-    osal_munmap(&env->me_lck_mmap);
 
   if (env->me_lfd != INVALID_HANDLE_VALUE) {
     (void)osal_closefile(env->me_lfd);
@@ -24194,7 +24388,6 @@ __cold static int env_compact(MDBX_env *env, MDBX_txn *read_txn,
       const size_t chunk = ((size_t)MDBX_ENVCOPY_WRITEBUF < whole_size - offset)
                                ? (size_t)MDBX_ENVCOPY_WRITEBUF
                                : whole_size - offset;
-      /* copy to avoid EFAULT in case swapped-out */
       int rc = osal_write(fd, data_buffer, chunk);
       if (unlikely(rc != MDBX_SUCCESS))
         return rc;
@@ -24253,6 +24446,11 @@ __cold static int env_copy_asis(MDBX_env *env, MDBX_txn *read_txn,
 #if MDBX_USE_COPYFILERANGE
   static bool copyfilerange_unavailable;
   bool not_the_same_filesystem = false;
+  struct statfs statfs_info;
+  if (fstatfs(fd, &statfs_info) ||
+      statfs_info.f_type == /* ECRYPTFS_SUPER_MAGIC */ 0xf15f)
+    /* avoid use copyfilerange_unavailable() to ecryptfs due bugs */
+    not_the_same_filesystem = true;
 #endif /* MDBX_USE_COPYFILERANGE */
   for (size_t offset = meta_bytes; rc == MDBX_SUCCESS && offset < used_size;) {
 #if MDBX_USE_SENDFILE
@@ -24286,7 +24484,9 @@ __cold static int env_copy_asis(MDBX_env *env, MDBX_txn *read_txn,
       if (bytes_copied == 0)
         break;
       rc = errno;
-      if (rc == EXDEV)
+      if (rc == EXDEV || rc == /* workaround for ecryptfs bug(s),
+                                  maybe usefull for others fs */
+                             EINVAL)
         not_the_same_filesystem = true;
       else if (ignore_enosys(rc) == MDBX_RESULT_TRUE)
         copyfilerange_unavailable = true;
@@ -24317,7 +24517,6 @@ __cold static int env_copy_asis(MDBX_env *env, MDBX_txn *read_txn,
             ((size_t)MDBX_ENVCOPY_WRITEBUF < whole_size - offset)
                 ? (size_t)MDBX_ENVCOPY_WRITEBUF
                 : whole_size - offset;
-        /* copy to avoid EFAULT in case swapped-out */
         rc = osal_write(fd, data_buffer, chunk);
         offset += chunk;
       }
@@ -24894,15 +25093,6 @@ __cold static int fetch_envinfo_ex(const MDBX_env *env, const MDBX_txn *txn,
         atomic_load64(&lck->mti_pgop_stat.msync, mo_Relaxed);
     arg->mi_pgop_stat.fsync =
         atomic_load64(&lck->mti_pgop_stat.fsync, mo_Relaxed);
-    arg->mi_pgop_stat.gcrtime_seconds16dot16 = osal_monotime_to_16dot16(
-        atomic_load64(&lck->mti_pgop_stat.gcrtime, mo_Relaxed));
-
-    arg->mi_pgop_stat.gc_rloops =
-        atomic_load64(&lck->mti_pgop_stat.gc_rloops, mo_Relaxed);
-    arg->mi_pgop_stat.gc_wloops =
-        atomic_load64(&lck->mti_pgop_stat.gc_wloops, mo_Relaxed);
-    arg->mi_pgop_stat.gc_xpages =
-        atomic_load64(&lck->mti_pgop_stat.gc_xpages, mo_Relaxed);
 #else
     memset(&arg->mi_pgop_stat, 0, sizeof(arg->mi_pgop_stat));
 #endif /* MDBX_ENABLE_PGOP_STAT*/
@@ -27503,6 +27693,249 @@ __cold int mdbx_env_get_option(const MDBX_env *env, const MDBX_option_t option,
   }
 
   return MDBX_SUCCESS;
+}
+
+static size_t estimate_rss(size_t database_bytes) {
+  return database_bytes + database_bytes / 64 +
+         (512 + MDBX_WORDBITS * 16) * MEGABYTE;
+}
+
+__cold int mdbx_env_warmup(const MDBX_env *env, const MDBX_txn *txn,
+                           MDBX_warmup_flags_t flags,
+                           unsigned timeout_seconds_16dot16) {
+  if (unlikely(env == NULL && txn == NULL))
+    return MDBX_EINVAL;
+  if (unlikely(flags >
+               (MDBX_warmup_force | MDBX_warmup_oomsafe | MDBX_warmup_lock |
+                MDBX_warmup_touchlimit | MDBX_warmup_release)))
+    return MDBX_EINVAL;
+
+  if (txn) {
+    int err = check_txn(txn, MDBX_TXN_BLOCKED - MDBX_TXN_ERROR);
+    if (unlikely(err != MDBX_SUCCESS))
+      return err;
+  }
+  if (env) {
+    int err = check_env(env, false);
+    if (unlikely(err != MDBX_SUCCESS))
+      return err;
+    if (txn && unlikely(txn->mt_env != env))
+      return MDBX_EINVAL;
+  } else {
+    env = txn->mt_env;
+  }
+
+  const uint64_t timeout_monotime =
+      (timeout_seconds_16dot16 && (flags & MDBX_warmup_force))
+          ? osal_monotime() + osal_16dot16_to_monotime(timeout_seconds_16dot16)
+          : 0;
+
+  if (flags & MDBX_warmup_release)
+    munlock_all(env);
+
+  pgno_t used_pgno;
+  if (txn) {
+    used_pgno = txn->mt_geo.next;
+  } else {
+    const meta_troika_t troika = meta_tap(env);
+    used_pgno = meta_recent(env, &troika).ptr_v->mm_geo.next;
+  }
+  const size_t used_range = pgno_align2os_bytes(env, used_pgno);
+  const pgno_t mlock_pgno = bytes2pgno(env, used_range);
+
+  int rc = MDBX_SUCCESS;
+  if (flags & MDBX_warmup_touchlimit) {
+    const size_t estimated_rss = estimate_rss(used_range);
+#if defined(_WIN32) || defined(_WIN64)
+    SIZE_T current_ws_lower, current_ws_upper;
+    if (GetProcessWorkingSetSize(GetCurrentProcess(), &current_ws_lower,
+                                 &current_ws_upper) &&
+        current_ws_lower < estimated_rss) {
+      const SIZE_T ws_lower = estimated_rss;
+      const SIZE_T ws_upper =
+          (MDBX_WORDBITS == 32 && ws_lower > MEGABYTE * 2048)
+              ? ws_lower
+              : ws_lower + MDBX_WORDBITS * MEGABYTE * 32;
+      if (!SetProcessWorkingSetSize(GetCurrentProcess(), ws_lower, ws_upper)) {
+        rc = (int)GetLastError();
+        WARNING("SetProcessWorkingSetSize(%zu, %zu) error %d", ws_lower,
+                ws_upper, rc);
+      }
+    }
+#endif /* Windows */
+#ifdef RLIMIT_RSS
+    struct rlimit rss;
+    if (getrlimit(RLIMIT_RSS, &rss) == 0 && rss.rlim_cur < estimated_rss) {
+      rss.rlim_cur = estimated_rss;
+      if (rss.rlim_max < estimated_rss)
+        rss.rlim_max = used_range;
+      if (setrlimit(RLIMIT_RSS, &rss)) {
+        rc = errno;
+        WARNING("setrlimit(%s, {%zu, %zu}) error %d", "RLIMIT_RSS",
+                (size_t)rss.rlim_cur, (size_t)rss.rlim_max, rc);
+      }
+    }
+#endif /* RLIMIT_RSS */
+#ifdef RLIMIT_MEMLOCK
+    if (flags & MDBX_warmup_lock) {
+      struct rlimit memlock;
+      if (getrlimit(RLIMIT_MEMLOCK, &memlock) == 0 &&
+          memlock.rlim_cur < estimated_rss) {
+        memlock.rlim_cur = estimated_rss;
+        if (memlock.rlim_max < estimated_rss)
+          memlock.rlim_max = estimated_rss;
+        if (setrlimit(RLIMIT_MEMLOCK, &memlock)) {
+          rc = errno;
+          WARNING("setrlimit(%s, {%zu, %zu}) error %d", "RLIMIT_MEMLOCK",
+                  (size_t)memlock.rlim_cur, (size_t)memlock.rlim_max, rc);
+        }
+      }
+    }
+#endif /* RLIMIT_MEMLOCK */
+    (void)estimated_rss;
+  }
+
+#if defined(MLOCK_ONFAULT) &&                                                  \
+    ((defined(_GNU_SOURCE) && __GLIBC_PREREQ(2, 27)) ||                        \
+     (defined(__ANDROID_API__) && __ANDROID_API__ >= 30)) &&                   \
+    (defined(__linux__) || defined(__gnu_linux__))
+  if ((flags & MDBX_warmup_lock) != 0 && linux_kernel_version >= 0x04040000 &&
+      atomic_load32(&env->me_mlocked_pgno, mo_AcquireRelease) < mlock_pgno) {
+    if (mlock2(env->me_map, used_range, MLOCK_ONFAULT)) {
+      rc = errno;
+      WARNING("mlock2(%zu, %s) error %d", used_range, "MLOCK_ONFAULT", rc);
+    } else {
+      update_mlocked(env, mlock_pgno, true);
+      rc = MDBX_SUCCESS;
+    }
+    if (rc != EINVAL)
+      flags -= MDBX_warmup_lock;
+  }
+#endif /* MLOCK_ONFAULT */
+
+  int err = MDBX_ENOSYS;
+#if MDBX_ENABLE_MADVISE
+  err = set_readahead(env, used_pgno, true, true);
+#else
+#if defined(_WIN32) || defined(_WIN64)
+  if (mdbx_PrefetchVirtualMemory) {
+    WIN32_MEMORY_RANGE_ENTRY hint;
+    hint.VirtualAddress = env->me_map;
+    hint.NumberOfBytes = used_range;
+    if (mdbx_PrefetchVirtualMemory(GetCurrentProcess(), 1, &hint, 0))
+      err = MDBX_SUCCESS;
+    else {
+      err = (int)GetLastError();
+      ERROR("%s(%zu) error %d", "PrefetchVirtualMemory", used_range, err);
+    }
+  }
+#endif /* Windows */
+
+#if defined(POSIX_MADV_WILLNEED)
+  err = posix_madvise(env->me_map, used_range, POSIX_MADV_WILLNEED)
+            ? ignore_enosys(errno)
+            : MDBX_SUCCESS;
+#elif defined(MADV_WILLNEED)
+  err = madvise(env->me_map, used_range, MADV_WILLNEED) ? ignore_enosys(errno)
+                                                        : MDBX_SUCCESS;
+#endif
+
+#if defined(F_RDADVISE)
+  if (err) {
+    fcntl(env->me_lazy_fd, F_RDAHEAD, true);
+    struct radvisory hint;
+    hint.ra_offset = 0;
+    hint.ra_count = unlikely(used_range > INT_MAX &&
+                             sizeof(used_range) > sizeof(hint.ra_count))
+                        ? INT_MAX
+                        : (int)used_range;
+    err = fcntl(env->me_lazy_fd, F_RDADVISE, &hint) ? ignore_enosys(errno)
+                                                    : MDBX_SUCCESS;
+    if (err == ENOTTY)
+      err = MDBX_SUCCESS /* Ignore ENOTTY for DB on the ram-disk */;
+  }
+#endif /* F_RDADVISE */
+#endif /* MDBX_ENABLE_MADVISE */
+  if (err != MDBX_SUCCESS && rc == MDBX_SUCCESS)
+    rc = err;
+
+  if ((flags & MDBX_warmup_force) != 0 &&
+      (rc == MDBX_SUCCESS || rc == MDBX_ENOSYS)) {
+    const volatile uint8_t *ptr = env->me_map;
+    size_t offset = 0, unused = 42;
+#if !(defined(_WIN32) || defined(_WIN64))
+    if (flags & MDBX_warmup_oomsafe) {
+      const int null_fd = open("/dev/null", O_WRONLY);
+      if (unlikely(null_fd < 0))
+        rc = errno;
+      else {
+        struct iovec iov[MDBX_AUXILARY_IOV_MAX];
+        for (;;) {
+          unsigned i;
+          for (i = 0; i < MDBX_AUXILARY_IOV_MAX && offset < used_range; ++i) {
+            iov[i].iov_base = (void *)(ptr + offset);
+            iov[i].iov_len = 1;
+            offset += env->me_os_psize;
+          }
+          if (unlikely(writev(null_fd, iov, i) < 0)) {
+            rc = errno;
+            if (rc == EFAULT)
+              rc = ENOMEM;
+            break;
+          }
+          if (offset >= used_range) {
+            rc = MDBX_SUCCESS;
+            break;
+          }
+          if (timeout_seconds_16dot16 && osal_monotime() > timeout_monotime) {
+            rc = MDBX_RESULT_TRUE;
+            break;
+          }
+        }
+        close(null_fd);
+      }
+    } else
+#endif /* Windows */
+      for (;;) {
+        unused += ptr[offset];
+        offset += env->me_os_psize;
+        if (offset >= used_range) {
+          rc = MDBX_SUCCESS;
+          break;
+        }
+        if (timeout_seconds_16dot16 && osal_monotime() > timeout_monotime) {
+          rc = MDBX_RESULT_TRUE;
+          break;
+        }
+      }
+    (void)unused;
+  }
+
+  if ((flags & MDBX_warmup_lock) != 0 &&
+      (rc == MDBX_SUCCESS || rc == MDBX_ENOSYS) &&
+      atomic_load32(&env->me_mlocked_pgno, mo_AcquireRelease) < mlock_pgno) {
+#if defined(_WIN32) || defined(_WIN64)
+    if (VirtualLock(env->me_map, used_range)) {
+      update_mlocked(env, mlock_pgno, true);
+      rc = MDBX_SUCCESS;
+    } else {
+      rc = (int)GetLastError();
+      WARNING("%s(%zu) error %d", "VirtualLock", used_range, rc);
+    }
+#elif defined(_POSIX_MEMLOCK_RANGE)
+    if (mlock(env->me_map, used_range) == 0) {
+      update_mlocked(env, mlock_pgno, true);
+      rc = MDBX_SUCCESS;
+    } else {
+      rc = errno;
+      WARNING("%s(%zu) error %d", "mlock", used_range, rc);
+    }
+#else
+    rc = MDBX_ENOSYS;
+#endif
+  }
+
+  return rc;
 }
 
 __cold void global_ctor(void) {
@@ -31172,9 +31605,9 @@ __dll_export
         0,
         12,
         1,
-        65,
-        {"2022-10-14T13:29:04+03:00", "105f478f734a33ced3015933e80cf9ce2d6b99c3", "a5e8187e6d071753ea64310c979b65c8c67d3824",
-         "v0.12.1-65-ga5e8187e"},
+        77,
+        {"2022-10-29T01:59:09+03:00", "24f5c7ecb2762f5fb5175bd49b8d205615c8cb71", "7d9091e43aa2ddd57c8ef6fb2c1b8c7a43942451",
+         "v0.12.1-77-g7d9091e4"},
         sourcery};
 
 __dll_export

@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY a8611116cc88e257a4c5b419045cbbe47a0ba034606ad677c74ad479a5e2ebbb_v0_12_1_65_ga5e8187e
+#define MDBX_BUILD_SOURCERY d70a1c281e455f25a8933e713296b918e94683e7a3b4e0e7c0215d203aa31e57_v0_12_1_77_g7d9091e4
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -422,8 +422,10 @@ __extern_C key_t ftok(const char *, int);
 #include <sys/ipc.h>
 #include <sys/mman.h>
 #include <sys/param.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/time.h>
 #include <sys/uio.h>
 
 #endif /*---------------------------------------------------------------------*/
@@ -2750,16 +2752,36 @@ typedef struct {
   MDBX_atomic_uint64_t
       wops; /* Number of explicit write operations (not a pages) to a disk */
   MDBX_atomic_uint64_t
-      gcrtime; /* Time spending for reading/searching GC (aka FreeDB). The
-                  unit/scale is platform-depended, see osal_monotime(). */
-  MDBX_atomic_uint64_t
       msync; /* Number of explicit msync/flush-to-disk operations */
   MDBX_atomic_uint64_t
       fsync; /* Number of explicit fsync/flush-to-disk operations */
 
-  MDBX_atomic_uint64_t gc_rloops;
-  MDBX_atomic_uint64_t gc_wloops;
-  MDBX_atomic_uint64_t gc_xpages;
+  struct {
+    /* Время затраченное на чтение и поиск внтури GC
+     * для целей поддержки и обновления самой GC. */
+    MDBX_atomic_uint64_t self_rtime;
+    /* Время затраченное на чтение и поиск внтури GC
+     * ради данных пользователя. */
+    MDBX_atomic_uint64_t work_rtime;
+
+    /* Количество циклов поиска внутри GC при выделении страниц
+     * для целей поддержки и обновления самой GC. */
+    MDBX_atomic_uint32_t self_rloops;
+    /* Количество циклов поиска внутри GC при выделении страниц
+     * ради данных пользователя. */
+    MDBX_atomic_uint32_t work_rloops;
+
+    /* Количество запросов на выделение последовательностей страниц
+     * для самой GC. */
+    MDBX_atomic_uint32_t self_xpages;
+    /* Количество запросов на выделение последовательностей страниц
+     * ради данных пользователя. */
+    MDBX_atomic_uint32_t work_xpages;
+
+    /* Количество итераций обновления GC,
+     * больше 1 если были повторы/перезапуски. */
+    MDBX_atomic_uint32_t self_wloops;
+  } gc_details;
 } MDBX_pgop_stat_t;
 #endif /* MDBX_ENABLE_PGOP_STAT */
 
@@ -2891,6 +2913,11 @@ typedef struct MDBX_lockinfo {
 
   /* Marker to distinguish uniqueness of DB/CLK. */
   MDBX_atomic_uint64_t mti_bait_uniqueness;
+
+  /* Counter of processes which had mlock()'ed some of mmapped DB pages.
+   * Non-zero means at least one process lock at leat one page,
+   * and therefore madvise() could return EINVAL. */
+  MDBX_atomic_uint32_t mti_mlock_counter;
 
   MDBX_ALIGNAS(MDBX_CACHELINE_SIZE) /* cacheline ----------------------------*/
 
@@ -3330,7 +3357,8 @@ struct MDBX_env {
   unsigned me_psize;          /* DB page size, initialized from me_os_psize */
   unsigned me_leaf_nodemax;   /* max size of a leaf-node */
   unsigned me_branch_nodemax; /* max size of a branch-node */
-  uint8_t me_psize2log;       /* log2 of DB page size */
+  atomic_pgno_t me_mlocked_pgno;
+  uint8_t me_psize2log; /* log2 of DB page size */
   int8_t me_stuck_meta; /* recovery-only: target meta page or less that zero */
   uint16_t me_merge_threshold,
       me_merge_threshold_gc;  /* pages emptier than this are candidates for
@@ -3740,12 +3768,12 @@ typedef struct MDBX_node {
 #error "Oops, some flags overlapped or wrong"
 #endif
 
-/* max number of pages to commit in one writev() call */
-#define MDBX_COMMIT_PAGES 64
-#if defined(IOV_MAX) && IOV_MAX < MDBX_COMMIT_PAGES /* sysconf(_SC_IOV_MAX) */
-#undef MDBX_COMMIT_PAGES
-#define MDBX_COMMIT_PAGES IOV_MAX
-#endif
+/* Max length of iov-vector passed to writev() call, used for auxilary writes */
+#define MDBX_AUXILARY_IOV_MAX 64
+#if defined(IOV_MAX) && IOV_MAX < MDBX_AUXILARY_IOV_MAX
+#undef MDBX_AUXILARY_IOV_MAX
+#define MDBX_AUXILARY_IOV_MAX IOV_MAX
+#endif /* MDBX_AUXILARY_IOV_MAX */
 
 /*
  *                /
