@@ -206,6 +206,32 @@ type CommitLatency struct {
 	Sync        time.Duration
 	Ending      time.Duration
 	Whole       time.Duration
+	GCDetails   CommitLatencyGC
+}
+
+type CommitLatencyGC struct {
+	/** \brief Время затраченное на чтение и поиск внтури GC
+	 *  ради данных пользователя. */
+	WorkRtime time.Duration
+	/** \brief Количество циклов поиска внутри GC при выделении страниц
+	 *  ради данных пользователя. */
+	WorkRloops uint32
+	/** \brief Количество запросов на выделение последовательностей страниц
+	 *  ради данных пользователя. */
+	WorkRxpages uint32
+
+	/** \brief Время затраченное на чтение и поиск внтури GC
+	 *  для целей поддержки и обновления самой GC. */
+	SelfRtime time.Duration
+	/** \brief Количество циклов поиска внутри GC при выделении страниц
+	 *  для целей поддержки и обновления самой GC. */
+	SelfRloops uint32
+	/** \brief Количество запросов на выделение последовательностей страниц
+	 *  для самой GC. */
+	SelfXpages uint32
+	/** \brief Количество итераций обновления GC,
+	 *  больше 1 если были повторы/перезапуски. */
+	SelfWloops uint32
 }
 
 func (txn *Txn) commit() (CommitLatency, error) {
@@ -220,6 +246,15 @@ func (txn *Txn) commit() (CommitLatency, error) {
 		Sync:        toDuration(_stat.sync),
 		Ending:      toDuration(_stat.ending),
 		Whole:       toDuration(_stat.whole),
+		GCDetails: CommitLatencyGC{
+			WorkRtime:   toDuration(_stat.gc_details.work_rtime),
+			WorkRloops:  uint32(_stat.gc_details.work_rloops),
+			WorkRxpages: uint32(_stat.gc_details.work_xpages),
+			SelfRtime:   toDuration(_stat.gc_details.self_rtime),
+			SelfRloops:  uint32(_stat.gc_details.self_rloops),
+			SelfXpages:  uint32(_stat.gc_details.self_xpages),
+			SelfWloops:  uint32(_stat.gc_details.self_wloops),
+		},
 	}
 	if ret != success {
 		return s, operrno("mdbx_txn_commit_ex", ret)
@@ -423,10 +458,11 @@ type TxInfo struct {
 }
 
 // scan_rlt   The boolean flag controls the scan of the read lock
-//  table to provide complete information. Such scan
-//  is relatively expensive and you can avoid it
-//  if corresponding fields are not needed.
-//  See description of \ref MDBX_txn_info.
+//
+//	table to provide complete information. Such scan
+//	is relatively expensive and you can avoid it
+//	if corresponding fields are not needed.
+//	See description of \ref MDBX_txn_info.
 func (txn *Txn) Info(scanRlt bool) (*TxInfo, error) {
 	var _stat C.MDBX_txn_info
 	ret := C.mdbx_txn_info(txn._txn, &_stat, C.bool(scanRlt))
