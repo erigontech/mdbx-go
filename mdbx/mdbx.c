@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY d70a1c281e455f25a8933e713296b918e94683e7a3b4e0e7c0215d203aa31e57_v0_12_1_77_g7d9091e4
+#define MDBX_BUILD_SOURCERY ad4007f8ab238b9e5fdab5805ad2acb4577058d69ce1f3ce267a941cf27cde48_v0_12_1_78_gcdf7bc57
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -14588,6 +14588,7 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
   const uint64_t ts_0 = latency ? osal_monotime() : 0;
   uint64_t ts_1 = 0, ts_2 = 0, ts_3 = 0, ts_4 = 0, ts_5 = 0;
 
+  MDBX_env * const env = txn->mt_env;
   int rc = check_txn(txn, MDBX_TXN_FINISHED);
   if (unlikely(rc != MDBX_SUCCESS))
     goto provide_latency;
@@ -14597,7 +14598,6 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
     goto fail;
   }
 
-  MDBX_env *env = txn->mt_env;
 #if MDBX_ENV_CHECKPID
   if (unlikely(env->me_pid != osal_getpid())) {
     env->me_flags |= MDBX_FATAL_ERROR;
@@ -31605,9 +31605,9 @@ __dll_export
         0,
         12,
         1,
-        77,
-        {"2022-10-29T01:59:09+03:00", "24f5c7ecb2762f5fb5175bd49b8d205615c8cb71", "7d9091e43aa2ddd57c8ef6fb2c1b8c7a43942451",
-         "v0.12.1-77-g7d9091e4"},
+        78,
+        {"2022-10-29T08:27:44+03:00", "c00a456f13851c31111a59c26b79de8cbf30f493", "cdf7bc57a355383bd757d35866a3c7348f38bc55",
+         "v0.12.1-78-gcdf7bc57"},
         sourcery};
 
 __dll_export
