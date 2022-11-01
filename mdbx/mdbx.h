@@ -3699,7 +3699,8 @@ struct MDBX_commit_latency {
    * sub-databases records and cursors destroying). */
   uint32_t preparation;
   /** \brief Duration of GC/freeDB handling & updation. */
-  uint32_t gc;
+  uint32_t gc_wallclock;
+  uint32_t gc_cputime;
   /** \brief Duration of internal audit if enabled. */
   uint32_t audit;
   /** \brief Duration of writing dirty/modified data pages to a filesystem,
@@ -3714,6 +3715,9 @@ struct MDBX_commit_latency {
   uint32_t whole;
 
   struct {
+    uint32_t work_rtime_cpu;
+    uint32_t self_rtime_cpu;
+
     /** \brief Время затраченное на чтение и поиск внтури GC
      *  ради данных пользователя. */
     uint32_t work_rtime;

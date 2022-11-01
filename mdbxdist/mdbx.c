@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY ad4007f8ab238b9e5fdab5805ad2acb4577058d69ce1f3ce267a941cf27cde48_v0_12_1_78_gcdf7bc57
+#define MDBX_BUILD_SOURCERY 9661af7b97d5b9aea09691661970c07bb5dfa47896b87f45a52b0f4dfee7e687_v0_12_1_79_geb3ce411
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1595,6 +1595,7 @@ osal_pthread_mutex_lock(pthread_mutex_t *mutex) {
 #endif /* !Windows */
 
 MDBX_INTERNAL_FUNC uint64_t osal_monotime(void);
+MDBX_INTERNAL_FUNC uint64_t osal_cputime(void);
 MDBX_INTERNAL_FUNC uint64_t osal_16dot16_to_monotime(uint32_t seconds_16dot16);
 MDBX_INTERNAL_FUNC uint32_t osal_monotime_to_16dot16(uint64_t monotime);
 
@@ -2733,6 +2734,9 @@ typedef struct {
       fsync; /* Number of explicit fsync/flush-to-disk operations */
 
   struct {
+    MDBX_atomic_uint64_t self_rtime_cpu;
+    MDBX_atomic_uint64_t work_rtime_cpu;
+
     /* Время затраченное на чтение и поиск внтури GC
      * для целей поддержки и обновления самой GC. */
     MDBX_atomic_uint64_t self_rtime;
@@ -10477,6 +10481,7 @@ static pgr_t page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
   pgno_t *range = nullptr;
   txnid_t detent = 0, last = 0;
 #if MDBX_ENABLE_PGOP_STAT
+  uint64_t cpu_timestamp = osal_cputime();
   uint64_t timestamp = 0;
   if (num > 1)
     ((mc->mc_dbi == FREE_DBI)
@@ -10697,6 +10702,10 @@ static pgr_t page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
              ? &env->me_lck->mti_pgop_stat.gc_details.self_rtime
              : &env->me_lck->mti_pgop_stat.gc_details.work_rtime)
             ->weak += osal_monotime() - timestamp;
+        ((mc->mc_dbi == FREE_DBI)
+             ? &env->me_lck->mti_pgop_stat.gc_details.self_rtime_cpu
+             : &env->me_lck->mti_pgop_stat.gc_details.work_rtime_cpu)
+            ->weak += osal_cputime() - timestamp;
 #endif /* MDBX_ENABLE_PGOP_STAT */
         ret.err = MDBX_SUCCESS;
         ret.page = NULL;
@@ -10838,6 +10847,11 @@ static pgr_t page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
            ? &env->me_lck->mti_pgop_stat.gc_details.self_rtime
            : &env->me_lck->mti_pgop_stat.gc_details.work_rtime)
           ->weak += osal_monotime() - timestamp;
+    if (likely(cpu_timestamp))
+      ((mc->mc_dbi == FREE_DBI)
+           ? &env->me_lck->mti_pgop_stat.gc_details.self_rtime_cpu
+           : &env->me_lck->mti_pgop_stat.gc_details.work_rtime_cpu)
+          ->weak += osal_cputime() - cpu_timestamp;
 #endif /* MDBX_ENABLE_PGOP_STAT */
     eASSERT(env, pnl_check_allocated(txn->tw.reclaimed_pglist,
                                      txn->mt_next_pgno - MDBX_ENABLE_REFUND));
@@ -10871,6 +10885,13 @@ done:
          : &env->me_lck->mti_pgop_stat.gc_details.work_rtime)
         ->weak += osal_monotime() - timestamp;
     timestamp = 0;
+  }
+  if (likely(cpu_timestamp)) {
+    ((mc->mc_dbi == FREE_DBI)
+         ? &env->me_lck->mti_pgop_stat.gc_details.self_rtime_cpu
+         : &env->me_lck->mti_pgop_stat.gc_details.work_rtime_cpu)
+        ->weak += osal_cputime() - cpu_timestamp;
+    cpu_timestamp = 0;
   }
 #endif /* MDBX_ENABLE_PGOP_STAT */
   if (unlikely(flags & MDBX_ALLOC_RESERVE)) {
@@ -14586,9 +14607,9 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
   STATIC_ASSERT(MDBX_TXN_FINISHED ==
                 MDBX_TXN_BLOCKED - MDBX_TXN_HAS_CHILD - MDBX_TXN_ERROR);
   const uint64_t ts_0 = latency ? osal_monotime() : 0;
-  uint64_t ts_1 = 0, ts_2 = 0, ts_3 = 0, ts_4 = 0, ts_5 = 0;
+  uint64_t ts_1 = 0, ts_2 = 0, ts_3 = 0, ts_4 = 0, ts_5 = 0, gc_cputime = 0;
 
-  MDBX_env * const env = txn->mt_env;
+  MDBX_env *const env = txn->mt_env;
   int rc = check_txn(txn, MDBX_TXN_FINISHED);
   if (unlikely(rc != MDBX_SUCCESS))
     goto provide_latency;
@@ -14818,11 +14839,14 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
   }
 
   ts_1 = latency ? osal_monotime() : 0;
+
   gcu_context_t gcu_ctx;
+  gc_cputime = latency ? osal_cputime() : 0;
   rc = gcu_context_init(txn, &gcu_ctx);
   if (unlikely(rc != MDBX_SUCCESS))
     goto fail;
   rc = update_gc(txn, &gcu_ctx);
+  gc_cputime = latency ? osal_cputime() - gc_cputime : 0;
   if (unlikely(rc != MDBX_SUCCESS))
     goto fail;
 
@@ -14917,7 +14941,9 @@ done:
 provide_latency:
   if (latency) {
     latency->preparation = ts_1 ? osal_monotime_to_16dot16(ts_1 - ts_0) : 0;
-    latency->gc = (ts_1 && ts_2) ? osal_monotime_to_16dot16(ts_2 - ts_1) : 0;
+    latency->gc_wallclock =
+        (ts_1 && ts_2) ? osal_monotime_to_16dot16(ts_2 - ts_1) : 0;
+    latency->gc_cputime = gc_cputime ? osal_monotime_to_16dot16(gc_cputime) : 0;
     latency->audit =
         (ts_2 && AUDIT_ENABLED()) ? osal_monotime_to_16dot16(ts_3 - ts_2) : 0;
     latency->write = (ts_3 && ts_4) ? osal_monotime_to_16dot16(ts_4 - ts_3) : 0;
@@ -14927,22 +14953,30 @@ provide_latency:
     MDBX_pgop_stat_t *const ptr = &env->me_lck->mti_pgop_stat;
     latency->gc_details.work_rtime =
         osal_monotime_to_16dot16(ptr->gc_details.work_rtime.weak);
+    latency->gc_details.work_rtime_cpu =
+        osal_monotime_to_16dot16(ptr->gc_details.work_rtime_cpu.weak);
     latency->gc_details.work_rloops = ptr->gc_details.work_rloops.weak;
     latency->gc_details.work_xpages = ptr->gc_details.work_xpages.weak;
     ptr->gc_details.work_rtime.weak = 0;
+    ptr->gc_details.work_rtime_cpu.weak = 0;
     ptr->gc_details.work_rloops.weak = 0;
     ptr->gc_details.work_xpages.weak = 0;
 
     latency->gc_details.self_rtime =
         osal_monotime_to_16dot16(ptr->gc_details.self_rtime.weak);
+    latency->gc_details.self_rtime_cpu =
+        osal_monotime_to_16dot16(ptr->gc_details.self_rtime_cpu.weak);
     latency->gc_details.self_rloops = ptr->gc_details.self_rloops.weak;
     latency->gc_details.self_xpages = ptr->gc_details.self_xpages.weak;
     latency->gc_details.self_wloops = ptr->gc_details.self_wloops.weak;
     ptr->gc_details.self_rtime.weak = 0;
+    ptr->gc_details.self_rtime_cpu.weak = 0;
     ptr->gc_details.self_rloops.weak = 0;
     ptr->gc_details.self_xpages.weak = 0;
     ptr->gc_details.self_wloops.weak = 0;
 #else
+    latency->gc_details.self_rtime_cpu = 0;
+    latency->gc_details.work_rtime_cpu = 0;
     latency->gc_details.self_rtime = 0;
     latency->gc_details.work_rtime = 0;
     latency->gc_details.self_rloops = 0;
@@ -31014,6 +31048,17 @@ MDBX_INTERNAL_FUNC uint64_t osal_monotime(void) {
 #endif
 }
 
+MDBX_INTERNAL_FUNC uint64_t osal_cputime(void) {
+#ifdef CLOCK_THREAD_CPUTIME_ID
+  struct timespec ts;
+  if (likely(clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0))
+    return ts.tv_sec * UINT64_C(1000000000) + ts.tv_nsec;
+#else
+  /* FIXME */
+#endif
+  return 0;
+}
+
 /*----------------------------------------------------------------------------*/
 
 static void bootid_shake(bin128_t *p) {
@@ -31605,9 +31650,9 @@ __dll_export
         0,
         12,
         1,
-        78,
-        {"2022-10-29T08:27:44+03:00", "c00a456f13851c31111a59c26b79de8cbf30f493", "cdf7bc57a355383bd757d35866a3c7348f38bc55",
-         "v0.12.1-78-gcdf7bc57"},
+        79,
+        {"2022-11-01T02:30:10+03:00", "6089feabb6a092f5d097cd7494648bfac9acdf6b", "eb3ce4116da69bd89ead103ac8475cd408fcc74d",
+         "v0.12.1-79-geb3ce411"},
         sourcery};
 
 __dll_export

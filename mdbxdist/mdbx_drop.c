@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY ad4007f8ab238b9e5fdab5805ad2acb4577058d69ce1f3ce267a941cf27cde48_v0_12_1_78_gcdf7bc57
+#define MDBX_BUILD_SOURCERY 9661af7b97d5b9aea09691661970c07bb5dfa47896b87f45a52b0f4dfee7e687_v0_12_1_79_geb3ce411
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1619,6 +1619,7 @@ osal_pthread_mutex_lock(pthread_mutex_t *mutex) {
 #endif /* !Windows */
 
 MDBX_INTERNAL_FUNC uint64_t osal_monotime(void);
+MDBX_INTERNAL_FUNC uint64_t osal_cputime(void);
 MDBX_INTERNAL_FUNC uint64_t osal_16dot16_to_monotime(uint32_t seconds_16dot16);
 MDBX_INTERNAL_FUNC uint32_t osal_monotime_to_16dot16(uint64_t monotime);
 
@@ -2757,6 +2758,9 @@ typedef struct {
       fsync; /* Number of explicit fsync/flush-to-disk operations */
 
   struct {
+    MDBX_atomic_uint64_t self_rtime_cpu;
+    MDBX_atomic_uint64_t work_rtime_cpu;
+
     /* Время затраченное на чтение и поиск внтури GC
      * для целей поддержки и обновления самой GC. */
     MDBX_atomic_uint64_t self_rtime;
