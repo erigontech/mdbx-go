@@ -200,7 +200,8 @@ func (txn *Txn) Commit() (CommitLatency, error) {
 
 type CommitLatency struct {
 	Preparation time.Duration
-	GC          time.Duration
+	GCWallClock time.Duration
+	GCCpuTime   time.Duration
 	Audit       time.Duration
 	Write       time.Duration
 	Sync        time.Duration
@@ -210,6 +211,9 @@ type CommitLatency struct {
 }
 
 type CommitLatencyGC struct {
+	WorkRtimeCPU time.Duration
+	SelfRtimeCPU time.Duration
+
 	/** \brief Время затраченное на чтение и поиск внтури GC
 	 *  ради данных пользователя. */
 	WorkRtime time.Duration
@@ -240,20 +244,23 @@ func (txn *Txn) commit() (CommitLatency, error) {
 	txn.clearTxn()
 	s := CommitLatency{
 		Preparation: toDuration(_stat.preparation),
-		GC:          toDuration(_stat.gc),
+		GCWallClock: toDuration(_stat.gc_wallclock),
+		GCCpuTime:   toDuration(_stat.gc_cputime),
 		Audit:       toDuration(_stat.audit),
 		Write:       toDuration(_stat.write),
 		Sync:        toDuration(_stat.sync),
 		Ending:      toDuration(_stat.ending),
 		Whole:       toDuration(_stat.whole),
 		GCDetails: CommitLatencyGC{
-			WorkRtime:   toDuration(_stat.gc_details.work_rtime),
-			WorkRloops:  uint32(_stat.gc_details.work_rloops),
-			WorkRxpages: uint32(_stat.gc_details.work_xpages),
-			SelfRtime:   toDuration(_stat.gc_details.self_rtime),
-			SelfRloops:  uint32(_stat.gc_details.self_rloops),
-			SelfXpages:  uint32(_stat.gc_details.self_xpages),
-			SelfWloops:  uint32(_stat.gc_details.self_wloops),
+			WorkRtimeCPU: toDuration(_stat.gc_details.work_rtime_cpu),
+			SelfRtimeCPU: toDuration(_stat.gc_details.self_rtime_cpu),
+			WorkRtime:    toDuration(_stat.gc_details.work_rtime),
+			WorkRloops:   uint32(_stat.gc_details.work_rloops),
+			WorkRxpages:  uint32(_stat.gc_details.work_xpages),
+			SelfRtime:    toDuration(_stat.gc_details.self_rtime),
+			SelfRloops:   uint32(_stat.gc_details.self_rloops),
+			SelfXpages:   uint32(_stat.gc_details.self_xpages),
+			SelfWloops:   uint32(_stat.gc_details.self_wloops),
 		},
 	}
 	if ret != success {
