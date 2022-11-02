@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 9661af7b97d5b9aea09691661970c07bb5dfa47896b87f45a52b0f4dfee7e687_v0_12_1_79_geb3ce411
+#define MDBX_BUILD_SOURCERY 9f5d6ee2d5fb29466035d133fbcb13d7182975e5639422e1e38118d88bfb315e_v0_12_1_82_ge498f1e3_dirty
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1207,18 +1207,15 @@ typedef pthread_mutex_t osal_fastmutex_t;
 /*----------------------------------------------------------------------------*/
 /* OS abstraction layer stuff */
 
+MDBX_INTERNAL_VAR unsigned sys_pagesize;
+
 /* Get the size of a memory page for the system.
  * This is the basic size that the platform's memory manager uses, and is
  * fundamental to the use of memory-mapped files. */
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static __inline size_t
 osal_syspagesize(void) {
-#if defined(_WIN32) || defined(_WIN64)
-  SYSTEM_INFO si;
-  GetSystemInfo(&si);
-  return si.dwPageSize;
-#else
-  return sysconf(_SC_PAGE_SIZE);
-#endif
+  assert(sys_pagesize > 0 && (sys_pagesize & (sys_pagesize - 1)) == 0);
+  return sys_pagesize;
 }
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -3651,7 +3648,9 @@ MDBX_INTERNAL_FUNC int rthc_alloc(osal_thread_key_t *key, MDBX_reader *begin,
 MDBX_INTERNAL_FUNC void rthc_remove(const osal_thread_key_t key);
 
 MDBX_INTERNAL_FUNC void global_ctor(void);
+MDBX_INTERNAL_FUNC void osal_ctor(void);
 MDBX_INTERNAL_FUNC void global_dtor(void);
+MDBX_INTERNAL_FUNC void osal_dtor(void);
 MDBX_INTERNAL_FUNC void thread_dtor(void *ptr);
 
 #endif /* !__cplusplus */
