@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY e3e238f92fd74b025a154b169eb94a60d2148eb3150648c7c6b9cc19fe848568_v0_12_1_82_ge498f1e3_dirty
+#define MDBX_BUILD_SOURCERY f7b9aa607f9a6d895a93472af97a9a1705447ddf57426eac52a198ff77f7d54f_v0_12_1_83_g7454f9c2
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1208,6 +1208,7 @@ typedef pthread_mutex_t osal_fastmutex_t;
 /* OS abstraction layer stuff */
 
 MDBX_INTERNAL_VAR unsigned sys_pagesize;
+MDBX_MAYBE_UNUSED MDBX_INTERNAL_VAR unsigned sys_allocation_granularity;
 
 /* Get the size of a memory page for the system.
  * This is the basic size that the platform's memory manager uses, and is

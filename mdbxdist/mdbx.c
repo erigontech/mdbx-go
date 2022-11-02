@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY e3e238f92fd74b025a154b169eb94a60d2148eb3150648c7c6b9cc19fe848568_v0_12_1_82_ge498f1e3_dirty
+#define MDBX_BUILD_SOURCERY f7b9aa607f9a6d895a93472af97a9a1705447ddf57426eac52a198ff77f7d54f_v0_12_1_83_g7454f9c2
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1184,6 +1184,7 @@ typedef pthread_mutex_t osal_fastmutex_t;
 /* OS abstraction layer stuff */
 
 MDBX_INTERNAL_VAR unsigned sys_pagesize;
+MDBX_MAYBE_UNUSED MDBX_INTERNAL_VAR unsigned sys_allocation_granularity;
 
 /* Get the size of a memory page for the system.
  * This is the basic size that the platform's memory manager uses, and is
@@ -10473,6 +10474,8 @@ static pgr_t page_alloc_slowpath(MDBX_cursor *mc, const pgno_t num, int flags) {
         flags |= MDBX_ALLOC_COALESCE;
     }
   }
+
+  flags &= ~MDBX_ALLOC_COALESCE;
 
   eASSERT(env, pnl_check_allocated(txn->tw.reclaimed_pglist,
                                    txn->mt_next_pgno - MDBX_ENABLE_REFUND));
@@ -31625,6 +31628,7 @@ __cold int mdbx_get_sysraminfo(intptr_t *page_size, intptr_t *total_pages,
 
 #ifndef xMDBX_ALLOY
 unsigned sys_pagesize;
+MDBX_MAYBE_UNUSED unsigned sys_allocation_granularity;
 #endif /* xMDBX_ALLOY */
 
 void osal_ctor(void) {
@@ -31639,10 +31643,17 @@ void osal_ctor(void) {
   SYSTEM_INFO si;
   GetSystemInfo(&si);
   sys_pagesize = si.dwPageSize;
+  sys_allocation_granularity = si.dwAllocationGranularity;
 #else
   sys_pagesize = sysconf(_SC_PAGE_SIZE);
+  sys_allocation_granularity = (MDBX_WORDBITS > 32) ? 65536 : 4096;
+  sys_allocation_granularity = (sys_allocation_granularity > sys_pagesize)
+                                   ? sys_allocation_granularity
+                                   : sys_pagesize;
 #endif
   assert(sys_pagesize > 0 && (sys_pagesize & (sys_pagesize - 1)) == 0);
+  assert(sys_allocation_granularity >= sys_pagesize &&
+         sys_allocation_granularity % sys_pagesize == 0);
 
 #if defined(__linux__) || defined(__gnu_linux__)
   posix_clockid = choice_monoclock();
@@ -31686,9 +31697,9 @@ __dll_export
         0,
         12,
         1,
-        82,
-        {"2022-11-02T00:54:37+03:00", "61ae125f7bbdef009d481c50d56d834864464052", "e498f1e3d999a2ba250758fbbed8da488f148546",
-         "v0.12.1-82-ge498f1e3-dirty"},
+        83,
+        {"2022-11-02T11:11:53+03:00", "131727b60a58fec7dd9eb67c7f6aafed9beca620", "7454f9c233b0722c73198386e8b310e7478159c7",
+         "v0.12.1-83-g7454f9c2"},
         sourcery};
 
 __dll_export
