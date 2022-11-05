@@ -219,7 +219,7 @@ type CommitLatencyGC struct {
 	WorkRtime time.Duration
 	/** \brief Количество циклов поиска внутри GC при выделении страниц
 	 *  ради данных пользователя. */
-	WorkRloops uint32
+	WorkRsteps uint32
 	/** \brief Количество запросов на выделение последовательностей страниц
 	 *  ради данных пользователя. */
 	WorkRxpages uint32
@@ -229,7 +229,7 @@ type CommitLatencyGC struct {
 	SelfRtime time.Duration
 	/** \brief Количество циклов поиска внутри GC при выделении страниц
 	 *  для целей поддержки и обновления самой GC. */
-	SelfRloops uint32
+	SelfRsteps uint32
 	/** \brief Количество запросов на выделение последовательностей страниц
 	 *  для самой GC. */
 	SelfXpages uint32
@@ -259,11 +259,11 @@ func (txn *Txn) commit() (CommitLatency, error) {
 		GCDetails: CommitLatencyGC{
 			WorkRtime:    toDuration(_stat.gc_prof.wcork_rtime_monotonic),
 			WorkRtimeCPU: toDuration(_stat.gc_prof.work_rtime_cpu),
-			WorkRloops:   uint32(_stat.gc_prof.work_rsteps),
+			WorkRsteps:   uint32(_stat.gc_prof.work_rsteps),
 			WorkRxpages:  uint32(_stat.gc_prof.work_xpages),
 			SelfRtime:    toDuration(_stat.gc_prof.self_rtime_monotonic),
 			SelfRtimeCPU: toDuration(_stat.gc_prof.self_rtime_cpu),
-			SelfRloops:   uint32(_stat.gc_prof.self_rsteps),
+			SelfRsteps:   uint32(_stat.gc_prof.self_rsteps),
 			SelfXpages:   uint32(_stat.gc_prof.self_xpages),
 			Wloops:       uint32(_stat.gc_prof.wloops),
 			Coalescences: uint32(_stat.gc_prof.coalescences),
