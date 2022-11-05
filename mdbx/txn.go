@@ -257,7 +257,7 @@ func (txn *Txn) commit() (CommitLatency, error) {
 		Ending:      toDuration(_stat.ending),
 		Whole:       toDuration(_stat.whole),
 		GCDetails: CommitLatencyGC{
-			WorkRtime:    toDuration(_stat.gc_prof.wcork_rtime_monotonic),
+			WorkRtime:    toDuration(_stat.gc_prof.work_rtime_monotonic),
 			WorkRtimeCPU: toDuration(_stat.gc_prof.work_rtime_cpu),
 			WorkRsteps:   uint32(_stat.gc_prof.work_rsteps),
 			WorkRxpages:  uint32(_stat.gc_prof.work_xpages),
