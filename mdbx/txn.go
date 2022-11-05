@@ -235,7 +235,12 @@ type CommitLatencyGC struct {
 	SelfXpages uint32
 	/** \brief Количество итераций обновления GC,
 	 *  больше 1 если были повторы/перезапуски. */
-	SelfWloops uint32
+	Wloops uint32
+	/** \brief Количество итераций слияния записей GC. */
+	Coalescences uint32
+	Wipes        uint32
+	Flushes      uint32
+	Kicks        uint32
 }
 
 func (txn *Txn) commit() (CommitLatency, error) {
@@ -252,15 +257,19 @@ func (txn *Txn) commit() (CommitLatency, error) {
 		Ending:      toDuration(_stat.ending),
 		Whole:       toDuration(_stat.whole),
 		GCDetails: CommitLatencyGC{
-			WorkRtimeCPU: toDuration(_stat.gc_details.work_rtime_cpu),
-			SelfRtimeCPU: toDuration(_stat.gc_details.self_rtime_cpu),
-			WorkRtime:    toDuration(_stat.gc_details.work_rtime),
-			WorkRloops:   uint32(_stat.gc_details.work_rloops),
-			WorkRxpages:  uint32(_stat.gc_details.work_xpages),
-			SelfRtime:    toDuration(_stat.gc_details.self_rtime),
-			SelfRloops:   uint32(_stat.gc_details.self_rloops),
-			SelfXpages:   uint32(_stat.gc_details.self_xpages),
-			SelfWloops:   uint32(_stat.gc_details.self_wloops),
+			WorkRtime:    toDuration(_stat.gc_prof.wcork_rtime_monotonic),
+			WorkRtimeCPU: toDuration(_stat.gc_prof.work_rtime_cpu),
+			WorkRloops:   uint32(_stat.gc_prof.work_rsteps),
+			WorkRxpages:  uint32(_stat.gc_prof.work_xpages),
+			SelfRtime:    toDuration(_stat.gc_prof.self_rtime_monotonic),
+			SelfRtimeCPU: toDuration(_stat.gc_prof.self_rtime_cpu),
+			SelfRloops:   uint32(_stat.gc_prof.self_rsteps),
+			SelfXpages:   uint32(_stat.gc_prof.self_xpages),
+			Wloops:       uint32(_stat.gc_prof.wloops),
+			Coalescences: uint32(_stat.gc_prof.coalescences),
+			Wipes:        uint32(_stat.gc_prof.wipes),
+			Flushes:      uint32(_stat.gc_prof.flushes),
+			Kicks:        uint32(_stat.gc_prof.kicks),
 		},
 	}
 	if ret != success {
