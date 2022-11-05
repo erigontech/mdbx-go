@@ -3698,8 +3698,9 @@ struct MDBX_commit_latency {
   /** \brief Duration of preparation (commit child transactions, update
    * sub-databases records and cursors destroying). */
   uint32_t preparation;
-  /** \brief Duration of GC/freeDB handling & updation. */
+  /** \brief Duration of GC update by wall clock. */
   uint32_t gc_wallclock;
+  /** \brief User-mode CPU time spent on GC update. */
   uint32_t gc_cputime;
   /** \brief Duration of internal audit if enabled. */
   uint32_t audit;
@@ -3714,33 +3715,54 @@ struct MDBX_commit_latency {
   /** \brief The total duration of a commit. */
   uint32_t whole;
 
+  /** \brief Информация для профилирования работы GC.
+   * \note Статистика является общей для всех процессов работающих с одним
+   * файлом БД и хранится в LCK-файле. Данные аккумулируются при фиксации всех
+   * транзакций, но только в сборках libmdbx c установленной опцией
+   * \ref MDBX_ENABLE_PROFGC. Собранная статистика возвращаются любому процессу
+   * при выполнении \ref mdbx_txn_commit_ex() и одновременно обнуляется. */
   struct {
+    /** \brief Время "по настенным часам" затраченное на чтение и поиск внутри
+     * GC ради данных пользователя. */
+    uint32_t work_rtime_monotonic;
+    /** \brief Время ЦПУ в режиме пользователе затраченное на чтение и поиск
+     * внтури GC ради данных пользователя. */
     uint32_t work_rtime_cpu;
-    uint32_t self_rtime_cpu;
-
-    /** \brief Время затраченное на чтение и поиск внтури GC
+    /** \brief Количество итераций поиска внутри GC при выделении страниц
      *  ради данных пользователя. */
-    uint32_t work_rtime;
-    /** \brief Количество циклов поиска внутри GC при выделении страниц
-     *  ради данных пользователя. */
-    uint32_t work_rloops;
+    uint32_t work_rsteps;
     /** \brief Количество запросов на выделение последовательностей страниц
      *  ради данных пользователя. */
     uint32_t work_xpages;
-
-    /** \brief Время затраченное на чтение и поиск внтури GC
+    /** \brief Время "по настенным часам" затраченное на чтение и поиск внутри
+     * GC для целей поддержки и обновления самой GC. */
+    uint32_t self_rtime_monotonic;
+    /** \brief Время ЦПУ в режиме пользователе затраченное на чтение и поиск
+     * внтури GC для целей поддержки и обновления самой GC. */
+    uint32_t self_rtime_cpu;
+    /** \brief Количество итераций поиска внутри GC при выделении страниц
      *  для целей поддержки и обновления самой GC. */
-    uint32_t self_rtime;
-    /** \brief Количество циклов поиска внутри GC при выделении страниц
-     *  для целей поддержки и обновления самой GC. */
-    uint32_t self_rloops;
+    uint32_t self_rsteps;
     /** \brief Количество запросов на выделение последовательностей страниц
      *  для самой GC. */
     uint32_t self_xpages;
     /** \brief Количество итераций обновления GC,
      *  больше 1 если были повторы/перезапуски. */
-    uint32_t self_wloops;
-  } gc_details;
+    uint32_t wloops;
+    /** \brief Количество итераций слияния записей GC. */
+    uint32_t coalescences;
+    /** \brief Количество уничтожений предыдущих надежных/устойчивых
+     *  точек фиксации при работе в режиме \ref MDBX_UTTERLY_NOSYNC. */
+    uint32_t wipes;
+    /** \brief Количество принудительных фиксаций на диск
+     *  во избежания приращения БД при работе вне режима
+     *  \ref MDBX_UTTERLY_NOSYNC. */
+    uint32_t flushes;
+    /** \brief Количество обращений к механизму Handle-Slow-Readers
+     *  во избежания приращения БД.
+     *  \see MDBX_hsr_func */
+    uint32_t kicks;
+  } gc_prof;
 };
 #ifndef __cplusplus
 /** \ingroup c_statinfo */

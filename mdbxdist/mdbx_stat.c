@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY f7b9aa607f9a6d895a93472af97a9a1705447ddf57426eac52a198ff77f7d54f_v0_12_1_83_g7454f9c2
+#define MDBX_BUILD_SOURCERY 2a4b322ddc44a51aa3ba06e7fe49eab87cd26cfaa4ce431a9526ab1737114be9_v0_12_1_84_g5cf509ec
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1989,6 +1989,13 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #error MDBX_ENABLE_REFUND must be defined as 0 or 1
 #endif /* MDBX_ENABLE_REFUND */
 
+/** Controls profiling of GC search and updates. */
+#ifndef MDBX_ENABLE_PROFGC
+#define MDBX_ENABLE_PROFGC 1
+#elif !(MDBX_ENABLE_PROFGC == 0 || MDBX_ENABLE_PROFGC == 1)
+#error MDBX_ENABLE_PROFGC must be defined as 0 or 1
+#endif /* MDBX_ENABLE_PROFGC */
+
 /** Controls gathering statistics for page operations. */
 #ifndef MDBX_ENABLE_PGOP_STAT
 #define MDBX_ENABLE_PGOP_STAT 1
@@ -2734,10 +2741,23 @@ typedef struct MDBX_page {
 
 #pragma pack(pop)
 
-#if MDBX_ENABLE_PGOP_STAT
+typedef struct profgc_stat {
+  /* Процессорное время в режим пользователя
+   * затраченное на чтение и поиск внутри GC */
+  uint64_t rtime_cpu;
+  /* Монотонное время по "настенным часам"
+   * затраченное на чтение и поиск внутри GC */
+  uint64_t rtime_monotonic;
+  /* Количество итераций чтения-поиска внутри GC при выделении страниц */
+  uint32_t rsteps;
+  /* Количество запросов на выделение последовательностей страниц,
+   * т.е. когда запрашивает выделение больше одной страницы */
+  uint32_t xpages;
+} profgc_stat_t;
+
 /* Statistics of page operations overall of all (running, completed and aborted)
  * transactions */
-typedef struct {
+typedef struct pgop_stat {
   MDBX_atomic_uint64_t newly;   /* Quantity of a new pages added */
   MDBX_atomic_uint64_t cow;     /* Quantity of pages copied for update */
   MDBX_atomic_uint64_t clone;   /* Quantity of parent's dirty pages clones
@@ -2753,37 +2773,27 @@ typedef struct {
   MDBX_atomic_uint64_t
       fsync; /* Number of explicit fsync/flush-to-disk operations */
 
+  /* Статистика для профилирования GC.
+   * Логически эти данные может быть стоит вынести в другую структуру,
+   * но разница будет сугубо косметическая. */
   struct {
-    MDBX_atomic_uint64_t self_rtime_cpu;
-    MDBX_atomic_uint64_t work_rtime_cpu;
-
-    /* Время затраченное на чтение и поиск внтури GC
-     * для целей поддержки и обновления самой GC. */
-    MDBX_atomic_uint64_t self_rtime;
-    /* Время затраченное на чтение и поиск внтури GC
-     * ради данных пользователя. */
-    MDBX_atomic_uint64_t work_rtime;
-
-    /* Количество циклов поиска внутри GC при выделении страниц
-     * для целей поддержки и обновления самой GC. */
-    MDBX_atomic_uint32_t self_rloops;
-    /* Количество циклов поиска внутри GC при выделении страниц
-     * ради данных пользователя. */
-    MDBX_atomic_uint32_t work_rloops;
-
-    /* Количество запросов на выделение последовательностей страниц
-     * для самой GC. */
-    MDBX_atomic_uint32_t self_xpages;
-    /* Количество запросов на выделение последовательностей страниц
-     * ради данных пользователя. */
-    MDBX_atomic_uint32_t work_xpages;
-
-    /* Количество итераций обновления GC,
-     * больше 1 если были повторы/перезапуски. */
-    MDBX_atomic_uint32_t self_wloops;
-  } gc_details;
-} MDBX_pgop_stat_t;
-#endif /* MDBX_ENABLE_PGOP_STAT */
+    /* Затраты на поддержку данных пользователя */
+    profgc_stat_t work;
+    /* Затраты на поддержку и обновления самой GC */
+    profgc_stat_t self;
+    /* Итераций обновления GC,
+     * больше 1 если были повторы/перезапуски */
+    uint32_t wloops;
+    /* Итерации слияния записей GC */
+    uint32_t coalescences;
+    /* Уничтожения steady-точек фиксации в MDBX_UTTERLY_NOSYNC */
+    uint32_t wipes;
+    /* Сбросы данные на диск вне MDBX_UTTERLY_NOSYNC */
+    uint32_t flushes;
+    /* Попытки пнуть тормозящих читателей */
+    uint32_t kicks;
+  } gc_prof;
+} pgop_stat_t;
 
 #if MDBX_LOCKING == MDBX_LOCKING_WIN32FILES
 #define MDBX_CLOCK_SIGN UINT32_C(0xF10C)
@@ -2914,18 +2924,16 @@ typedef struct MDBX_lockinfo {
   /* Marker to distinguish uniqueness of DB/CLK. */
   MDBX_atomic_uint64_t mti_bait_uniqueness;
 
-  /* Counter of processes which had mlock()'ed some of mmapped DB pages.
-   * Non-zero means at least one process lock at leat one page,
-   * and therefore madvise() could return EINVAL. */
-  MDBX_atomic_uint32_t mti_mlock_counter;
+  /* Paired counter of processes that have mlock()ed part of mmapped DB.
+   * The (mti_mlcnt[0] - mti_mlcnt[1]) > 0 means at least one process
+   * lock at leat one page, so therefore madvise() could return EINVAL. */
+  MDBX_atomic_uint32_t mti_mlcnt[2];
 
   MDBX_ALIGNAS(MDBX_CACHELINE_SIZE) /* cacheline ----------------------------*/
 
-#if MDBX_ENABLE_PGOP_STAT
   /* Statistics of costly ops of all (running, completed and aborted)
    * transactions */
-  MDBX_pgop_stat_t mti_pgop_stat;
-#endif /* MDBX_ENABLE_PGOP_STAT*/
+  pgop_stat_t mti_pgop_stat;
 
   MDBX_ALIGNAS(MDBX_CACHELINE_SIZE) /* cacheline ----------------------------*/
 
@@ -3145,9 +3153,13 @@ struct MDBX_txn {
   /* Additional flag for sync_locked() */
 #define MDBX_SHRINK_ALLOWED UINT32_C(0x40000000)
 
+#define MDBX_TXN_UPDATE_GC 0x20     /* GC lookup is prohibited */
+#define MDBX_TXN_RELIST_FREEZE 0x40 /* relist must not be updated */
+
 #define TXN_FLAGS                                                              \
   (MDBX_TXN_FINISHED | MDBX_TXN_ERROR | MDBX_TXN_DIRTY | MDBX_TXN_SPILLS |     \
-   MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID)
+   MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID | MDBX_TXN_UPDATE_GC |                \
+   MDBX_TXN_RELIST_FREEZE)
 
 #if (TXN_FLAGS & (MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS)) ||       \
     ((MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS | TXN_FLAGS) &         \
@@ -3206,8 +3218,8 @@ struct MDBX_txn {
     struct {
       meta_troika_t troika;
       /* In write txns, array of cursors for each DB */
-      pgno_t *reclaimed_pglist; /* Reclaimed GC pages */
-      txnid_t last_reclaimed;   /* ID of last used record */
+      pgno_t *relist;         /* Reclaimed GC pages */
+      txnid_t last_reclaimed; /* ID of last used record */
 #if MDBX_ENABLE_REFUND
       pgno_t loose_refund_wl /* FIXME: describe */;
 #endif /* MDBX_ENABLE_REFUND */
@@ -3283,9 +3295,7 @@ struct MDBX_cursor {
 #define C_SUB 0x04         /* Cursor is a sub-cursor */
 #define C_DEL 0x08         /* last op was a cursor_del */
 #define C_UNTRACK 0x10     /* Un-track cursor when closing */
-#define C_RECLAIMING 0x20  /* GC lookup is prohibited */
-#define C_GCFREEZE 0x40    /* reclaimed_pglist must not be updated */
-  uint8_t mc_flags;        /* see mdbx_cursor */
+  uint8_t mc_flags;
 
   /* Cursor checking flags. */
 #define CC_BRANCH 0x01    /* same as P_BRANCH for CHECK_LEAF_TYPE() */
@@ -3296,7 +3306,7 @@ struct MDBX_cursor {
 #define CC_LEAF2 0x20     /* same as P_LEAF2 for CHECK_LEAF_TYPE() */
 #define CC_RETIRING 0x40  /* refs to child pages may be invalid */
 #define CC_PAGECHECK 0x80 /* perform page checking, see MDBX_VALIDATION */
-  uint8_t mc_checking;    /* page checking level */
+  uint8_t mc_checking;
 
   MDBX_page *mc_pg[CURSOR_STACK]; /* stack of pushed pages */
   indx_t mc_ki[CURSOR_STACK];     /* stack of page indices */
