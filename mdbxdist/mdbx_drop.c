@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 2a4b322ddc44a51aa3ba06e7fe49eab87cd26cfaa4ce431a9526ab1737114be9_v0_12_1_84_g5cf509ec
+#define MDBX_BUILD_SOURCERY 45ab52ade4e5a07ddb436722344103d588e1e1413ebeccdd1d9c183c26527a1a_v0_12_1_88_g64e16b03
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1617,7 +1617,7 @@ osal_pthread_mutex_lock(pthread_mutex_t *mutex) {
 #endif /* !Windows */
 
 MDBX_INTERNAL_FUNC uint64_t osal_monotime(void);
-MDBX_INTERNAL_FUNC uint64_t osal_cputime(void);
+MDBX_INTERNAL_FUNC uint64_t osal_cputime(size_t *optional_page_faults);
 MDBX_INTERNAL_FUNC uint64_t osal_16dot16_to_monotime(uint32_t seconds_16dot16);
 MDBX_INTERNAL_FUNC uint32_t osal_monotime_to_16dot16(uint64_t monotime);
 
@@ -2744,17 +2744,22 @@ typedef struct MDBX_page {
 #pragma pack(pop)
 
 typedef struct profgc_stat {
-  /* Процессорное время в режим пользователя
-   * затраченное на чтение и поиск внутри GC */
-  uint64_t rtime_cpu;
   /* Монотонное время по "настенным часам"
    * затраченное на чтение и поиск внутри GC */
   uint64_t rtime_monotonic;
+  /* Монотонное время по "настенным часам" затраченное
+   * на подготовку страниц извлекаемых из GC, включая подкачку с диска. */
+  uint64_t xtime_monotonic;
+  /* Процессорное время в режим пользователя
+   * затраченное на чтение и поиск внутри GC */
+  uint64_t rtime_cpu;
   /* Количество итераций чтения-поиска внутри GC при выделении страниц */
   uint32_t rsteps;
   /* Количество запросов на выделение последовательностей страниц,
    * т.е. когда запрашивает выделение больше одной страницы */
   uint32_t xpages;
+  /* page faults (hard page faults) */
+  uint32_t majflt;
 } profgc_stat_t;
 
 /* Statistics of page operations overall of all (running, completed and aborted)
@@ -2957,7 +2962,7 @@ typedef struct MDBX_lockinfo {
   /* Timestamp of the last readers check. */
   MDBX_atomic_uint64_t mti_reader_check_timestamp;
 
-  /* Number of page which was discarded last time by madvise(MADV_FREE). */
+  /* Number of page which was discarded last time by madvise(DONTNEED). */
   atomic_pgno_t mti_discarded_tail;
 
   /* Shared anchor for tracking readahead edge and enabled/disabled status. */
@@ -3155,13 +3160,14 @@ struct MDBX_txn {
   /* Additional flag for sync_locked() */
 #define MDBX_SHRINK_ALLOWED UINT32_C(0x40000000)
 
-#define MDBX_TXN_UPDATE_GC 0x20     /* GC lookup is prohibited */
-#define MDBX_TXN_RELIST_FREEZE 0x40 /* relist must not be updated */
+#define MDBX_TXN_UPDATE_GC 0x20 /* GC is being updated */
+#define MDBX_TXN_FROZEN_RE 0x40 /* list of reclaimed-pgno must not altered */
+#define MDBX_TXN_PURGEN_GC 0x80 /* GC is being clearing */
 
 #define TXN_FLAGS                                                              \
   (MDBX_TXN_FINISHED | MDBX_TXN_ERROR | MDBX_TXN_DIRTY | MDBX_TXN_SPILLS |     \
    MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID | MDBX_TXN_UPDATE_GC |                \
-   MDBX_TXN_RELIST_FREEZE)
+   MDBX_TXN_FROZEN_RE | MDBX_TXN_PURGEN_GC)
 
 #if (TXN_FLAGS & (MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS)) ||       \
     ((MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS | TXN_FLAGS) &         \

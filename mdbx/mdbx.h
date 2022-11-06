@@ -988,8 +988,16 @@ DEFINE_ENUM_FLAG_OPERATORS(MDBX_debug_flags_t)
  * called before printing the message and aborting.
  * \see mdbx_setup_debug()
  *
- * \param [in] env  An environment handle returned by \ref mdbx_env_create().
- * \param [in] msg  The assertion message, not including newline. */
+ * \param [in] loglevel  The severity of message.
+ * \param [in] function  The function name which emits message,
+ *                       may be NULL.
+ * \param [in] line      The source code line number which emits message,
+ *                       may be zero.
+ * \param [in] fmt       The printf-like format string with message.
+ * \param [in] args      The variable argument list respectively for the
+ *                       format-message string passed by `fmt` argument.
+ *                       Maybe NULL or invalid if the format-message string
+ *                       don't contain `%`-specification of arguments. */
 typedef void MDBX_debug_func(MDBX_log_level_t loglevel, const char *function,
                              int line, const char *fmt,
                              va_list args) MDBX_CXX17_NOEXCEPT;
@@ -1008,8 +1016,12 @@ LIBMDBX_API int mdbx_setup_debug(MDBX_log_level_t log_level,
  * called before printing the message and aborting.
  * \see mdbx_env_set_assert()
  *
- * \param [in] env  An environment handle returned by mdbx_env_create().
- * \param [in] msg  The assertion message, not including newline. */
+ * \param [in] env       An environment handle.
+ * \param [in] msg       The assertion message, not including newline.
+ * \param [in] function  The function name where the assertion check failed,
+ *                       may be NULL.
+ * \param [in] line      The line number in the source file
+ *                       where the assertion check failed, may be zero. */
 typedef void MDBX_assert_func(const MDBX_env *env, const char *msg,
                               const char *function,
                               unsigned line) MDBX_CXX17_NOEXCEPT;
@@ -3700,8 +3712,6 @@ struct MDBX_commit_latency {
   uint32_t preparation;
   /** \brief Duration of GC update by wall clock. */
   uint32_t gc_wallclock;
-  /** \brief User-mode CPU time spent on GC update. */
-  uint32_t gc_cputime;
   /** \brief Duration of internal audit if enabled. */
   uint32_t audit;
   /** \brief Duration of writing dirty/modified data pages to a filesystem,
@@ -3714,6 +3724,8 @@ struct MDBX_commit_latency {
   uint32_t ending;
   /** \brief The total duration of a commit. */
   uint32_t whole;
+  /** \brief User-mode CPU time spent on GC update. */
+  uint32_t gc_cputime;
 
   /** \brief Информация для профилирования работы GC.
    * \note Статистика является общей для всех процессов работающих с одним
@@ -3725,8 +3737,12 @@ struct MDBX_commit_latency {
     /** \brief Время "по настенным часам" затраченное на чтение и поиск внутри
      * GC ради данных пользователя. */
     uint32_t work_rtime_monotonic;
+    /** \brief Монотонное время по "настенным часам" затраченное
+     *   на подготовку страниц извлекаемых из GC для данных пользователя,
+     *   включая подкачку с диска. */
+    uint32_t work_xtime_monotonic;
     /** \brief Время ЦПУ в режиме пользователе затраченное на чтение и поиск
-     * внтури GC ради данных пользователя. */
+     *  внтури GC ради данных пользователя. */
     uint32_t work_rtime_cpu;
     /** \brief Количество итераций поиска внутри GC при выделении страниц
      *  ради данных пользователя. */
@@ -3734,9 +3750,17 @@ struct MDBX_commit_latency {
     /** \brief Количество запросов на выделение последовательностей страниц
      *  ради данных пользователя. */
     uint32_t work_xpages;
+    /** \brief Количество страничных промахов (page faults) внутри GC
+     *  при выделении и подготовки страниц для данных пользователя. */
+    uint32_t work_majflt;
+
     /** \brief Время "по настенным часам" затраченное на чтение и поиск внутри
      * GC для целей поддержки и обновления самой GC. */
     uint32_t self_rtime_monotonic;
+    /** \brief Монотонное время по "настенным часам" затраченное на подготовку
+     *  страниц извлекаемых из GC для целей поддержки и обновления самой GC,
+     *  включая подкачку с диска. */
+    uint32_t self_xtime_monotonic;
     /** \brief Время ЦПУ в режиме пользователе затраченное на чтение и поиск
      * внтури GC для целей поддержки и обновления самой GC. */
     uint32_t self_rtime_cpu;
@@ -3746,6 +3770,10 @@ struct MDBX_commit_latency {
     /** \brief Количество запросов на выделение последовательностей страниц
      *  для самой GC. */
     uint32_t self_xpages;
+    /** \brief Количество страничных промахов (page faults) внутри GC
+     *  при выделении и подготовки страниц для самой GC. */
+    uint32_t self_majflt;
+
     /** \brief Количество итераций обновления GC,
      *  больше 1 если были повторы/перезапуски. */
     uint32_t wloops;
