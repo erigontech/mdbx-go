@@ -223,10 +223,12 @@ type CommitLatencyGC struct {
 	/** \brief Количество запросов на выделение последовательностей страниц
 	 *  ради данных пользователя. */
 	WorkRxpages uint32
+	WorkMajflt  uint32
 
 	/** \brief Время затраченное на чтение и поиск внтури GC
 	 *  для целей поддержки и обновления самой GC. */
 	SelfRtime time.Duration
+	SelfXtime time.Duration
 	/** \brief Количество циклов поиска внутри GC при выделении страниц
 	 *  для целей поддержки и обновления самой GC. */
 	SelfRsteps uint32
@@ -261,8 +263,10 @@ func (txn *Txn) commit() (CommitLatency, error) {
 			WorkRtimeCPU: toDuration(_stat.gc_prof.work_rtime_cpu),
 			WorkRsteps:   uint32(_stat.gc_prof.work_rsteps),
 			WorkRxpages:  uint32(_stat.gc_prof.work_xpages),
+			WorkMajflt:   uint32(_stat.gc_prof.work_majflt),
 			SelfRtime:    toDuration(_stat.gc_prof.self_rtime_monotonic),
 			SelfRtimeCPU: toDuration(_stat.gc_prof.self_rtime_cpu),
+			SelfXtime:    toDuration(_stat.gc_prof.self_xtime_monotonic),
 			SelfRsteps:   uint32(_stat.gc_prof.self_rsteps),
 			SelfXpages:   uint32(_stat.gc_prof.self_xpages),
 			Wloops:       uint32(_stat.gc_prof.wloops),
