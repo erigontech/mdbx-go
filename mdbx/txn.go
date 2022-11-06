@@ -224,6 +224,7 @@ type CommitLatencyGC struct {
 	 *  ради данных пользователя. */
 	WorkRxpages uint32
 	WorkMajflt  uint32
+	SelfMajflt  uint32
 
 	/** \brief Время затраченное на чтение и поиск внтури GC
 	 *  для целей поддержки и обновления самой GC. */
@@ -264,6 +265,7 @@ func (txn *Txn) commit() (CommitLatency, error) {
 			WorkRsteps:   uint32(_stat.gc_prof.work_rsteps),
 			WorkRxpages:  uint32(_stat.gc_prof.work_xpages),
 			WorkMajflt:   uint32(_stat.gc_prof.work_majflt),
+			SelfMajflt:   uint32(_stat.gc_prof.self_majflt),
 			SelfRtime:    toDuration(_stat.gc_prof.self_rtime_monotonic),
 			SelfRtimeCPU: toDuration(_stat.gc_prof.self_rtime_cpu),
 			SelfXtime:    toDuration(_stat.gc_prof.self_xtime_monotonic),
