@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 45ab52ade4e5a07ddb436722344103d588e1e1413ebeccdd1d9c183c26527a1a_v0_12_1_88_g64e16b03
+#define MDBX_BUILD_SOURCERY 11d2b7d45e1d823fad6902dfc830f3474946cbc207c3779c3d8f93fb1fedf36e_v0_12_1_90_g8dff7852
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2756,6 +2756,8 @@ typedef struct profgc_stat {
   /* Количество запросов на выделение последовательностей страниц,
    * т.е. когда запрашивает выделение больше одной страницы */
   uint32_t xpages;
+  /* Счетчик выполнения по медленному пути (slow path execution count) */
+  uint32_t spe_counter;
   /* page faults (hard page faults) */
   uint32_t majflt;
 } profgc_stat_t;
@@ -3137,6 +3139,9 @@ typedef struct MDBX_dbx {
 
 typedef struct troika {
   uint8_t fsm, recent, prefer_steady, tail_and_flags;
+#if MDBX_WORDBITS > 32 /* Workaround for false-positives from Valgrind */
+  uint32_t unused_pad;
+#endif
 #define TROIKA_HAVE_STEADY(troika) ((troika)->fsm & 7)
 #define TROIKA_STRICT_VALID(troika) ((troika)->tail_and_flags & 64)
 #define TROIKA_VALID(troika) ((troika)->tail_and_flags & 128)
@@ -3160,12 +3165,11 @@ struct MDBX_txn {
 
 #define MDBX_TXN_UPDATE_GC 0x20 /* GC is being updated */
 #define MDBX_TXN_FROZEN_RE 0x40 /* list of reclaimed-pgno must not altered */
-#define MDBX_TXN_PURGEN_GC 0x80 /* GC is being clearing */
 
 #define TXN_FLAGS                                                              \
   (MDBX_TXN_FINISHED | MDBX_TXN_ERROR | MDBX_TXN_DIRTY | MDBX_TXN_SPILLS |     \
    MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID | MDBX_TXN_UPDATE_GC |                \
-   MDBX_TXN_FROZEN_RE | MDBX_TXN_PURGEN_GC)
+   MDBX_TXN_FROZEN_RE)
 
 #if (TXN_FLAGS & (MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS)) ||       \
     ((MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS | TXN_FLAGS) &         \
