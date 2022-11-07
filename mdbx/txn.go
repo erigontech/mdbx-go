@@ -225,6 +225,8 @@ type CommitLatencyGC struct {
 	WorkRxpages uint32
 	WorkMajflt  uint32
 	SelfMajflt  uint32
+	WorkCounter uint32
+	SelfCounter uint32
 
 	/** \brief Время затраченное на чтение и поиск внтури GC
 	 *  для целей поддержки и обновления самой GC. */
@@ -276,6 +278,8 @@ func (txn *Txn) commit() (CommitLatency, error) {
 			Wipes:        uint32(_stat.gc_prof.wipes),
 			Flushes:      uint32(_stat.gc_prof.flushes),
 			Kicks:        uint32(_stat.gc_prof.kicks),
+			SelfCounter:  uint32(_stat.gc_prof.self_counter),
+			WorkCounter:  uint32(_stat.gc_prof.work_counter),
 		},
 	}
 	if ret != success {
