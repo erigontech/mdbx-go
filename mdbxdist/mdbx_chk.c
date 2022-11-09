@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 11d2b7d45e1d823fad6902dfc830f3474946cbc207c3779c3d8f93fb1fedf36e_v0_12_1_90_g8dff7852
+#define MDBX_BUILD_SOURCERY f177f2e393bbf37614d27261c64f05b4c216b5b46ab9ce693be3c6ec4c1e123f_v0_12_1_103_gfdf31d3b
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -149,7 +149,7 @@
 #if (defined(__MINGW__) || defined(__MINGW32__) || defined(__MINGW64__)) &&    \
     !defined(__USE_MINGW_ANSI_STDIO)
 #define __USE_MINGW_ANSI_STDIO 1
-#endif /* __USE_MINGW_ANSI_STDIO */
+#endif /* MinGW */
 
 #if (defined(_WIN32) || defined(_WIN64)) && !defined(UNICODE)
 #define UNICODE
@@ -393,10 +393,6 @@ __extern_C key_t ftok(const char *, int);
 #elif _WIN32_WINNT < 0x0500
 #error At least 'Windows 2000' API is required for libmdbx.
 #endif /* _WIN32_WINNT */
-#if (defined(__MINGW32__) || defined(__MINGW64__)) &&                          \
-    !defined(__USE_MINGW_ANSI_STDIO)
-#define __USE_MINGW_ANSI_STDIO 1
-#endif /* MinGW */
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif /* WIN32_LEAN_AND_MEAN */

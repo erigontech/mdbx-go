@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 11d2b7d45e1d823fad6902dfc830f3474946cbc207c3779c3d8f93fb1fedf36e_v0_12_1_90_g8dff7852
+#define MDBX_BUILD_SOURCERY f177f2e393bbf37614d27261c64f05b4c216b5b46ab9ce693be3c6ec4c1e123f_v0_12_1_103_gfdf31d3b
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -127,7 +127,7 @@
 #if (defined(__MINGW__) || defined(__MINGW32__) || defined(__MINGW64__)) &&    \
     !defined(__USE_MINGW_ANSI_STDIO)
 #define __USE_MINGW_ANSI_STDIO 1
-#endif /* __USE_MINGW_ANSI_STDIO */
+#endif /* MinGW */
 
 #if (defined(_WIN32) || defined(_WIN64)) && !defined(UNICODE)
 #define UNICODE
@@ -371,10 +371,6 @@ __extern_C key_t ftok(const char *, int);
 #elif _WIN32_WINNT < 0x0500
 #error At least 'Windows 2000' API is required for libmdbx.
 #endif /* _WIN32_WINNT */
-#if (defined(__MINGW32__) || defined(__MINGW64__)) &&                          \
-    !defined(__USE_MINGW_ANSI_STDIO)
-#define __USE_MINGW_ANSI_STDIO 1
-#endif /* MinGW */
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif /* WIN32_LEAN_AND_MEAN */
@@ -9290,9 +9286,8 @@ static txnid_t find_oldest_reader(MDBX_env *const env, const txnid_t steady) {
   eASSERT(env, steady >= prev_oldest);
 
   txnid_t new_oldest = prev_oldest;
-  while (new_oldest != steady &&
-         nothing_changed !=
-             atomic_load32(&lck->mti_readers_refresh_flag, mo_AcquireRelease)) {
+  while (nothing_changed !=
+         atomic_load32(&lck->mti_readers_refresh_flag, mo_AcquireRelease)) {
     lck->mti_readers_refresh_flag.weak = nothing_changed;
     jitter4testing(false);
     const size_t snap_nreaders =
@@ -10510,7 +10505,7 @@ static int gc_cursor_init(MDBX_cursor *mc, MDBX_txn *txn) {
   return cursor_init(mc, txn, FREE_DBI);
 }
 
-static pgr_t page_alloc_slowpath(MDBX_cursor *mc, const size_t num,
+static pgr_t page_alloc_slowpath(const MDBX_cursor *mc, const size_t num,
                                  char flags) {
 #if MDBX_ENABLE_PROFGC
   const uint64_t monotime_before = osal_monotime();
@@ -11038,7 +11033,7 @@ done:
   return ret;
 }
 
-__hot static pgr_t page_alloc(MDBX_cursor *mc) {
+__hot static pgr_t page_alloc(const MDBX_cursor *mc) {
   MDBX_txn *const txn = mc->mc_txn;
 
   /* If there are any loose pages, just use them */
@@ -15385,19 +15380,42 @@ __cold static int read_header(MDBX_env *env, MDBX_meta *dest,
       TRACE("reading meta[%d]: offset %u, bytes %u, retry-left %u", meta_number,
             offset, MIN_PAGESIZE, retryleft);
       int err = osal_pread(env->me_lazy_fd, buffer, MIN_PAGESIZE, offset);
+      if (err == MDBX_ENODATA && offset == 0 && loop_count == 0 &&
+          env->me_dxb_mmap.filesize == 0 &&
+          mode_bits /* non-zero for DB creation */ != 0) {
+        NOTICE("read meta: empty file (%d, %s)", err, mdbx_strerror(err));
+        return err;
+      }
+#if defined(_WIN32) || defined(_WIN64)
+      if (err == ERROR_LOCK_VIOLATION) {
+        SleepEx(0, true);
+        err = osal_pread(env->me_lazy_fd, buffer, MIN_PAGESIZE, offset);
+        if (err == ERROR_LOCK_VIOLATION && --retryleft) {
+          WARNING("read meta[%u,%u]: %i, %s", offset, MIN_PAGESIZE, err,
+                  mdbx_strerror(err));
+          continue;
+        }
+      }
+#endif /* Windows */
       if (err != MDBX_SUCCESS) {
-        if (err == MDBX_ENODATA && offset == 0 && loop_count == 0 &&
-            env->me_dxb_mmap.filesize == 0 &&
-            mode_bits /* non-zero for DB creation */ != 0)
-          NOTICE("read meta: empty file (%d, %s)", err, mdbx_strerror(err));
-        else
-          ERROR("read meta[%u,%u]: %i, %s", offset, MIN_PAGESIZE, err,
-                mdbx_strerror(err));
+        ERROR("read meta[%u,%u]: %i, %s", offset, MIN_PAGESIZE, err,
+              mdbx_strerror(err));
         return err;
       }
 
       char again[MIN_PAGESIZE];
       err = osal_pread(env->me_lazy_fd, again, MIN_PAGESIZE, offset);
+#if defined(_WIN32) || defined(_WIN64)
+      if (err == ERROR_LOCK_VIOLATION) {
+        SleepEx(0, true);
+        err = osal_pread(env->me_lazy_fd, again, MIN_PAGESIZE, offset);
+        if (err == ERROR_LOCK_VIOLATION && --retryleft) {
+          WARNING("read meta[%u,%u]: %i, %s", offset, MIN_PAGESIZE, err,
+                  mdbx_strerror(err));
+          continue;
+        }
+      }
+#endif /* Windows */
       if (err != MDBX_SUCCESS) {
         ERROR("read meta[%u,%u]: %i, %s", offset, MIN_PAGESIZE, err,
               mdbx_strerror(err));
@@ -28377,6 +28395,8 @@ __dll_export
     "MINGW-64 " MDBX_STRINGIFY(__MINGW64_MAJOR_VERSION) "." MDBX_STRINGIFY(__MINGW64_MINOR_VERSION)
   #elif defined(__MINGW32__)
     "MINGW-32 " MDBX_STRINGIFY(__MINGW32_MAJOR_VERSION) "." MDBX_STRINGIFY(__MINGW32_MINOR_VERSION)
+  #elif defined(__MINGW__)
+    "MINGW " MDBX_STRINGIFY(__MINGW_MAJOR_VERSION) "." MDBX_STRINGIFY(__MINGW_MINOR_VERSION)
   #elif defined(__IBMC__)
     "IBM C " MDBX_STRINGIFY(__IBMC__)
   #elif defined(__GNUC__)
@@ -29289,9 +29309,10 @@ osal_ioring_write(osal_ioring_t *ior) {
         if (unlikely(r.err != ERROR_IO_PENDING)) {
           ERROR("%s: fd %p, item %p (%zu), pgno %u, bytes %zu, offset %" PRId64
                 ", err %d",
-                "WriteFileGather", ior->fd, item, item - ior->pool,
-                ((MDBX_page *)item->single.iov_base)->mp_pgno, bytes,
-                item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32), r.err);
+                "WriteFileGather", ior->fd, __Wpedantic_format_voidptr(item),
+                item - ior->pool, ((MDBX_page *)item->single.iov_base)->mp_pgno,
+                bytes, item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32),
+                r.err);
           goto bailout_rc;
         }
         assert(wait_for > ior->event_pool + ior->event_stack);
@@ -29310,9 +29331,10 @@ osal_ioring_write(osal_ioring_t *ior) {
         default:
           ERROR("%s: fd %p, item %p (%zu), pgno %u, bytes %zu, offset %" PRId64
                 ", err %d",
-                "WriteFileEx", ior->fd, item, item - ior->pool,
-                ((MDBX_page *)item->single.iov_base)->mp_pgno, bytes,
-                item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32), r.err);
+                "WriteFileEx", ior->fd, __Wpedantic_format_voidptr(item),
+                item - ior->pool, ((MDBX_page *)item->single.iov_base)->mp_pgno,
+                bytes, item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32),
+                r.err);
           goto bailout_rc;
         case ERROR_NOT_FOUND:
         case ERROR_USER_MAPPED_FILE:
@@ -29320,9 +29342,10 @@ osal_ioring_write(osal_ioring_t *ior) {
           WARNING(
               "%s: fd %p, item %p (%zu), pgno %u, bytes %zu, offset %" PRId64
               ", err %d",
-              "WriteFileEx", ior->fd, item, item - ior->pool,
-              ((MDBX_page *)item->single.iov_base)->mp_pgno, bytes,
-              item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32), r.err);
+              "WriteFileEx", ior->fd, __Wpedantic_format_voidptr(item),
+              item - ior->pool, ((MDBX_page *)item->single.iov_base)->mp_pgno,
+              bytes, item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32),
+              r.err);
           SleepEx(0, true);
           goto retry;
         case ERROR_INVALID_USER_BUFFER:
@@ -29342,9 +29365,10 @@ osal_ioring_write(osal_ioring_t *ior) {
         r.err = (int)GetLastError();
         ERROR("%s: fd %p, item %p (%zu), pgno %u, bytes %zu, offset %" PRId64
               ", err %d",
-              "WriteFile", ior->fd, item, item - ior->pool,
-              ((MDBX_page *)item->single.iov_base)->mp_pgno, bytes,
-              item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32), r.err);
+              "WriteFile", ior->fd, __Wpedantic_format_voidptr(item),
+              item - ior->pool, ((MDBX_page *)item->single.iov_base)->mp_pgno,
+              bytes, item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32),
+              r.err);
         goto bailout_rc;
       } else if (unlikely(written != bytes)) {
         r.err = ERROR_WRITE_FAULT;
@@ -29409,10 +29433,11 @@ osal_ioring_write(osal_ioring_t *ior) {
                   !GetOverlappedResult(ior->fd, &item->ov, &written, true))) {
             ERROR("%s: item %p (%zu), pgno %u, bytes %zu, offset %" PRId64
                   ", err %d",
-                  "GetOverlappedResult", item, item - ior->pool,
+                  "GetOverlappedResult", __Wpedantic_format_voidptr(item),
+                  item - ior->pool,
                   ((MDBX_page *)item->single.iov_base)->mp_pgno, bytes,
                   item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32),
-                  GetLastError());
+                  (int)GetLastError());
             goto bailout_geterr;
           }
           assert(MDBX_SUCCESS == item->ov.Internal);
@@ -29430,10 +29455,10 @@ osal_ioring_write(osal_ioring_t *ior) {
           r.err = (int)GetLastError();
         ERROR("%s: item %p (%zu), pgno %u, bytes %zu, offset %" PRId64
               ", err %d",
-              "Result", item, item - ior->pool,
+              "Result", __Wpedantic_format_voidptr(item), item - ior->pool,
               ((MDBX_page *)item->single.iov_base)->mp_pgno, bytes,
               item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32),
-              GetLastError());
+              (int)GetLastError());
         goto bailout_rc;
       }
       if (unlikely(item->ov.InternalHigh != bytes)) {
@@ -31828,9 +31853,9 @@ __dll_export
         0,
         12,
         1,
-        90,
-        {"2022-11-07T00:54:44+03:00", "dc758f02720d862a8a8188efe93f73a9ecdbccac", "8dff78526971c6db8b97b8bd751b77a7a287bf04",
-         "v0.12.1-90-g8dff7852"},
+        103,
+        {"2022-11-09T00:38:08+03:00", "296c603a4875a814be71f12c2ad708e87d83b23b", "fdf31d3b57358388d1783ccc063f761414212cba",
+         "v0.12.1-103-gfdf31d3b"},
         sourcery};
 
 __dll_export
@@ -31955,11 +31980,10 @@ static
 #define LCK_WAITFOR 0
 #define LCK_DONTWAIT LOCKFILE_FAIL_IMMEDIATELY
 
-static int flock_with_event(HANDLE fd, HANDLE event, DWORD flags,
-                            uint64_t offset, size_t bytes) {
-  TRACE("lock>>: fd %p, event %p, flags 0x%x offset %" PRId64 ", bytes %" PRId64
-        " >>",
-        fd, event, flags, offset, bytes);
+static int flock_with_event(HANDLE fd, HANDLE event, unsigned flags,
+                            size_t offset, size_t bytes) {
+  TRACE("lock>>: fd %p, event %p, flags 0x%x offset %zu, bytes %zu >>", fd,
+        event, flags, offset, bytes);
   OVERLAPPED ov;
   ov.Internal = 0;
   ov.InternalHigh = 0;
@@ -31967,9 +31991,8 @@ static int flock_with_event(HANDLE fd, HANDLE event, DWORD flags,
   ov.Offset = (DWORD)offset;
   ov.OffsetHigh = HIGH_DWORD(offset);
   if (LockFileEx(fd, flags, 0, (DWORD)bytes, HIGH_DWORD(bytes), &ov)) {
-    TRACE("lock<<: fd %p, event %p, flags 0x%x offset %" PRId64
-          ", bytes %" PRId64 " << %s",
-          fd, event, flags, offset, bytes, "done");
+    TRACE("lock<<: fd %p, event %p, flags 0x%x offset %zu, bytes %zu << %s", fd,
+          event, flags, offset, bytes, "done");
     return MDBX_SUCCESS;
   }
 
@@ -31977,8 +32000,7 @@ static int flock_with_event(HANDLE fd, HANDLE event, DWORD flags,
   if (rc == ERROR_IO_PENDING) {
     if (event) {
       if (GetOverlappedResult(fd, &ov, &rc, true)) {
-        TRACE("lock<<: fd %p, event %p, flags 0x%x offset %" PRId64
-              ", bytes %" PRId64 " << %s",
+        TRACE("lock<<: fd %p, event %p, flags 0x%x offset %zu, bytes %zu << %s",
               fd, event, flags, offset, bytes, "overlapped-done");
         return MDBX_SUCCESS;
       }
@@ -31986,25 +32008,24 @@ static int flock_with_event(HANDLE fd, HANDLE event, DWORD flags,
     } else
       CancelIo(fd);
   }
-  TRACE("lock<<: fd %p, event %p, flags 0x%x offset %" PRId64 ", bytes %" PRId64
-        " << err %d",
-        fd, event, flags, offset, bytes, rc);
+  TRACE("lock<<: fd %p, event %p, flags 0x%x offset %zu, bytes %zu << err %d",
+        fd, event, flags, offset, bytes, (int)rc);
   return (int)rc;
 }
 
-static __inline int flock(HANDLE fd, DWORD flags, uint64_t offset,
+static __inline int flock(HANDLE fd, unsigned flags, size_t offset,
                           size_t bytes) {
   return flock_with_event(fd, 0, flags, offset, bytes);
 }
 
-static __inline int flock_data(const MDBX_env *env, DWORD flags,
-                               uint64_t offset, size_t bytes) {
+static __inline int flock_data(const MDBX_env *env, unsigned flags,
+                               size_t offset, size_t bytes) {
   return flock_with_event(env->me_fd4data, env->me_data_lock_event, flags,
                           offset, bytes);
 }
 
-static int funlock(mdbx_filehandle_t fd, uint64_t offset, size_t bytes) {
-  TRACE("unlock: fd %p, offset %" PRId64 ", bytes %" PRId64, fd, offset, bytes);
+static int funlock(mdbx_filehandle_t fd, size_t offset, size_t bytes) {
+  TRACE("unlock: fd %p, offset %zu, bytes %zu", fd, offset, bytes);
   return UnlockFile(fd, (DWORD)offset, HIGH_DWORD(offset), (DWORD)bytes,
                     HIGH_DWORD(bytes))
              ? MDBX_SUCCESS
