@@ -228,6 +228,10 @@ type CommitLatencyGC struct {
 	WorkCounter uint32
 	SelfCounter uint32
 
+	PnlMergeTime   time.Duration
+	PnlMergeVolume uint64
+	PnlMergeCalls  uint32
+
 	/** \brief Время затраченное на чтение и поиск внтури GC
 	 *  для целей поддержки и обновления самой GC. */
 	SelfRtime time.Duration
@@ -262,24 +266,26 @@ func (txn *Txn) commit() (CommitLatency, error) {
 		Ending:      toDuration(_stat.ending),
 		Whole:       toDuration(_stat.whole),
 		GCDetails: CommitLatencyGC{
-			WorkRtime:    toDuration(_stat.gc_prof.work_rtime_monotonic),
-			WorkRtimeCPU: toDuration(_stat.gc_prof.work_rtime_cpu),
-			WorkRsteps:   uint32(_stat.gc_prof.work_rsteps),
-			WorkRxpages:  uint32(_stat.gc_prof.work_xpages),
-			WorkMajflt:   uint32(_stat.gc_prof.work_majflt),
-			SelfMajflt:   uint32(_stat.gc_prof.self_majflt),
-			SelfRtime:    toDuration(_stat.gc_prof.self_rtime_monotonic),
-			SelfRtimeCPU: toDuration(_stat.gc_prof.self_rtime_cpu),
-			SelfXtime:    toDuration(_stat.gc_prof.self_xtime_monotonic),
-			SelfRsteps:   uint32(_stat.gc_prof.self_rsteps),
-			SelfXpages:   uint32(_stat.gc_prof.self_xpages),
-			Wloops:       uint32(_stat.gc_prof.wloops),
-			Coalescences: uint32(_stat.gc_prof.coalescences),
-			Wipes:        uint32(_stat.gc_prof.wipes),
-			Flushes:      uint32(_stat.gc_prof.flushes),
-			Kicks:        uint32(_stat.gc_prof.kicks),
-			SelfCounter:  uint32(_stat.gc_prof.self_counter),
-			WorkCounter:  uint32(_stat.gc_prof.work_counter),
+			WorkRtime:      toDuration(_stat.gc_prof.work_rtime_monotonic),
+			WorkRtimeCPU:   toDuration(_stat.gc_prof.work_rtime_cpu),
+			WorkRsteps:     uint32(_stat.gc_prof.work_rsteps),
+			WorkRxpages:    uint32(_stat.gc_prof.work_xpages),
+			WorkMajflt:     uint32(_stat.gc_prof.work_majflt),
+			PnlMergeTime:   toDuration(_stat.gc_prof.pnl_merge.time),
+			PnlMergeVolume: uint64(_stat.gc_prof.pnl_merge.volume),
+			PnlMergeCalls:  uint32(_stat.gc_prof.pnl_merge.calls),
+			SelfRtime:      toDuration(_stat.gc_prof.self_rtime_monotonic),
+			SelfRtimeCPU:   toDuration(_stat.gc_prof.self_rtime_cpu),
+			SelfXtime:      toDuration(_stat.gc_prof.self_xtime_monotonic),
+			SelfRsteps:     uint32(_stat.gc_prof.self_rsteps),
+			SelfXpages:     uint32(_stat.gc_prof.self_xpages),
+			Wloops:         uint32(_stat.gc_prof.wloops),
+			Coalescences:   uint32(_stat.gc_prof.coalescences),
+			Wipes:          uint32(_stat.gc_prof.wipes),
+			Flushes:        uint32(_stat.gc_prof.flushes),
+			Kicks:          uint32(_stat.gc_prof.kicks),
+			SelfCounter:    uint32(_stat.gc_prof.self_counter),
+			WorkCounter:    uint32(_stat.gc_prof.work_counter),
 		},
 	}
 	if ret != success {
