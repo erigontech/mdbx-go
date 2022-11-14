@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY f177f2e393bbf37614d27261c64f05b4c216b5b46ab9ce693be3c6ec4c1e123f_v0_12_1_103_gfdf31d3b
+#define MDBX_BUILD_SOURCERY 6d3c28380feb8633a875a0b4368f72cf0009dbb8a1707a616a1811190574a5cc_v0_12_2_4_g62f01f5a
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2011,7 +2011,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #error MDBX_ENABLE_BIGFOOT must be defined as 0 or 1
 #endif /* MDBX_ENABLE_BIGFOOT */
 
-/** Controls use of POSIX madvise() hints and friends. */
+/** Controls using of POSIX' madvise() and/or similar hints. */
 #ifndef MDBX_ENABLE_MADVISE
 #define MDBX_ENABLE_MADVISE 1
 #elif !(MDBX_ENABLE_MADVISE == 0 || MDBX_ENABLE_MADVISE == 1)
@@ -2756,6 +2756,12 @@ typedef struct profgc_stat {
   uint32_t spe_counter;
   /* page faults (hard page faults) */
   uint32_t majflt;
+  /* Для разборок с pnl_merge() */
+  struct {
+    uint64_t time;
+    uint64_t volume;
+    uint32_t calls;
+  } pnl_merge;
 } profgc_stat_t;
 
 /* Statistics of page operations overall of all (running, completed and aborted)
@@ -3161,11 +3167,12 @@ struct MDBX_txn {
 
 #define MDBX_TXN_UPDATE_GC 0x20 /* GC is being updated */
 #define MDBX_TXN_FROZEN_RE 0x40 /* list of reclaimed-pgno must not altered */
+#define MDBX_TXN_PURGEN_GC 0x80 /* GC is being clearing */
 
 #define TXN_FLAGS                                                              \
   (MDBX_TXN_FINISHED | MDBX_TXN_ERROR | MDBX_TXN_DIRTY | MDBX_TXN_SPILLS |     \
    MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID | MDBX_TXN_UPDATE_GC |                \
-   MDBX_TXN_FROZEN_RE)
+   MDBX_TXN_FROZEN_RE | MDBX_TXN_PURGEN_GC)
 
 #if (TXN_FLAGS & (MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS)) ||       \
     ((MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS | TXN_FLAGS) &         \
@@ -3247,11 +3254,16 @@ struct MDBX_txn {
       MDBX_page *loose_pages;
       /* Number of loose pages (tw.loose_pages) */
       size_t loose_count;
-      size_t spill_least_removed;
-      /* The sorted list of dirty pages we temporarily wrote to disk
-       * because the dirty list was full. page numbers in here are
-       * shifted left by 1, deleted slots have the LSB set. */
-      MDBX_PNL spill_pages;
+      union {
+        struct {
+          size_t least_removed;
+          /* The sorted list of dirty pages we temporarily wrote to disk
+           * because the dirty list was full. page numbers in here are
+           * shifted left by 1, deleted slots have the LSB set. */
+          MDBX_PNL list;
+        } spilled;
+        size_t writemap_dirty_npages;
+      };
     } tw;
   };
 };
