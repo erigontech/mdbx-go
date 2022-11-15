@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 6d3c28380feb8633a875a0b4368f72cf0009dbb8a1707a616a1811190574a5cc_v0_12_2_4_g62f01f5a
+#define MDBX_BUILD_SOURCERY 49706e15b034e53cdbbac502d40d8545e7f1453be14c78d0341d6fb41cfcc575_v0_12_2_6_g44061a00
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -453,7 +453,7 @@ __extern_C key_t ftok(const char *, int);
 
 #if defined(i386) || defined(__386) || defined(__i386) || defined(__i386__) || \
     defined(i486) || defined(__i486) || defined(__i486__) ||                   \
-    defined(i586) | defined(__i586) || defined(__i586__) || defined(i686) ||   \
+    defined(i586) || defined(__i586) || defined(__i586__) || defined(i686) ||  \
     defined(__i686) || defined(__i686__) || defined(_M_IX86) ||                \
     defined(_X86_) || defined(__THW_INTEL__) || defined(__I86__) ||            \
     defined(__INTEL__) || defined(__x86_64) || defined(__x86_64__) ||          \

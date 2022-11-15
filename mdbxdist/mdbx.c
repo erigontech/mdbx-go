@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 6d3c28380feb8633a875a0b4368f72cf0009dbb8a1707a616a1811190574a5cc_v0_12_2_4_g62f01f5a
+#define MDBX_BUILD_SOURCERY 49706e15b034e53cdbbac502d40d8545e7f1453be14c78d0341d6fb41cfcc575_v0_12_2_6_g44061a00
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -429,7 +429,7 @@ __extern_C key_t ftok(const char *, int);
 
 #if defined(i386) || defined(__386) || defined(__i386) || defined(__i386__) || \
     defined(i486) || defined(__i486) || defined(__i486__) ||                   \
-    defined(i586) | defined(__i586) || defined(__i586__) || defined(i686) ||   \
+    defined(i586) || defined(__i586) || defined(__i586__) || defined(i686) ||  \
     defined(__i686) || defined(__i686__) || defined(_M_IX86) ||                \
     defined(_X86_) || defined(__THW_INTEL__) || defined(__I86__) ||            \
     defined(__INTEL__) || defined(__x86_64) || defined(__x86_64__) ||          \
@@ -13396,12 +13396,14 @@ static int gcu_prepare_backlog(MDBX_txn *txn, gcu_context_t *ctx,
     err = gcu_clean_stored_retired(txn, ctx);
     if (unlikely(err != MDBX_SUCCESS))
       return err;
-    err = page_alloc_slowpath(&ctx->cursor, (pgno_t)pages4retiredlist,
+#if !MDBX_ENABLE_BIGFOOT
+    err = page_alloc_slowpath(&ctx->cursor, pages4retiredlist,
                               MDBX_ALLOC_GC | MDBX_ALLOC_RESERVE)
               .err;
     TRACE("== after-4linear, backlog %zu, err %d", gcu_backlog_size(txn), err);
     cASSERT(&ctx->cursor,
             gcu_backlog_size(txn) >= pages4retiredlist || err != MDBX_SUCCESS);
+#endif /* !MDBX_ENABLE_BIGFOOT */
   }
 
   while (gcu_backlog_size(txn) < backlog4cow + pages4retiredlist &&
@@ -31806,9 +31808,9 @@ __dll_export
         0,
         12,
         2,
-        4,
-        {"2022-11-13T23:15:55+03:00", "52c720f91331a5435ad584c13fcd14c4961d1d3d", "62f01f5a9dbc00949ee5ad3b0761711067665d76",
-         "v0.12.2-4-g62f01f5a"},
+        6,
+        {"2022-11-14T21:22:31+03:00", "9fb1e27ace8adbb28105a6d253c3168702bf5cf5", "44061a00bc9a01fb599b77b8c5842d48a78e41ce",
+         "v0.12.2-6-g44061a00"},
         sourcery};
 
 __dll_export
