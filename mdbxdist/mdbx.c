@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 0b1e8dee15e4afe017f76507605fd229228ab09494eac71514a2e4d6c67aeb76_v0_12_2_14_g534c53ce
+#define MDBX_BUILD_SOURCERY f4c56d6579b17557018478d3b4860883729a0356c7e13f8db3b026ae634c323e_v0_12_2_11_g1f93dfe5
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1965,7 +1965,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 /** Controls profiling of GC search and updates. */
 #ifndef MDBX_ENABLE_PROFGC
-#define MDBX_ENABLE_PROFGC 1
+#define MDBX_ENABLE_PROFGC 0
 #elif !(MDBX_ENABLE_PROFGC == 0 || MDBX_ENABLE_PROFGC == 1)
 #error MDBX_ENABLE_PROFGC must be defined as 0 or 1
 #endif /* MDBX_ENABLE_PROFGC */
@@ -2734,12 +2734,6 @@ typedef struct profgc_stat {
   uint32_t spe_counter;
   /* page faults (hard page faults) */
   uint32_t majflt;
-  /* Для разборок с pnl_merge() */
-  struct {
-    uint64_t time;
-    uint64_t volume;
-    uint32_t calls;
-  } pnl_merge;
 } profgc_stat_t;
 
 /* Statistics of page operations overall of all (running, completed and aborted)
@@ -10765,15 +10759,7 @@ next_gc:;
   }
 
   /* Merge in descending sorted order */
-#if MDBX_ENABLE_PROFGC
-    const uint64_t merge_begin = osal_monotime();
-#endif /* MDBX_ENABLE_PROFGC */
   re_len = pnl_merge(txn->tw.relist, gc_pnl);
-#if MDBX_ENABLE_PROFGC
-    prof->pnl_merge.calls += 1;
-    prof->pnl_merge.volume += re_len;
-    prof->pnl_merge.time += osal_monotime() - merge_begin;
-#endif /* MDBX_ENABLE_PROFGC */
   flags |= MDBX_ALLOC_SHOULD_SCAN;
   if (AUDIT_ENABLED()) {
     if (unlikely(!pnl_check(txn->tw.relist, txn->mt_next_pgno))) {
@@ -13448,14 +13434,12 @@ static int gcu_prepare_backlog(MDBX_txn *txn, gcu_context_t *ctx,
     err = gcu_clean_stored_retired(txn, ctx);
     if (unlikely(err != MDBX_SUCCESS))
       return err;
-#if !MDBX_ENABLE_BIGFOOT
-    err = page_alloc_slowpath(&ctx->cursor, pages4retiredlist,
+    err = page_alloc_slowpath(&ctx->cursor, (pgno_t)pages4retiredlist,
                               MDBX_ALLOC_GC | MDBX_ALLOC_RESERVE)
               .err;
     TRACE("== after-4linear, backlog %zu, err %d", gcu_backlog_size(txn), err);
     cASSERT(&ctx->cursor,
             gcu_backlog_size(txn) >= pages4retiredlist || err != MDBX_SUCCESS);
-#endif /* !MDBX_ENABLE_BIGFOOT */
   }
 
   while (gcu_backlog_size(txn) < backlog4cow + pages4retiredlist &&
@@ -15079,14 +15063,6 @@ provide_latency:
     latency->gc_prof.wipes = ptr->gc_prof.wipes;
     latency->gc_prof.flushes = ptr->gc_prof.flushes;
     latency->gc_prof.kicks = ptr->gc_prof.kicks;
-
-    latency->gc_prof.pnl_merge_work.time = osal_monotime_to_16dot16(ptr->gc_prof.work.pnl_merge.time);
-    latency->gc_prof.pnl_merge_work.calls = ptr->gc_prof.work.pnl_merge.calls;
-    latency->gc_prof.pnl_merge_work.volume = ptr->gc_prof.work.pnl_merge.volume;
-    latency->gc_prof.pnl_merge_self.time = osal_monotime_to_16dot16(ptr->gc_prof.self.pnl_merge.time);
-    latency->gc_prof.pnl_merge_self.calls = ptr->gc_prof.self.pnl_merge.calls;
-    latency->gc_prof.pnl_merge_self.volume = ptr->gc_prof.self.pnl_merge.volume;
-
     if (txn == env->me_txn0)
       memset(&ptr->gc_prof, 0, sizeof(ptr->gc_prof));
 #else
@@ -31867,9 +31843,9 @@ __dll_export
         0,
         12,
         2,
-        14,
-        {"2022-11-19T23:21:20+03:00", "546c54ea897b07b87703718629811792c1ffc3e7", "534c53ce37e2b2df7cd01f210ac686406a0af84b",
-         "v0.12.2-14-g534c53ce"},
+        11,
+        {"2022-11-19T23:19:30+03:00", "6e84ced54d42cfcdc342b460996b78a1d024c819", "1f93dfe5fd58646654c25820d8ada29563acb3f8",
+         "v0.12.2-11-g1f93dfe5"},
         sourcery};
 
 __dll_export
