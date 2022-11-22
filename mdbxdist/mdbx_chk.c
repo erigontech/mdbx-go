@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY f4c56d6579b17557018478d3b4860883729a0356c7e13f8db3b026ae634c323e_v0_12_2_11_g1f93dfe5
+#define MDBX_BUILD_SOURCERY c99e57416504088e6b7a87f91694e2dbd9662e5768255f017c2815f663c896a5_v0_12_2_20_ge46271e4
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1987,7 +1987,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 /** Controls profiling of GC search and updates. */
 #ifndef MDBX_ENABLE_PROFGC
-#define MDBX_ENABLE_PROFGC 0
+#define MDBX_ENABLE_PROFGC 1
 #elif !(MDBX_ENABLE_PROFGC == 0 || MDBX_ENABLE_PROFGC == 1)
 #error MDBX_ENABLE_PROFGC must be defined as 0 or 1
 #endif /* MDBX_ENABLE_PROFGC */
@@ -2756,6 +2756,12 @@ typedef struct profgc_stat {
   uint32_t spe_counter;
   /* page faults (hard page faults) */
   uint32_t majflt;
+  /* Для разборок с pnl_merge() */
+  struct {
+    uint64_t time;
+    uint64_t volume;
+    uint32_t calls;
+  } pnl_merge;
 } profgc_stat_t;
 
 /* Statistics of page operations overall of all (running, completed and aborted)
@@ -3092,7 +3098,7 @@ typedef struct MDBX_dpl {
 #define MDBX_TXL_INITIAL                                                       \
   (MDBX_TXL_GRANULATE - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(txnid_t))
 #define MDBX_TXL_MAX                                                           \
-  ((1u << 17) - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(txnid_t))
+  ((1u << 26) - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(txnid_t))
 
 #define MDBX_PNL_ALLOCLEN(pl) ((pl)[-1])
 #define MDBX_PNL_GETSIZE(pl) ((size_t)((pl)[0]))
@@ -3159,13 +3165,11 @@ struct MDBX_txn {
   /* Additional flag for sync_locked() */
 #define MDBX_SHRINK_ALLOWED UINT32_C(0x40000000)
 
-#define MDBX_TXN_UPDATE_GC 0x20 /* GC is being updated */
-#define MDBX_TXN_FROZEN_RE 0x40 /* list of reclaimed-pgno must not altered */
+#define MDBX_TXN_DRAINED_GC 0x20 /* GC was depleted up to oldest reader */
 
 #define TXN_FLAGS                                                              \
   (MDBX_TXN_FINISHED | MDBX_TXN_ERROR | MDBX_TXN_DIRTY | MDBX_TXN_SPILLS |     \
-   MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID | MDBX_TXN_UPDATE_GC |                \
-   MDBX_TXN_FROZEN_RE)
+   MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID | MDBX_TXN_DRAINED_GC)
 
 #if (TXN_FLAGS & (MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS)) ||       \
     ((MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS | TXN_FLAGS) &         \
@@ -3306,6 +3310,9 @@ struct MDBX_cursor {
 #define C_SUB 0x04         /* Cursor is a sub-cursor */
 #define C_DEL 0x08         /* last op was a cursor_del */
 #define C_UNTRACK 0x10     /* Un-track cursor when closing */
+#define C_GCU                                                                                  \
+  0x20 /* Происходит подготовка к обновлению GC, поэтому \
+        * можно брать страницы из GC даже для FREE_DBI */
   uint8_t mc_flags;
 
   /* Cursor checking flags. */
@@ -5151,7 +5158,9 @@ int main(int argc, char *argv[]) {
       envflags &= ~MDBX_RDONLY;
 #if MDBX_MMAP_INCOHERENT_FILE_WRITE
       /* Temporary `workaround` for OpenBSD kernel's flaw.
-       * See https://web.archive.org/web/https://github.com/erthink/libmdbx/issues/67 */
+       * See
+       * https://web.archive.org/web/https://github.com/erthink/libmdbx/issues/67
+       */
       envflags |= MDBX_WRITEMAP;
 #endif /* MDBX_MMAP_INCOHERENT_FILE_WRITE */
       break;
