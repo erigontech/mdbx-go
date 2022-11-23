@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY c99e57416504088e6b7a87f91694e2dbd9662e5768255f017c2815f663c896a5_v0_12_2_20_ge46271e4
+#define MDBX_BUILD_SOURCERY 4b9a2e2d5ce60833d75dacf1b0780588515417bec39a41cbe1eeecf572a10b13_v0_12_2_22_ge6e9ab20
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -8343,9 +8343,7 @@ static void iov_callback4dirtypages(iov_ctx_t *ctx, size_t offset, void *data,
     osal_flush_incoherent_mmap(env->me_map + offset, bytes, env->me_os_psize);
     const MDBX_page *const rp = (const MDBX_page *)(env->me_map + offset);
     /* check with timeout as the workaround
-     * for
-     * https://web.archive.org/web/https://github.com/erthink/libmdbx/issues/269
-     */
+     * for https://libmdbx.dqdkfa.ru/dead-github/issues/269 */
     if (unlikely(memcmp(wp, rp, bytes))) {
       ctx->coherency_timestamp = 0;
       WARNING("catch delayed/non-arrived page %" PRIaPGNO " %s", wp->mp_pgno,
@@ -10498,7 +10496,7 @@ static pgno_t *scan4seq_resolver(pgno_t *range, const size_t len,
 static __inline bool is_gc_usable(MDBX_txn *txn, const MDBX_cursor *mc,
                                   const uint8_t flags) {
   /* avoid search inside empty tree and while tree is updating,
-     https://web.archive.org/web/https://github.com/erthink/libmdbx/issues/31 */
+     https://libmdbx.dqdkfa.ru/dead-github/issues/31 */
   if (unlikely(txn->mt_dbs[FREE_DBI].md_entries == 0)) {
     txn->mt_flags |= MDBX_TXN_DRAINED_GC;
     return false;
@@ -10520,6 +10518,49 @@ __hot static bool is_already_reclaimed(const MDBX_txn *txn, txnid_t id) {
       return true;
   return false;
 }
+
+#if defined(__GNUC__) && !defined(__LCC__)
+
+#pragma push_macro("TRACE")
+#pragma push_macro("DEBUG")
+#pragma push_macro("VERBOSE")
+#pragma push_macro("NOTICE")
+#pragma push_macro("WARNING")
+#pragma push_macro("ERROR")
+#pragma push_macro("eASSERT")
+
+#undef TRACE
+#define TRACE(fmt, ...)                                                        \
+  debug_log(MDBX_LOG_TRACE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef DEBUG
+#define DEBUG(fmt, ...)                                                        \
+  debug_log(MDBX_LOG_DEBUG, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef VERBOSE
+#define VERBOSE(fmt, ...)                                                      \
+  debug_log(MDBX_LOG_VERBOSE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef NOTICE
+#define NOTICE(fmt, ...)                                                       \
+  debug_log(MDBX_LOG_NOTICE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef WARNING
+#define WARNING(fmt, ...)                                                      \
+  debug_log(MDBX_LOG_WARN, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef ERROR
+#define ERROR(fmt, ...)                                                        \
+  debug_log(MDBX_LOG_ERROR, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef eASSERT
+#define eASSERT(env, expr) ENSURE(env, expr)
+
+#if !defined(__clang__)
+#pragma GCC optimize("-Og")
+#endif
+
+#endif /* GCC only */
 
 static pgr_t page_alloc_slowpath(const MDBX_cursor *mc, const size_t num,
                                  uint8_t flags) {
@@ -10715,7 +10756,7 @@ next_gc:;
       /* Stop reclaiming to avoid large/overflow the page list.
        * This is a rare case while search for a continuously multi-page region
        * in a large database.
-       * https://web.archive.org/web/https://github.com/erthink/libmdbx/issues/123
+       * https://libmdbx.dqdkfa.ru/dead-github/issues/123
        */
       NOTICE("stop reclaiming to avoid PNL overflow: %zu (current) + %zu "
              "(chunk) -> %zu",
@@ -11077,6 +11118,22 @@ done:
 #endif /* MDBX_ENABLE_PROFGC */
   return ret;
 }
+
+#if defined(__GNUC__) && !defined(__LCC__)
+
+#pragma pop_macro("TRACE")
+#pragma pop_macro("DEBUG")
+#pragma pop_macro("VERBOSE")
+#pragma pop_macro("NOTICE")
+#pragma pop_macro("WARNING")
+#pragma pop_macro("ERROR")
+#pragma pop_macro("eASSERT")
+
+#if !defined(__clang__)
+#pragma GCC reset_options
+#endif
+
+#endif /* GCC only */
 
 __hot static pgr_t page_alloc(const MDBX_cursor *mc) {
   MDBX_txn *const txn = mc->mc_txn;
@@ -11925,8 +11982,7 @@ __cold int mdbx_thread_unregister(const MDBX_env *env) {
   return MDBX_SUCCESS;
 }
 
-/* check against
- * https://web.archive.org/web/https://github.com/erthink/libmdbx/issues/269 */
+/* check against https://libmdbx.dqdkfa.ru/dead-github/issues/269 */
 static bool coherency_check(const MDBX_env *env, const txnid_t txnid,
                             const volatile MDBX_db *dbs,
                             const volatile MDBX_meta *meta, bool report) {
@@ -12027,8 +12083,7 @@ __cold static int coherency_timeout(uint64_t *timestamp, pgno_t pgno) {
 }
 
 /* check with timeout as the workaround
- * for https://web.archive.org/web/https://github.com/erthink/libmdbx/issues/269
- */
+ * for https://libmdbx.dqdkfa.ru/dead-github/issues/269 */
 __hot static int coherency_check_readed(const MDBX_env *env,
                                         const txnid_t txnid,
                                         const volatile MDBX_db *dbs,
@@ -12264,9 +12319,7 @@ static int txn_renew(MDBX_txn *txn, const unsigned flags) {
     txn->tw.troika = meta_tap(env);
     const meta_ptr_t head = meta_recent(env, &txn->tw.troika);
     uint64_t timestamp = 0;
-    while ("workaround for "
-           "https://web.archive.org/web/https://github.com/erthink/libmdbx/"
-           "issues/269") {
+    while ("workaround for https://libmdbx.dqdkfa.ru/dead-github/issues/269") {
       rc = coherency_check_readed(env, head.txnid, head.ptr_v->mm_dbs,
                                   head.ptr_v, &timestamp);
       if (likely(rc == MDBX_SUCCESS))
@@ -13419,6 +13472,49 @@ static int gcu_touch(gcu_context_t *ctx) {
   return err;
 }
 
+#if defined(__GNUC__) && !defined(__LCC__)
+
+#pragma push_macro("TRACE")
+#pragma push_macro("DEBUG")
+#pragma push_macro("VERBOSE")
+#pragma push_macro("NOTICE")
+#pragma push_macro("WARNING")
+#pragma push_macro("ERROR")
+#pragma push_macro("eASSERT")
+
+#undef TRACE
+#define TRACE(fmt, ...)                                                        \
+  debug_log(MDBX_LOG_TRACE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef DEBUG
+#define DEBUG(fmt, ...)                                                        \
+  debug_log(MDBX_LOG_DEBUG, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef VERBOSE
+#define VERBOSE(fmt, ...)                                                      \
+  debug_log(MDBX_LOG_VERBOSE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef NOTICE
+#define NOTICE(fmt, ...)                                                       \
+  debug_log(MDBX_LOG_NOTICE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef WARNING
+#define WARNING(fmt, ...)                                                      \
+  debug_log(MDBX_LOG_WARN, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef ERROR
+#define ERROR(fmt, ...)                                                        \
+  debug_log(MDBX_LOG_ERROR, __func__, __LINE__, fmt "\n", __VA_ARGS__)
+
+#undef eASSERT
+#define eASSERT(env, expr) ENSURE(env, expr)
+
+#if !defined(__clang__)
+#pragma GCC optimize("-Og")
+#endif
+
+#endif /* GCC only */
+
 /* Prepare a backlog of pages to modify GC itself, while reclaiming is
  * prohibited. It should be enough to prevent search in page_alloc_slowpath()
  * during a deleting, when GC tree is unbalanced. */
@@ -14334,6 +14430,22 @@ bailout:
   TRACE("<<< %zu loops, rc = %d", ctx->loop, rc);
   return rc;
 }
+
+#if defined(__GNUC__) && !defined(__LCC__)
+
+#pragma pop_macro("TRACE")
+#pragma pop_macro("DEBUG")
+#pragma pop_macro("VERBOSE")
+#pragma pop_macro("NOTICE")
+#pragma pop_macro("WARNING")
+#pragma pop_macro("ERROR")
+#pragma pop_macro("eASSERT")
+
+#if !defined(__clang__)
+#pragma GCC reset_options
+#endif
+
+#endif /* GCC only */
 
 static int txn_write(MDBX_txn *txn, iov_ctx_t *ctx) {
   tASSERT(txn, (txn->mt_flags & MDBX_WRITEMAP) == 0 || MDBX_AVOID_MSYNC);
@@ -15958,9 +16070,7 @@ static int sync_locked(MDBX_env *env, unsigned flags, MDBX_meta *const pending,
   }
 
   uint64_t timestamp = 0;
-  while ("workaround for "
-         "https://web.archive.org/web/https://github.com/erthink/libmdbx/"
-         "issues/269") {
+  while ("workaround for https://libmdbx.dqdkfa.ru/dead-github/issues/269") {
     rc =
         coherency_check_written(env, pending->unsafe_txnid, target, &timestamp);
     if (likely(rc == MDBX_SUCCESS))
@@ -16482,8 +16592,7 @@ mdbx_env_set_geometry(MDBX_env *env, intptr_t size_lower, intptr_t size_now,
 
       uint64_t timestamp = 0;
       while ("workaround for "
-             "https://web.archive.org/web/https://github.com/erthink/libmdbx/"
-             "issues/269") {
+             "https://libmdbx.dqdkfa.ru/dead-github/issues/269") {
         meta = *head.ptr_c;
         rc = coherency_check_readed(env, head.txnid, meta.mm_dbs, &meta,
                                     &timestamp);
@@ -17826,9 +17935,7 @@ __cold int mdbx_env_openW(MDBX_env *env, const wchar_t *pathname,
   } else {
 #if MDBX_MMAP_INCOHERENT_FILE_WRITE
     /* Temporary `workaround` for OpenBSD kernel's flaw.
-     * See
-     * https://web.archive.org/web/https://github.com/erthink/libmdbx/issues/67
-     */
+     * See https://libmdbx.dqdkfa.ru/dead-github/issues/67 */
     if ((flags & MDBX_WRITEMAP) == 0) {
       if (flags & MDBX_ACCEDE)
         flags |= MDBX_WRITEMAP;
@@ -18265,9 +18372,10 @@ __cold static int env_close(MDBX_env *env) {
   }
 
   if (env->me_dbxs) {
-    for (size_t i = env->me_numdbs; --i >= CORE_DBS;)
+    for (size_t i = CORE_DBS; i < env->me_numdbs; ++i)
       osal_free(env->me_dbxs[i].md_name.iov_base);
     osal_free(env->me_dbxs);
+    env->me_numdbs = CORE_DBS;
     env->me_dbxs = nullptr;
   }
   if (env->me_pbuf) {
@@ -25182,8 +25290,7 @@ __cold static int fetch_envinfo_ex(const MDBX_env *env, const MDBX_txn *txn,
   const size_t size_before_pgop_stat = offsetof(MDBX_envinfo, mi_pgop_stat);
 
   /* is the environment open?
-   * (https://web.archive.org/web/https://github.com/erthink/libmdbx/issues/171)
-   */
+   * (https://libmdbx.dqdkfa.ru/dead-github/issues/171) */
   if (unlikely(!env->me_map)) {
     /* environment not yet opened */
 #if 1
@@ -29826,9 +29933,7 @@ MDBX_INTERNAL_FUNC int osal_openfile(const enum osal_openfile_purpose purpose,
   flags |= O_CLOEXEC;
 #endif /* O_CLOEXEC */
 
-  /* Safeguard for
-   * https://web.archive.org/web/https://github.com/erthink/libmdbx/issues/144
-   */
+  /* Safeguard for https://libmdbx.dqdkfa.ru/dead-github/issues/144 */
 #if STDIN_FILENO == 0 && STDOUT_FILENO == 1 && STDERR_FILENO == 2
   int stub_fd0 = -1, stub_fd1 = -1, stub_fd2 = -1;
   static const char dev_null[] = "/dev/null";
@@ -29866,9 +29971,7 @@ MDBX_INTERNAL_FUNC int osal_openfile(const enum osal_openfile_purpose purpose,
       errno = EACCES /* restore errno if file exists */;
   }
 
-  /* Safeguard for
-   * https://web.archive.org/web/https://github.com/erthink/libmdbx/issues/144
-   */
+  /* Safeguard for https://libmdbx.dqdkfa.ru/dead-github/issues/144 */
 #if STDIN_FILENO == 0 && STDOUT_FILENO == 1 && STDERR_FILENO == 2
   if (*fd == STDIN_FILENO) {
     WARNING("Got STD%s_FILENO/%d, avoid using it by dup(fd)", "IN",
@@ -30716,8 +30819,7 @@ MDBX_INTERNAL_FUNC int osal_munmap(osal_mmap_t *map) {
   VALGRIND_MAKE_MEM_NOACCESS(map->address, map->current);
   /* Unpoisoning is required for ASAN to avoid false-positive diagnostic
    * when this memory will re-used by malloc or another mmapping.
-   * See
-   * https://web.archive.org/web/https://github.com/erthink/libmdbx/pull/93#issuecomment-613687203
+   * See https://libmdbx.dqdkfa.ru/dead-github/pull/93#issuecomment-613687203
    */
   MDBX_ASAN_UNPOISON_MEMORY_REGION(map->address,
                                    (map->filesize && map->filesize < map->limit)
@@ -30796,8 +30898,7 @@ MDBX_INTERNAL_FUNC int osal_mresize(const int flags, osal_mmap_t *map,
 
   /* Unpoisoning is required for ASAN to avoid false-positive diagnostic
    * when this memory will re-used by malloc or another mmapping.
-   * See
-   * https://web.archive.org/web/https://github.com/erthink/libmdbx/pull/93#issuecomment-613687203
+   * See https://libmdbx.dqdkfa.ru/dead-github/pull/93#issuecomment-613687203
    */
   MDBX_ASAN_UNPOISON_MEMORY_REGION(map->address, map->limit);
   status = NtUnmapViewOfSection(GetCurrentProcess(), map->address);
@@ -31078,7 +31179,7 @@ retry_mapview:;
         /* Unpoisoning is required for ASAN to avoid false-positive diagnostic
          * when this memory will re-used by malloc or another mmapping.
          * See
-         * https://web.archive.org/web/https://github.com/erthink/libmdbx/pull/93#issuecomment-613687203
+         * https://libmdbx.dqdkfa.ru/dead-github/pull/93#issuecomment-613687203
          */
         MDBX_ASAN_UNPOISON_MEMORY_REGION(
             map->address,
@@ -31100,7 +31201,7 @@ retry_mapview:;
     /* Unpoisoning is required for ASAN to avoid false-positive diagnostic
      * when this memory will re-used by malloc or another mmapping.
      * See
-     * https://web.archive.org/web/https://github.com/erthink/libmdbx/pull/93#issuecomment-613687203
+     * https://libmdbx.dqdkfa.ru/dead-github/pull/93#issuecomment-613687203
      */
     MDBX_ASAN_UNPOISON_MEMORY_REGION(
         map->address, (map->current < map->limit) ? map->current : map->limit);
@@ -31923,9 +32024,9 @@ __dll_export
         0,
         12,
         2,
-        20,
-        {"2022-11-22T15:07:39+03:00", "abdf549ac27ff5746ae8a3595b78a55b851e5ede", "e46271e480b082007986f38fd547d69bd7f1ee75",
-         "v0.12.2-20-ge46271e4"},
+        22,
+        {"2022-11-23T07:40:49+03:00", "43247a9733aab0a69ac2950a97ee2afc4f190c03", "e6e9ab200f9190f38591351e4fd04b727764adff",
+         "v0.12.2-22-ge6e9ab20"},
         sourcery};
 
 __dll_export

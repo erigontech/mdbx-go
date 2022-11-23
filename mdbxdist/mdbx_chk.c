@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY c99e57416504088e6b7a87f91694e2dbd9662e5768255f017c2815f663c896a5_v0_12_2_20_ge46271e4
+#define MDBX_BUILD_SOURCERY 4b9a2e2d5ce60833d75dacf1b0780588515417bec39a41cbe1eeecf572a10b13_v0_12_2_22_ge6e9ab20
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -5158,9 +5158,7 @@ int main(int argc, char *argv[]) {
       envflags &= ~MDBX_RDONLY;
 #if MDBX_MMAP_INCOHERENT_FILE_WRITE
       /* Temporary `workaround` for OpenBSD kernel's flaw.
-       * See
-       * https://web.archive.org/web/https://github.com/erthink/libmdbx/issues/67
-       */
+       * See https://libmdbx.dqdkfa.ru/dead-github/issues/67 */
       envflags |= MDBX_WRITEMAP;
 #endif /* MDBX_MMAP_INCOHERENT_FILE_WRITE */
       break;
