@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY d0069be7eaa64adbf6ca204b42ad80bc0cf6055c815765496ee5433d54fd2d53_v0_12_2_22_ga34104a7
+#define MDBX_BUILD_SOURCERY e323f67102dd47e00856e91cd73f675dee44003a486ce13f5dff194cace55b55_v0_12_2_21_g4cfaa02a
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -10519,49 +10519,6 @@ __hot static bool is_already_reclaimed(const MDBX_txn *txn, txnid_t id) {
   return false;
 }
 
-#if defined(__GNUC__) && !defined(__LCC__)
-
-#pragma push_macro("TRACE")
-#pragma push_macro("DEBUG")
-#pragma push_macro("VERBOSE")
-#pragma push_macro("NOTICE")
-#pragma push_macro("WARNING")
-#pragma push_macro("ERROR")
-#pragma push_macro("eASSERT")
-
-#undef TRACE
-#define TRACE(fmt, ...)                                                        \
-  debug_log(MDBX_LOG_TRACE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
-
-#undef DEBUG
-#define DEBUG(fmt, ...)                                                        \
-  debug_log(MDBX_LOG_DEBUG, __func__, __LINE__, fmt "\n", __VA_ARGS__)
-
-#undef VERBOSE
-#define VERBOSE(fmt, ...)                                                      \
-  debug_log(MDBX_LOG_VERBOSE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
-
-#undef NOTICE
-#define NOTICE(fmt, ...)                                                       \
-  debug_log(MDBX_LOG_NOTICE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
-
-#undef WARNING
-#define WARNING(fmt, ...)                                                      \
-  debug_log(MDBX_LOG_WARN, __func__, __LINE__, fmt "\n", __VA_ARGS__)
-
-#undef ERROR
-#define ERROR(fmt, ...)                                                        \
-  debug_log(MDBX_LOG_ERROR, __func__, __LINE__, fmt "\n", __VA_ARGS__)
-
-#undef eASSERT
-#define eASSERT(env, expr) ENSURE(env, expr)
-
-#if !defined(__clang__)
-#pragma GCC optimize("-Og")
-#endif
-
-#endif /* GCC only */
-
 static pgr_t page_alloc_slowpath(const MDBX_cursor *mc, const size_t num,
                                  uint8_t flags) {
 #if MDBX_ENABLE_PROFGC
@@ -11118,22 +11075,6 @@ done:
 #endif /* MDBX_ENABLE_PROFGC */
   return ret;
 }
-
-#if defined(__GNUC__) && !defined(__LCC__)
-
-#pragma pop_macro("TRACE")
-#pragma pop_macro("DEBUG")
-#pragma pop_macro("VERBOSE")
-#pragma pop_macro("NOTICE")
-#pragma pop_macro("WARNING")
-#pragma pop_macro("ERROR")
-#pragma pop_macro("eASSERT")
-
-#if !defined(__clang__)
-#pragma GCC reset_options
-#endif
-
-#endif /* GCC only */
 
 __hot static pgr_t page_alloc(const MDBX_cursor *mc) {
   MDBX_txn *const txn = mc->mc_txn;
@@ -13472,49 +13413,6 @@ static int gcu_touch(gcu_context_t *ctx) {
   return err;
 }
 
-#if defined(__GNUC__) && !defined(__LCC__)
-
-#pragma push_macro("TRACE")
-#pragma push_macro("DEBUG")
-#pragma push_macro("VERBOSE")
-#pragma push_macro("NOTICE")
-#pragma push_macro("WARNING")
-#pragma push_macro("ERROR")
-#pragma push_macro("eASSERT")
-
-#undef TRACE
-#define TRACE(fmt, ...)                                                        \
-  debug_log(MDBX_LOG_TRACE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
-
-#undef DEBUG
-#define DEBUG(fmt, ...)                                                        \
-  debug_log(MDBX_LOG_DEBUG, __func__, __LINE__, fmt "\n", __VA_ARGS__)
-
-#undef VERBOSE
-#define VERBOSE(fmt, ...)                                                      \
-  debug_log(MDBX_LOG_VERBOSE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
-
-#undef NOTICE
-#define NOTICE(fmt, ...)                                                       \
-  debug_log(MDBX_LOG_NOTICE, __func__, __LINE__, fmt "\n", __VA_ARGS__)
-
-#undef WARNING
-#define WARNING(fmt, ...)                                                      \
-  debug_log(MDBX_LOG_WARN, __func__, __LINE__, fmt "\n", __VA_ARGS__)
-
-#undef ERROR
-#define ERROR(fmt, ...)                                                        \
-  debug_log(MDBX_LOG_ERROR, __func__, __LINE__, fmt "\n", __VA_ARGS__)
-
-#undef eASSERT
-#define eASSERT(env, expr) ENSURE(env, expr)
-
-#if !defined(__clang__)
-#pragma GCC optimize("-Og")
-#endif
-
-#endif /* GCC only */
-
 /* Prepare a backlog of pages to modify GC itself, while reclaiming is
  * prohibited. It should be enough to prevent search in page_alloc_slowpath()
  * during a deleting, when GC tree is unbalanced. */
@@ -14435,22 +14333,6 @@ bailout:
   TRACE("<<< %zu loops, rc = %d", ctx->loop, rc);
   return rc;
 }
-
-#if defined(__GNUC__) && !defined(__LCC__)
-
-#pragma pop_macro("TRACE")
-#pragma pop_macro("DEBUG")
-#pragma pop_macro("VERBOSE")
-#pragma pop_macro("NOTICE")
-#pragma pop_macro("WARNING")
-#pragma pop_macro("ERROR")
-#pragma pop_macro("eASSERT")
-
-#if !defined(__clang__)
-#pragma GCC reset_options
-#endif
-
-#endif /* GCC only */
 
 static int txn_write(MDBX_txn *txn, iov_ctx_t *ctx) {
   tASSERT(txn, (txn->mt_flags & MDBX_WRITEMAP) == 0 || MDBX_AVOID_MSYNC);
@@ -32031,9 +31913,9 @@ __dll_export
         0,
         12,
         2,
-        22,
-        {"2022-11-23T14:37:00+03:00", "1acc0fad860b90c5c602c2b676b24dd5665dd78b", "a34104a7ba90db4da0ec389fdfb777077b575d48",
-         "v0.12.2-22-ga34104a7"},
+        21,
+        {"2022-11-23T14:37:00+03:00", "8c2cfd0d990decf238b33a85bc61ec326d2dcffd", "4cfaa02abd4685327d4bcb55ef022782fc4983df",
+         "v0.12.2-21-g4cfaa02a"},
         sourcery};
 
 __dll_export
