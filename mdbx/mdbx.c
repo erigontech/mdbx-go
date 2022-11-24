@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 4b9a2e2d5ce60833d75dacf1b0780588515417bec39a41cbe1eeecf572a10b13_v0_12_2_22_ge6e9ab20
+#define MDBX_BUILD_SOURCERY d0069be7eaa64adbf6ca204b42ad80bc0cf6055c815765496ee5433d54fd2d53_v0_12_2_22_ga34104a7
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -10789,13 +10789,13 @@ next_gc:;
 
   /* Merge in descending sorted order */
 #if MDBX_ENABLE_PROFGC
-    const uint64_t merge_begin = osal_monotime();
+  const uint64_t merge_begin = osal_monotime();
 #endif /* MDBX_ENABLE_PROFGC */
   re_len = pnl_merge(txn->tw.relist, gc_pnl);
 #if MDBX_ENABLE_PROFGC
-    prof->pnl_merge.calls += 1;
-    prof->pnl_merge.volume += re_len;
-    prof->pnl_merge.time += osal_monotime() - merge_begin;
+  prof->pnl_merge.calls += 1;
+  prof->pnl_merge.volume += re_len;
+  prof->pnl_merge.time += osal_monotime() - merge_begin;
 #endif /* MDBX_ENABLE_PROFGC */
   flags |= MDBX_ALLOC_SHOULD_SCAN;
   if (AUDIT_ENABLED()) {
@@ -14170,6 +14170,10 @@ retry:
           : (ctx->rid < INT16_MAX) ? (size_t)ctx->rid
                                    : INT16_MAX;
       if (avail_gc_slots > 1) {
+#if MDBX_ENABLE_BIGFOOT
+        chunk = (chunk < env->me_maxgc_ov1page * 2) ? chunk / 2
+                                                    : env->me_maxgc_ov1page;
+#else
         if (chunk < env->me_maxgc_ov1page * 2)
           chunk /= 2;
         else {
@@ -14206,6 +14210,7 @@ retry:
                         : tail;
           }
         }
+#endif /* MDBX_ENABLE_BIGFOOT */
       }
     }
     tASSERT(txn, chunk > 0);
@@ -15232,10 +15237,12 @@ provide_latency:
     latency->gc_prof.flushes = ptr->gc_prof.flushes;
     latency->gc_prof.kicks = ptr->gc_prof.kicks;
 
-    latency->gc_prof.pnl_merge_work.time = osal_monotime_to_16dot16(ptr->gc_prof.work.pnl_merge.time);
+    latency->gc_prof.pnl_merge_work.time =
+        osal_monotime_to_16dot16(ptr->gc_prof.work.pnl_merge.time);
     latency->gc_prof.pnl_merge_work.calls = ptr->gc_prof.work.pnl_merge.calls;
     latency->gc_prof.pnl_merge_work.volume = ptr->gc_prof.work.pnl_merge.volume;
-    latency->gc_prof.pnl_merge_self.time = osal_monotime_to_16dot16(ptr->gc_prof.self.pnl_merge.time);
+    latency->gc_prof.pnl_merge_self.time =
+        osal_monotime_to_16dot16(ptr->gc_prof.self.pnl_merge.time);
     latency->gc_prof.pnl_merge_self.calls = ptr->gc_prof.self.pnl_merge.calls;
     latency->gc_prof.pnl_merge_self.volume = ptr->gc_prof.self.pnl_merge.volume;
 
@@ -32025,8 +32032,8 @@ __dll_export
         12,
         2,
         22,
-        {"2022-11-23T07:40:49+03:00", "43247a9733aab0a69ac2950a97ee2afc4f190c03", "e6e9ab200f9190f38591351e4fd04b727764adff",
-         "v0.12.2-22-ge6e9ab20"},
+        {"2022-11-23T14:37:00+03:00", "1acc0fad860b90c5c602c2b676b24dd5665dd78b", "a34104a7ba90db4da0ec389fdfb777077b575d48",
+         "v0.12.2-22-ga34104a7"},
         sourcery};
 
 __dll_export
