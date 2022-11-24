@@ -444,22 +444,6 @@ func (env *Env) SetDebug(logLvl LogLvl, dbg int, logger *C.MDBX_debug_func) erro
 	return nil
 }
 
-// Path returns the path argument passed to Open.  Path returns a non-nil error
-// if env.Open() was not previously called.
-//
-// See mdbx_env_get_path.
-func (env *Env) Path() (string, error) {
-	var cpath *C.char
-	ret := C.mdbx_env_get_path(env._env, &cpath)
-	if ret != success {
-		return "", operrno("mdbx_env_get_path", ret)
-	}
-	if cpath == nil {
-		return "", errNotOpen
-	}
-	return C.GoString(cpath), nil
-}
-
 func (env *Env) SetOption(option uint, value uint64) error {
 	ret := C.mdbx_env_set_option(env._env, C.MDBX_option_t(option), C.uint64_t(value))
 	return operrno("mdbx_env_set_option", ret)
