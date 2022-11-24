@@ -97,30 +97,6 @@ int mdbxgo_cursor_get2(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, si
 //  return likely(diff_data) ? diff_data : diff_len;
 //}
 
-static int mdbxgo_dup_cmp_exclude_suffix32(const MDBX_val *a, const MDBX_val *b) {
-	int diff;
-	ssize_t len_diff;
-	unsigned int len;
-	unsigned int lenA;
-	unsigned int lenB;
-
-    lenA = a->iov_len >= 32 ? a->iov_len - 32 : a->iov_len;
-	lenB = b->iov_len >= 32 ? b->iov_len - 32 : b->iov_len;
-    len = lenA;
-	len_diff = (ssize_t) lenA - (ssize_t) lenB;
-	if (len_diff > 0) {
-		len = lenB;
-		len_diff = 1;
-	}
-
-	diff = memcmp(a->iov_base, b->iov_base, len);
-	return diff ? diff : len_diff<0 ? -1 : len_diff;
-}
-
-MDBX_cmp_func *mdbxgo_get_cmp_exclude_suffix32() {
-  return mdbxgo_dup_cmp_exclude_suffix32;
-}
-
 int mdbxgo_cmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn) {
     MDBX_val a;
     MDBXGO_SET_VAL(&a, an, adata);

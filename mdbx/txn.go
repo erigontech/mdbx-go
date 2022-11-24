@@ -423,10 +423,11 @@ type TxInfo struct {
 }
 
 // scan_rlt   The boolean flag controls the scan of the read lock
-//  table to provide complete information. Such scan
-//  is relatively expensive and you can avoid it
-//  if corresponding fields are not needed.
-//  See description of \ref MDBX_txn_info.
+//
+//	table to provide complete information. Such scan
+//	is relatively expensive and you can avoid it
+//	if corresponding fields are not needed.
+//	See description of \ref MDBX_txn_info.
 func (txn *Txn) Info(scanRlt bool) (*TxInfo, error) {
 	var _stat C.MDBX_txn_info
 	ret := C.mdbx_txn_info(txn._txn, &_stat, C.bool(scanRlt))
@@ -631,10 +632,6 @@ func (txn *Txn) errf(format string, v ...interface{}) {
 type TxnOp func(txn *Txn) error
 
 type CmpFunc *C.MDBX_cmp_func
-
-func (txn *Txn) GetCmpExcludeSuffix32() CmpFunc {
-	return C.mdbxgo_get_cmp_exclude_suffix32()
-}
 
 // Cmp - this func follow bytes.Compare return style: The result will be 0 if a==b, -1 if a < b, and +1 if a > b.
 func (txn *Txn) Cmp(dbi DBI, a []byte, b []byte) int {

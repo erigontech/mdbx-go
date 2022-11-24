@@ -40,10 +40,7 @@ typedef struct{ const char *p; } mdbxgo_ConstCString;
 int mdbxgo_reader_list(MDBX_env *env, size_t ctx);
 
 
-int mdbxgo_set_dupsort_cmp_exclude_suffix32(MDBX_txn *txn, MDBX_dbi dbi);
 int mdbxgo_cmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn);
 int mdbxgo_dcmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn);
-
-MDBX_cmp_func *mdbxgo_get_cmp_exclude_suffix32();
 
 #endif
