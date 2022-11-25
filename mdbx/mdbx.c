@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY e323f67102dd47e00856e91cd73f675dee44003a486ce13f5dff194cace55b55_v0_12_2_21_g4cfaa02a
+#define MDBX_BUILD_SOURCERY a3889bc883d2060c28606d8c34e343eab911925b93fded38cd9bd02092e21033_v0_12_2_18_g1a5abd47
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2734,12 +2734,6 @@ typedef struct profgc_stat {
   uint32_t spe_counter;
   /* page faults (hard page faults) */
   uint32_t majflt;
-  /* Для разборок с pnl_merge() */
-  struct {
-    uint64_t time;
-    uint64_t volume;
-    uint32_t calls;
-  } pnl_merge;
 } profgc_stat_t;
 
 /* Statistics of page operations overall of all (running, completed and aborted)
@@ -3076,7 +3070,7 @@ typedef struct MDBX_dpl {
 #define MDBX_TXL_INITIAL                                                       \
   (MDBX_TXL_GRANULATE - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(txnid_t))
 #define MDBX_TXL_MAX                                                           \
-  ((1u << 26) - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(txnid_t))
+  ((1u << 17) - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(txnid_t))
 
 #define MDBX_PNL_ALLOCLEN(pl) ((pl)[-1])
 #define MDBX_PNL_GETSIZE(pl) ((size_t)((pl)[0]))
@@ -3143,11 +3137,9 @@ struct MDBX_txn {
   /* Additional flag for sync_locked() */
 #define MDBX_SHRINK_ALLOWED UINT32_C(0x40000000)
 
-#define MDBX_TXN_DRAINED_GC 0x20 /* GC was depleted up to oldest reader */
-
 #define TXN_FLAGS                                                              \
   (MDBX_TXN_FINISHED | MDBX_TXN_ERROR | MDBX_TXN_DIRTY | MDBX_TXN_SPILLS |     \
-   MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID | MDBX_TXN_DRAINED_GC)
+   MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID)
 
 #if (TXN_FLAGS & (MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS)) ||       \
     ((MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS | TXN_FLAGS) &         \
@@ -10495,17 +10487,15 @@ static pgno_t *scan4seq_resolver(pgno_t *range, const size_t len,
 
 static __inline bool is_gc_usable(MDBX_txn *txn, const MDBX_cursor *mc,
                                   const uint8_t flags) {
-  /* avoid search inside empty tree and while tree is updating,
-     https://libmdbx.dqdkfa.ru/dead-github/issues/31 */
-  if (unlikely(txn->mt_dbs[FREE_DBI].md_entries == 0)) {
-    txn->mt_flags |= MDBX_TXN_DRAINED_GC;
-    return false;
-  }
-
   /* If txn is updating the GC, then the retired-list cannot play catch-up with
    * itself by growing while trying to save it. */
   if (mc->mc_dbi == FREE_DBI && !(flags & MDBX_ALLOC_RESERVE) &&
       !(mc->mc_flags & C_GCU))
+    return false;
+
+  /* avoid (recursive) search inside empty tree and while tree is
+     updating, https://libmdbx.dqdkfa.ru/dead-github/issues/31 */
+  if (txn->mt_dbs[FREE_DBI].md_entries == 0)
     return false;
 
   return true;
@@ -10565,13 +10555,8 @@ static pgr_t page_alloc_slowpath(const MDBX_cursor *mc, const size_t num,
 
   //---------------------------------------------------------------------------
 
-  if (unlikely(!is_gc_usable(txn, mc, flags))) {
-    if (unlikely((txn->mt_flags & MDBX_TXN_DRAINED_GC) == 0)) {
-      ret.err = MDBX_BACKLOG_DEPLETED;
-      goto fail;
-    }
+  if (unlikely(!is_gc_usable(txn, mc, flags)))
     goto no_gc;
-  }
 
   eASSERT(env, (flags & (MDBX_ALLOC_COALESCE | MDBX_ALLOC_LIFO |
                          MDBX_ALLOC_SHOULD_SCAN)) == 0);
@@ -10745,15 +10730,7 @@ next_gc:;
   }
 
   /* Merge in descending sorted order */
-#if MDBX_ENABLE_PROFGC
-  const uint64_t merge_begin = osal_monotime();
-#endif /* MDBX_ENABLE_PROFGC */
   re_len = pnl_merge(txn->tw.relist, gc_pnl);
-#if MDBX_ENABLE_PROFGC
-  prof->pnl_merge.calls += 1;
-  prof->pnl_merge.volume += re_len;
-  prof->pnl_merge.time += osal_monotime() - merge_begin;
-#endif /* MDBX_ENABLE_PROFGC */
   flags |= MDBX_ALLOC_SHOULD_SCAN;
   if (AUDIT_ENABLED()) {
     if (unlikely(!pnl_check(txn->tw.relist, txn->mt_next_pgno))) {
@@ -10784,7 +10761,6 @@ next_gc:;
           re_len);
     goto early_exit;
   }
-  txn->mt_flags &= ~MDBX_TXN_DRAINED_GC;
 
   /* TODO: delete reclaimed records */
 
@@ -10820,8 +10796,6 @@ scan:
   }
 
 depleted_gc:
-  TRACE("%s: last id #%" PRIaTXN ", re-len %zu", "gc-depleted", id, re_len);
-  txn->mt_flags |= MDBX_TXN_DRAINED_GC;
   ret.err = MDBX_NOTFOUND;
   if (flags & MDBX_ALLOC_SHOULD_SCAN)
     goto scan;
@@ -13495,8 +13469,6 @@ static int gcu_prepare_backlog(MDBX_txn *txn, gcu_context_t *ctx) {
         (size_t)txn->mt_dbs[FREE_DBI].md_leaf_pages,
         (size_t)txn->mt_dbs[FREE_DBI].md_overflow_pages,
         (size_t)txn->mt_dbs[FREE_DBI].md_entries);
-  tASSERT(txn,
-          err != MDBX_NOTFOUND || (txn->mt_flags & MDBX_TXN_DRAINED_GC) != 0);
   return (err != MDBX_NOTFOUND) ? err : MDBX_SUCCESS;
 }
 
@@ -15118,16 +15090,6 @@ provide_latency:
     latency->gc_prof.wipes = ptr->gc_prof.wipes;
     latency->gc_prof.flushes = ptr->gc_prof.flushes;
     latency->gc_prof.kicks = ptr->gc_prof.kicks;
-
-    latency->gc_prof.pnl_merge_work.time =
-        osal_monotime_to_16dot16(ptr->gc_prof.work.pnl_merge.time);
-    latency->gc_prof.pnl_merge_work.calls = ptr->gc_prof.work.pnl_merge.calls;
-    latency->gc_prof.pnl_merge_work.volume = ptr->gc_prof.work.pnl_merge.volume;
-    latency->gc_prof.pnl_merge_self.time =
-        osal_monotime_to_16dot16(ptr->gc_prof.self.pnl_merge.time);
-    latency->gc_prof.pnl_merge_self.calls = ptr->gc_prof.self.pnl_merge.calls;
-    latency->gc_prof.pnl_merge_self.volume = ptr->gc_prof.self.pnl_merge.volume;
-
     if (txn == env->me_txn0)
       memset(&ptr->gc_prof, 0, sizeof(ptr->gc_prof));
 #else
@@ -31913,9 +31875,9 @@ __dll_export
         0,
         12,
         2,
-        21,
-        {"2022-11-23T14:37:00+03:00", "8c2cfd0d990decf238b33a85bc61ec326d2dcffd", "4cfaa02abd4685327d4bcb55ef022782fc4983df",
-         "v0.12.2-21-g4cfaa02a"},
+        18,
+        {"2022-11-25T07:16:26+03:00", "db3af640434a8a8f56602a8480dd6f16271a0ad0", "1a5abd47e2a8b14a861b68ab25e7f495ea0f881c",
+         "v0.12.2-18-g1a5abd47"},
         sourcery};
 
 __dll_export

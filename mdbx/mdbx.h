@@ -1926,12 +1926,6 @@ enum MDBX_error_t {
   /** Overlapping read and write transactions for the current thread */
   MDBX_TXN_OVERLAPPING = -30415,
 
-  /** Внутренняя ошибка возвращаемая в случае нехватки запаса свободных страниц
-   * при обновлении GC. Используется как вспомогательное средство для отладки.
-   * \note С точки зрения пользователя семантически
-   *       равнозначна \ref MDBX_PROBLEM. */
-  MDBX_BACKLOG_DEPLETED = -30414,
-
   /* The last of MDBX-added error codes */
   MDBX_LAST_ADDED_ERRCODE = MDBX_TXN_OVERLAPPING,
 
@@ -3811,12 +3805,6 @@ struct MDBX_commit_latency {
     /** \brief Количество страничных промахов (page faults) внутри GC
      *  при выделении и подготовки страниц для самой GC. */
     uint32_t self_majflt;
-    /* Для разборок с pnl_merge() */
-    struct {
-      uint32_t time;
-      uint64_t volume;
-      uint32_t calls;
-    } pnl_merge_work, pnl_merge_self;
   } gc_prof;
 };
 #ifndef __cplusplus
