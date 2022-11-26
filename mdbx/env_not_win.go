@@ -1,5 +1,8 @@
 package mdbx
 
+/*
+#include "mdbxgo.h"
+*/
 import "C"
 
 // Path returns the path argument passed to Open.  Path returns a non-nil error
