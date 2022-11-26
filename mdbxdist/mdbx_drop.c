@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY e323f67102dd47e00856e91cd73f675dee44003a486ce13f5dff194cace55b55_v0_12_2_21_g4cfaa02a
+#define MDBX_BUILD_SOURCERY a3889bc883d2060c28606d8c34e343eab911925b93fded38cd9bd02092e21033_v0_12_2_18_g1a5abd47
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2758,12 +2758,6 @@ typedef struct profgc_stat {
   uint32_t spe_counter;
   /* page faults (hard page faults) */
   uint32_t majflt;
-  /* Для разборок с pnl_merge() */
-  struct {
-    uint64_t time;
-    uint64_t volume;
-    uint32_t calls;
-  } pnl_merge;
 } profgc_stat_t;
 
 /* Statistics of page operations overall of all (running, completed and aborted)
@@ -3100,7 +3094,7 @@ typedef struct MDBX_dpl {
 #define MDBX_TXL_INITIAL                                                       \
   (MDBX_TXL_GRANULATE - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(txnid_t))
 #define MDBX_TXL_MAX                                                           \
-  ((1u << 26) - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(txnid_t))
+  ((1u << 17) - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(txnid_t))
 
 #define MDBX_PNL_ALLOCLEN(pl) ((pl)[-1])
 #define MDBX_PNL_GETSIZE(pl) ((size_t)((pl)[0]))
@@ -3167,11 +3161,9 @@ struct MDBX_txn {
   /* Additional flag for sync_locked() */
 #define MDBX_SHRINK_ALLOWED UINT32_C(0x40000000)
 
-#define MDBX_TXN_DRAINED_GC 0x20 /* GC was depleted up to oldest reader */
-
 #define TXN_FLAGS                                                              \
   (MDBX_TXN_FINISHED | MDBX_TXN_ERROR | MDBX_TXN_DIRTY | MDBX_TXN_SPILLS |     \
-   MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID | MDBX_TXN_DRAINED_GC)
+   MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID)
 
 #if (TXN_FLAGS & (MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS)) ||       \
     ((MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS | TXN_FLAGS) &         \
