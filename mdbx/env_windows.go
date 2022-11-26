@@ -1,11 +1,8 @@
 package mdbx
 
-import "C"
-import "C"
-import "C"
-import "C"
-import "C"
-import "C"
+/*
+#include "mdbxgo.h"
+*/
 import "C"
 
 func (env *Env) Path() (string, error) {
