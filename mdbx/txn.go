@@ -27,7 +27,7 @@ const (
 	DupSort    = C.MDBX_DUPSORT    // Use sorted duplicates.
 	DupFixed   = C.MDBX_DUPFIXED   // Duplicate items have a fixed size (DupSort).
 	ReverseDup = C.MDBX_REVERSEDUP // Reverse duplicate values (DupSort).
-	Create     = C.MDBX_CREATE     // Create DB if not already existing.
+	Create     = C.MDBX_CREATE     // Createt DB if not already existing.
 	DBAccede   = C.MDBX_DB_ACCEDE  // Use sorted duplicates.
 )
 
@@ -240,6 +240,7 @@ type CommitLatencyGC struct {
 	 *  для целей поддержки и обновления самой GC. */
 	SelfRtime time.Duration
 	SelfXtime time.Duration
+	WorkXtime time.Duration
 	/** \brief Количество циклов поиска внутри GC при выделении страниц
 	 *  для целей поддержки и обновления самой GC. */
 	SelfRsteps uint32
@@ -284,6 +285,7 @@ func (txn *Txn) commit() (CommitLatency, error) {
 			SelfRtime:    toDuration(_stat.gc_prof.self_rtime_monotonic),
 			SelfRtimeCPU: toDuration(_stat.gc_prof.self_rtime_cpu),
 			SelfXtime:    toDuration(_stat.gc_prof.self_xtime_monotonic),
+			WorkXtime:    toDuration(_stat.gc_prof.work_xtime_monotonic),
 			SelfRsteps:   uint32(_stat.gc_prof.self_rsteps),
 			SelfXpages:   uint32(_stat.gc_prof.self_xpages),
 			Wloops:       uint32(_stat.gc_prof.wloops),
