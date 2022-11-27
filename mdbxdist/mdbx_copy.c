@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 94ce29ff971e1af74645f65b39e9ee78216ad6e6e4b351910e39603b0f11c0cd_v0_12_2_23_g74359880
+#define MDBX_BUILD_SOURCERY f02d06a2438ed2fea950a7352814b27a623ad83e4fe2edd28bfa8f51400db4cf_v0_12_2_24_g33cfbaaf
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2684,16 +2684,12 @@ typedef struct MDBX_meta {
  * Each non-metapage up to MDBX_meta.mm_last_pg is reachable exactly once
  * in the snapshot: Either used by a database or listed in a GC record. */
 typedef struct MDBX_page {
-  union {
 #define IS_FROZEN(txn, p) ((p)->mp_txnid < (txn)->mt_txnid)
 #define IS_SPILLED(txn, p) ((p)->mp_txnid == (txn)->mt_txnid)
 #define IS_SHADOWED(txn, p) ((p)->mp_txnid > (txn)->mt_txnid)
 #define IS_VALID(txn, p) ((p)->mp_txnid <= (txn)->mt_front)
 #define IS_MODIFIABLE(txn, p) ((p)->mp_txnid == (txn)->mt_front)
-    uint64_t
-        mp_txnid; /* txnid which created this page, maybe zero in legacy DB */
-    struct MDBX_page *mp_next; /* for in-memory list of freed pages */
-  };
+  uint64_t mp_txnid; /* txnid which created page, maybe zero in legacy DB */
   uint16_t mp_leaf2_ksize;   /* key size if this is a LEAF2 page */
 #define P_BRANCH 0x01u       /* branch page */
 #define P_LEAF 0x02u         /* leaf page */
@@ -2734,6 +2730,8 @@ typedef struct MDBX_page {
 
 /* Size of the page header, excluding dynamic data at the end */
 #define PAGEHDRSZ offsetof(MDBX_page, mp_ptrs)
+
+#define mp_next(mp) (*(MDBX_page **)((mp)->mp_ptrs + 2))
 
 #pragma pack(pop)
 
