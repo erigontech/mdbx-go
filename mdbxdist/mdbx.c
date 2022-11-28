@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 73644c13274adf591c2463e153fce5473379e9adc04dbba923a6590cab0bdd15_v0_12_2_26_g03a9a060
+#define MDBX_BUILD_SOURCERY 40f02e6c424a94cd03dbc5676690e1c6e336955a83e2ae6985c71e240b10612c_v0_12_2_27_gb8dd407c
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -3143,9 +3143,11 @@ struct MDBX_txn {
   /* Additional flag for sync_locked() */
 #define MDBX_SHRINK_ALLOWED UINT32_C(0x40000000)
 
+#define MDBX_TXN_DRAINED_GC 0x20 /* GC was depleted up to oldest reader */
+
 #define TXN_FLAGS                                                              \
   (MDBX_TXN_FINISHED | MDBX_TXN_ERROR | MDBX_TXN_DIRTY | MDBX_TXN_SPILLS |     \
-   MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID)
+   MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID | MDBX_TXN_DRAINED_GC)
 
 #if (TXN_FLAGS & (MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS)) ||       \
     ((MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS | TXN_FLAGS) &         \
@@ -10531,15 +10533,17 @@ static pgno_t *scan4seq_resolver(pgno_t *range, const size_t len,
 
 static __inline bool is_gc_usable(MDBX_txn *txn, const MDBX_cursor *mc,
                                   const uint8_t flags) {
+  /* avoid search inside empty tree and while tree is updating,
+     https://libmdbx.dqdkfa.ru/dead-github/issues/31 */
+  if (unlikely(txn->mt_dbs[FREE_DBI].md_entries == 0)) {
+    txn->mt_flags |= MDBX_TXN_DRAINED_GC;
+    return false;
+  }
+
   /* If txn is updating the GC, then the retired-list cannot play catch-up with
    * itself by growing while trying to save it. */
   if (mc->mc_dbi == FREE_DBI && !(flags & MDBX_ALLOC_RESERVE) &&
       !(mc->mc_flags & C_GCU))
-    return false;
-
-  /* avoid (recursive) search inside empty tree and while tree is
-     updating, https://libmdbx.dqdkfa.ru/dead-github/issues/31 */
-  if (txn->mt_dbs[FREE_DBI].md_entries == 0)
     return false;
 
   return true;
@@ -10594,13 +10598,16 @@ __hot static pgno_t pnl_get_single(MDBX_PNL pnl) {
   return pgno;
 }
 
-__hot static pgno_t pnl_get_sequence(MDBX_PNL pnl, const size_t num) {
+__hot static pgno_t pnl_get_sequence(MDBX_PNL pnl, const size_t num,
+                                     uint8_t flags) {
   const size_t len = MDBX_PNL_GETSIZE(pnl);
   pgno_t *edge = MDBX_PNL_EDGE(pnl);
   assert(len >= num && num > 1);
   const size_t seq = num - 1;
 #if !MDBX_PNL_ASCENDING
   if (edge[-(ptrdiff_t)seq] - *edge == seq) {
+    if (unlikely(flags & MDBX_ALLOC_RESERVE))
+      return P_INVALID;
     assert(edge == scan4range_checker(pnl, seq));
     /* перемещать хвост не нужно, просто усекам список */
     MDBX_PNL_SETSIZE(pnl, len - num);
@@ -10610,6 +10617,8 @@ __hot static pgno_t pnl_get_sequence(MDBX_PNL pnl, const size_t num) {
   pgno_t *target = scan4seq_impl(edge, len, seq);
   assert(target == scan4range_checker(pnl, seq));
   if (target) {
+    if (unlikely(flags & MDBX_ALLOC_RESERVE))
+      return P_INVALID;
     const pgno_t pgno = *target;
     /* вырезаем найденную последовательность с перемещением хвоста */
     MDBX_PNL_SETSIZE(pnl, len - num);
@@ -10657,18 +10666,26 @@ static pgr_t page_alloc_slowpath(const MDBX_cursor *mc, const size_t num,
     if (MDBX_PNL_GETSIZE(txn->tw.relist) >= num) {
       eASSERT(env, MDBX_PNL_LAST(txn->tw.relist) < txn->mt_next_pgno &&
                        MDBX_PNL_FIRST(txn->tw.relist) < txn->mt_next_pgno);
-      pgno = pnl_get_sequence(txn->tw.relist, num);
+      pgno = pnl_get_sequence(txn->tw.relist, num, flags);
       if (likely(pgno))
         goto done;
     }
   } else {
     eASSERT(env, num == 0 || MDBX_PNL_GETSIZE(txn->tw.relist) == 0);
+    eASSERT(env, !(flags & MDBX_ALLOC_RESERVE) || num == 0);
   }
 
   //---------------------------------------------------------------------------
 
-  if (unlikely(!is_gc_usable(txn, mc, flags)))
+  if (unlikely(!is_gc_usable(txn, mc, flags))) {
+    if (unlikely(mc->mc_dbi == FREE_DBI &&
+                 !(txn->mt_flags & MDBX_TXN_DRAINED_GC))) {
+      eASSERT(env, false);
+      ret.err = MDBX_BACKLOG_DEPLETED;
+      goto fail;
+    }
     goto no_gc;
+  }
 
   eASSERT(env, (flags & (MDBX_ALLOC_COALESCE | MDBX_ALLOC_LIFO |
                          MDBX_ALLOC_SHOULD_SCAN)) == 0);
@@ -10685,6 +10702,7 @@ static pgr_t page_alloc_slowpath(const MDBX_cursor *mc, const size_t num,
 
   MDBX_cursor *const gc =
       (MDBX_cursor *)((char *)env->me_txn0 + sizeof(MDBX_txn));
+  eASSERT(env, mc != gc && gc->mc_next == nullptr);
   gc->mc_txn = txn;
   gc->mc_flags = 0;
 
@@ -10780,6 +10798,7 @@ next_gc:;
     /* Don't try to coalesce too much. */
     if (flags & MDBX_ALLOC_SHOULD_SCAN) {
       eASSERT(env, flags & MDBX_ALLOC_COALESCE);
+      eASSERT(env, !(flags & MDBX_ALLOC_RESERVE));
       eASSERT(env, num > 0);
 #if MDBX_ENABLE_PROFGC
       env->me_lck->mti_pgop_stat.gc_prof.coalescences += 1;
@@ -10792,7 +10811,7 @@ next_gc:;
           pgno = pnl_get_single(txn->tw.relist);
           goto done;
         }
-        pgno = pnl_get_sequence(txn->tw.relist, num);
+        pgno = pnl_get_sequence(txn->tw.relist, num, flags);
         if (likely(pgno))
           goto done;
       }
@@ -10877,6 +10896,7 @@ next_gc:;
           MDBX_PNL_GETSIZE(txn->tw.relist));
     goto early_exit;
   }
+  txn->mt_flags &= ~MDBX_TXN_DRAINED_GC;
 
   /* TODO: delete reclaimed records */
 
@@ -10894,10 +10914,11 @@ scan:
     eASSERT(env, MDBX_PNL_LAST(txn->tw.relist) < txn->mt_next_pgno &&
                      MDBX_PNL_FIRST(txn->tw.relist) < txn->mt_next_pgno);
     if (likely(num == 1)) {
+      eASSERT(env, !(flags & MDBX_ALLOC_RESERVE));
       pgno = pnl_get_single(txn->tw.relist);
       goto done;
     }
-    pgno = pnl_get_sequence(txn->tw.relist, num);
+    pgno = pnl_get_sequence(txn->tw.relist, num, flags);
     if (likely(pgno))
       goto done;
   }
@@ -10909,6 +10930,9 @@ scan:
   }
 
 depleted_gc:
+  TRACE("%s: last id #%" PRIaTXN ", re-len %zu", "gc-depleted", id,
+        MDBX_PNL_GETSIZE(txn->tw.relist));
+  txn->mt_flags |= MDBX_TXN_DRAINED_GC;
   ret.err = MDBX_NOTFOUND;
   if (flags & MDBX_ALLOC_SHOULD_SCAN)
     goto scan;
@@ -13448,6 +13472,12 @@ static __always_inline size_t gcu_backlog_size(MDBX_txn *txn) {
 static int gcu_clean_stored_retired(MDBX_txn *txn, gcu_context_t *ctx) {
   int err = MDBX_SUCCESS;
   if (ctx->retired_stored) {
+    MDBX_cursor *const gc = (MDBX_cursor *)((char *)txn + sizeof(MDBX_txn));
+    tASSERT(txn, txn == txn->mt_env->me_txn0 && gc->mc_next == nullptr);
+    gc->mc_txn = txn;
+    gc->mc_flags = 0;
+    gc->mc_next = txn->mt_cursors[FREE_DBI];
+    txn->mt_cursors[FREE_DBI] = gc;
     do {
       MDBX_val key, val;
 #if MDBX_ENABLE_BIGFOOT
@@ -13456,11 +13486,10 @@ static int gcu_clean_stored_retired(MDBX_txn *txn, gcu_context_t *ctx) {
       key.iov_base = &txn->mt_txnid;
 #endif /* MDBX_ENABLE_BIGFOOT */
       key.iov_len = sizeof(txnid_t);
-      const struct cursor_set_result csr =
-          cursor_set(&ctx->cursor, &key, &val, MDBX_SET);
+      const struct cursor_set_result csr = cursor_set(gc, &key, &val, MDBX_SET);
       if (csr.err == MDBX_SUCCESS && csr.exact) {
         ctx->retired_stored = 0;
-        err = mdbx_cursor_del(&ctx->cursor, 0);
+        err = mdbx_cursor_del(gc, 0);
         TRACE("== clear-4linear, backlog %zu, err %d", gcu_backlog_size(txn),
               err);
       }
@@ -13470,6 +13499,8 @@ static int gcu_clean_stored_retired(MDBX_txn *txn, gcu_context_t *ctx) {
 #else
     while (0);
 #endif /* MDBX_ENABLE_BIGFOOT */
+    txn->mt_cursors[FREE_DBI] = gc->mc_next;
+    gc->mc_next = nullptr;
   }
   return err;
 }
@@ -13538,7 +13569,7 @@ static int gcu_prepare_backlog(MDBX_txn *txn, gcu_context_t *ctx) {
   if (!MDBX_ENABLE_BIGFOOT && unlikely(for_data > 1) &&
       MDBX_PNL_GETSIZE(txn->tw.retired_pages) != ctx->retired_stored &&
       err == MDBX_SUCCESS) {
-    if (ctx->retired_stored) {
+    if (unlikely(ctx->retired_stored)) {
       err = gcu_clean_stored_retired(txn, ctx);
       if (unlikely(err != MDBX_SUCCESS))
         return err;
@@ -13563,6 +13594,8 @@ static int gcu_prepare_backlog(MDBX_txn *txn, gcu_context_t *ctx) {
         (size_t)txn->mt_dbs[FREE_DBI].md_leaf_pages,
         (size_t)txn->mt_dbs[FREE_DBI].md_overflow_pages,
         (size_t)txn->mt_dbs[FREE_DBI].md_entries);
+  tASSERT(txn,
+          err != MDBX_NOTFOUND || (txn->mt_flags & MDBX_TXN_DRAINED_GC) != 0);
   return (err != MDBX_NOTFOUND) ? err : MDBX_SUCCESS;
 }
 
@@ -13849,8 +13882,8 @@ retry:
           break;
         }
 
-        ctx->retired_stored = 0;
         pnl_sort(txn->tw.retired_pages, txn->mt_next_pgno);
+        ctx->retired_stored = 0;
         ctx->bigfoot = txn->mt_txnid;
         do {
           if (ctx->retired_stored) {
@@ -13923,7 +13956,7 @@ retry:
       eASSERT(env, data.iov_len == MDBX_PNL_SIZEOF(txn->tw.retired_pages));
       memcpy(data.iov_base, txn->tw.retired_pages, data.iov_len);
 
-      TRACE("%s: put-retired #%u @ %" PRIaTXN, dbg_prefix_mode,
+      TRACE("%s: put-retired #%zu @ %" PRIaTXN, dbg_prefix_mode,
             ctx->retired_stored, txn->mt_txnid);
 #endif /* MDBX_ENABLE_BIGFOOT */
       if (LOG_ENABLED(MDBX_LOG_EXTRA)) {
@@ -31989,9 +32022,9 @@ __dll_export
         0,
         12,
         2,
-        26,
-        {"2022-11-28T08:40:34+03:00", "c9c464c2685b60c8c87ac8460c6f7cbce6c05e26", "03a9a060f0348b3df45b0306d21cc6f93f7d6857",
-         "v0.12.2-26-g03a9a060"},
+        27,
+        {"2022-11-28T14:25:08+03:00", "68316f5328c5e7a7379a3255121ad4ff328058f9", "b8dd407c52ba5ab5ac27bcd86e9ff30f88570ee3",
+         "v0.12.2-27-gb8dd407c"},
         sourcery};
 
 __dll_export
