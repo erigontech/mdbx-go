@@ -77,10 +77,10 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 #if defined(__riscv) || defined(__riscv__) || defined(__RISCV) ||              \
     defined(__RISCV__)
-#warning The RISC-V architecture is intentionally insecure by design. \
+#warning "The RISC-V architecture is intentionally insecure by design. \
   Please delete this admonition at your own risk, \
   if you make such decision informed and consciously. \
-  Refer to https://clck.ru/32d9xH for more information.
+  Refer to https://clck.ru/32d9xH for more information."
 #endif /* RISC-V */
 
 #ifdef _MSC_VER
@@ -1925,12 +1925,6 @@ enum MDBX_error_t {
 
   /** Overlapping read and write transactions for the current thread */
   MDBX_TXN_OVERLAPPING = -30415,
-
-  /** Внутренняя ошибка возвращаемая в случае нехватки запаса свободных страниц
-   * при обновлении GC. Используется как вспомогательное средство для отладки.
-   * \note С точки зрения пользователя семантически
-   *       равнозначна \ref MDBX_PROBLEM. */
-  MDBX_BACKLOG_DEPLETED = -30414,
 
   /* The last of MDBX-added error codes */
   MDBX_LAST_ADDED_ERRCODE = MDBX_TXN_OVERLAPPING,
