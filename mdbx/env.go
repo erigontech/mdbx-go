@@ -323,6 +323,8 @@ type EnfInfoPageOps struct {
 	Spill   uint64 /**< Quantity of spilled dirty pages */
 	Unspill uint64 /**< Quantity of unspilled/reloaded pages */
 	Wops    uint64 /**< Number of explicit write operations (not a pages) to a disk */
+	Msync   uint64 /**< Number of explicit write operations (not a pages) to a disk */
+	Fsync   uint64 /**< Number of explicit write operations (not a pages) to a disk */
 }
 
 // EnvInfo contains information an environment.
@@ -385,6 +387,8 @@ func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
 			Spill:   uint64(_info.mi_pgop_stat.spill),
 			Unspill: uint64(_info.mi_pgop_stat.unspill),
 			Wops:    uint64(_info.mi_pgop_stat.wops),
+			Msync:   uint64(_info.mi_pgop_stat.msync),
+			Fsync:   uint64(_info.mi_pgop_stat.fsync),
 		},
 		LastPNO:        int64(_info.mi_last_pgno),
 		LastTxnID:      int64(_info.mi_recent_txnid),
