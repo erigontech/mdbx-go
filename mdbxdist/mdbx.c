@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 6822a8ad85e1fa9b7d02e2a34baedbed80ab7a3172c5102a73b1bd70beaceab8_v0_12_2_32_gd6331ba2
+#define MDBX_BUILD_SOURCERY 32fdd619a2851f1354dcb1cd5b8262d0bce6a1a759b15b8107d367c317bad103_v0_12_2_33_g27a89adc
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -18162,8 +18162,10 @@ __cold int mdbx_env_openW(MDBX_env *env, const wchar_t *pathname,
     if (env->me_dsync_fd != INVALID_HANDLE_VALUE) {
       if ((flags & MDBX_NOMETASYNC) == 0)
         env->me_fd4meta = env->me_dsync_fd;
+#if defined(_WIN32) || defined(_WIN64)
       if (env->me_fd4data == env->me_lazy_fd)
         env->me_fd4data = env->me_dsync_fd;
+#endif /* Windows must die */
       osal_fseek(env->me_dsync_fd, safe_parking_lot_offset);
     }
   }
@@ -32022,9 +32024,9 @@ __dll_export
         0,
         12,
         2,
-        32,
-        {"2022-11-29T02:54:49+03:00", "a525f1256bf6e33ba39fdc1163af2b7b54214666", "d6331ba239a41bb914d282f1941e230a804539b0",
-         "v0.12.2-32-gd6331ba2"},
+        33,
+        {"2022-11-29T18:35:02+03:00", "53ec3f6364b70f4d048a2c2dcaa530a9115aaccc", "27a89adce3f2ad981935007802e7fcb8a6a6571c",
+         "v0.12.2-33-g27a89adc"},
         sourcery};
 
 __dll_export
