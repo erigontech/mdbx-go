@@ -344,6 +344,7 @@ type EnvInfo struct {
 	NumReaders        uint          // maximum number of threads used in the environment
 	PageSize          uint          //
 	SystemPageSize    uint          //
+	MiLastPgNo        uint64        //
 	AutoSyncThreshold uint          //
 	SinceSync         time.Duration //
 	AutosyncPeriod    time.Duration //
@@ -396,6 +397,7 @@ func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
 		NumReaders:     uint(_info.mi_numreaders),
 		PageSize:       uint(_info.mi_dxb_pagesize),
 		SystemPageSize: uint(_info.mi_sys_pagesize),
+		MiLastPgNo:     uint64(_info.mi_last_pgno),
 
 		AutoSyncThreshold: uint(_info.mi_autosync_threshold),
 		SinceSync:         toDuration(_info.mi_since_sync_seconds16dot16),
