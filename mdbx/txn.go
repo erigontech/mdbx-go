@@ -236,6 +236,8 @@ type CommitLatencyGC struct {
 	/** \brief Время затраченное на чтение и поиск внтури GC
 	 *  для целей поддержки и обновления самой GC. */
 	SelfRtime time.Duration
+	SelfXtime time.Duration
+	WorkXtime time.Duration
 	/** \brief Количество циклов поиска внутри GC при выделении страниц
 	 *  для целей поддержки и обновления самой GC. */
 	SelfRsteps uint32
@@ -277,6 +279,8 @@ func (txn *Txn) commit() (CommitLatency, error) {
 			SelfPnlMergeVolume: uint64(_stat.gc_prof.pnl_merge_self.volume),
 			SelfPnlMergeCalls:  uint32(_stat.gc_prof.pnl_merge_self.calls),
 			SelfRtime:          toDuration(_stat.gc_prof.self_rtime_monotonic),
+			SelfXtime:          toDuration(_stat.gc_prof.self_xtime),
+			WorkXtime:          toDuration(_stat.gc_prof.work_xtime),
 			SelfRsteps:         uint32(_stat.gc_prof.self_rsteps),
 			SelfXpages:         uint32(_stat.gc_prof.self_xpages),
 			Wloops:             uint32(_stat.gc_prof.wloops),
