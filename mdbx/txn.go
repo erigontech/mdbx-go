@@ -211,9 +211,6 @@ type CommitLatency struct {
 }
 
 type CommitLatencyGC struct {
-	WorkRtimeCPU time.Duration
-	SelfRtimeCPU time.Duration
-
 	/** \brief Время затраченное на чтение и поиск внтури GC
 	 *  ради данных пользователя. */
 	WorkRtime time.Duration
@@ -239,8 +236,6 @@ type CommitLatencyGC struct {
 	/** \brief Время затраченное на чтение и поиск внтури GC
 	 *  для целей поддержки и обновления самой GC. */
 	SelfRtime time.Duration
-	SelfXtime time.Duration
-	WorkXtime time.Duration
 	/** \brief Количество циклов поиска внутри GC при выделении страниц
 	 *  для целей поддержки и обновления самой GC. */
 	SelfRsteps uint32
@@ -272,7 +267,6 @@ func (txn *Txn) commit() (CommitLatency, error) {
 		Whole:       toDuration(_stat.whole),
 		GCDetails: CommitLatencyGC{
 			WorkRtime:          toDuration(_stat.gc_prof.work_rtime_monotonic),
-			WorkRtimeCPU:       toDuration(_stat.gc_prof.work_rtime_cpu),
 			WorkRsteps:         uint32(_stat.gc_prof.work_rsteps),
 			WorkRxpages:        uint32(_stat.gc_prof.work_xpages),
 			WorkMajflt:         uint32(_stat.gc_prof.work_majflt),
@@ -283,9 +277,6 @@ func (txn *Txn) commit() (CommitLatency, error) {
 			SelfPnlMergeVolume: uint64(_stat.gc_prof.pnl_merge_self.volume),
 			SelfPnlMergeCalls:  uint32(_stat.gc_prof.pnl_merge_self.calls),
 			SelfRtime:          toDuration(_stat.gc_prof.self_rtime_monotonic),
-			SelfRtimeCPU:       toDuration(_stat.gc_prof.self_rtime_cpu),
-			SelfXtime:          toDuration(_stat.gc_prof.self_xtime_monotonic),
-			WorkXtime:          toDuration(_stat.gc_prof.work_xtime_monotonic),
 			SelfRsteps:         uint32(_stat.gc_prof.self_rsteps),
 			SelfXpages:         uint32(_stat.gc_prof.self_xpages),
 			Wloops:             uint32(_stat.gc_prof.wloops),
