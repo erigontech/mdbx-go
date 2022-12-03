@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 32fdd619a2851f1354dcb1cd5b8262d0bce6a1a759b15b8107d367c317bad103_v0_12_2_33_g27a89adc
+#define MDBX_BUILD_SOURCERY 208326c39d7a2075840acea705978ae0bc5bab3e89bfcc200d9c990317bd2fcd_v0_12_2_38_g27bd01aa
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1305,13 +1305,12 @@ typedef struct osal_ioring {
   unsigned slots_left;
   unsigned allocated;
 #if defined(_WIN32) || defined(_WIN64)
-#define IOR_DIRECT 1
-#define IOR_OVERLAPPED 2
 #define IOR_STATE_LOCKED 1
+  HANDLE overlapped_fd;
   unsigned pagesize;
   unsigned last_sgvcnt;
   size_t last_bytes;
-  uint8_t flags, state, pagesize_ln2;
+  uint8_t direct, state, pagesize_ln2;
   unsigned event_stack;
   HANDLE *event_pool;
   volatile LONG async_waiting;
@@ -1328,7 +1327,6 @@ typedef struct osal_ioring {
 #define ior_last_sgvcnt(ior, item) (1)
 #define ior_last_bytes(ior, item) (item)->single.iov_len
 #endif /* !Windows */
-  mdbx_filehandle_t fd;
   ior_item_t *last;
   ior_item_t *pool;
   char *boundary;
@@ -1337,11 +1335,13 @@ typedef struct osal_ioring {
 #ifndef __cplusplus
 
 /* Actually this is not ioring for now, but on the way. */
-MDBX_INTERNAL_FUNC int osal_ioring_create(osal_ioring_t *,
+MDBX_INTERNAL_FUNC int osal_ioring_create(osal_ioring_t *
 #if defined(_WIN32) || defined(_WIN64)
-                                          uint8_t flags,
+                                          ,
+                                          bool enable_direct,
+                                          mdbx_filehandle_t overlapped_fd
 #endif /* Windows */
-                                          mdbx_filehandle_t fd);
+);
 MDBX_INTERNAL_FUNC int osal_ioring_resize(osal_ioring_t *, size_t items);
 MDBX_INTERNAL_FUNC void osal_ioring_destroy(osal_ioring_t *);
 MDBX_INTERNAL_FUNC void osal_ioring_reset(osal_ioring_t *);
@@ -1352,7 +1352,7 @@ typedef struct osal_ioring_write_result {
   unsigned wops;
 } osal_ioring_write_result_t;
 MDBX_INTERNAL_FUNC osal_ioring_write_result_t
-osal_ioring_write(osal_ioring_t *ior);
+osal_ioring_write(osal_ioring_t *ior, mdbx_filehandle_t fd);
 
 typedef struct iov_ctx iov_ctx_t;
 MDBX_INTERNAL_FUNC void osal_ioring_walk(
@@ -1370,11 +1370,13 @@ osal_ioring_used(const osal_ioring_t *ior) {
 }
 
 MDBX_MAYBE_UNUSED static inline int
-osal_ioring_reserve(osal_ioring_t *ior, size_t items, size_t bytes) {
+osal_ioring_prepare(osal_ioring_t *ior, size_t items, size_t bytes) {
   items = (items > 32) ? items : 32;
 #if defined(_WIN32) || defined(_WIN64)
-  const size_t npages = bytes >> ior->pagesize_ln2;
-  items = (items > npages) ? items : npages;
+  if (ior->direct) {
+    const size_t npages = bytes >> ior->pagesize_ln2;
+    items = (items > npages) ? items : npages;
+  }
 #else
   (void)bytes;
 #endif
@@ -1513,7 +1515,7 @@ osal_thread_create(osal_thread_t *thread,
 MDBX_INTERNAL_FUNC int osal_thread_join(osal_thread_t thread);
 
 enum osal_syncmode_bits {
-  MDBX_SYNC_NONE = 0,
+  MDBX_SYNC_KICK = 0,
   MDBX_SYNC_DATA = 1,
   MDBX_SYNC_SIZE = 2,
   MDBX_SYNC_IODQ = 4
@@ -2747,12 +2749,9 @@ typedef struct profgc_stat {
   /* Монотонное время по "настенным часам"
    * затраченное на чтение и поиск внутри GC */
   uint64_t rtime_monotonic;
-  /* Монотонное время по "настенным часам" затраченное
-   * на подготовку страниц извлекаемых из GC, включая подкачку с диска. */
-  uint64_t xtime_monotonic;
   /* Процессорное время в режим пользователя
-   * затраченное на чтение и поиск внутри GC */
-  uint64_t rtime_cpu;
+   * на подготовку страниц извлекаемых из GC, включая подкачку с диска. */
+  uint64_t xtime_cpu;
   /* Количество итераций чтения-поиска внутри GC при выделении страниц */
   uint32_t rsteps;
   /* Количество запросов на выделение последовательностей страниц,
@@ -2927,6 +2926,10 @@ typedef struct MDBX_lockinfo {
 
   /* Low 32-bit of txnid with which meta-pages was synced,
    * i.e. for sync-polling in the MDBX_NOMETASYNC mode. */
+#define MDBX_NOMETASYNC_LAZY_UNK (UINT32_MAX / 3)
+#define MDBX_NOMETASYNC_LAZY_FD (MDBX_NOMETASYNC_LAZY_UNK + UINT32_MAX / 8)
+#define MDBX_NOMETASYNC_LAZY_WRITEMAP                                          \
+  (MDBX_NOMETASYNC_LAZY_UNK - UINT32_MAX / 8)
   MDBX_atomic_uint32_t mti_meta_sync_txnid;
 
   /* Period for timed auto-sync feature, i.e. at the every steady checkpoint
@@ -3379,10 +3382,10 @@ struct MDBX_env {
   osal_mmap_t me_dxb_mmap; /* The main data file */
 #define me_map me_dxb_mmap.base
 #define me_lazy_fd me_dxb_mmap.fd
-#define me_fd4data me_ioring.fd
   mdbx_filehandle_t me_dsync_fd, me_fd4meta;
 #if defined(_WIN32) || defined(_WIN64)
-  HANDLE me_overlapped_fd, me_data_lock_event;
+#define me_overlapped_fd me_ioring.overlapped_fd
+  HANDLE me_data_lock_event;
 #endif                     /* Windows */
   osal_mmap_t me_lck_mmap; /* The lock file */
 #define me_lfd me_lck_mmap.fd
@@ -3425,6 +3428,9 @@ struct MDBX_env {
     uint8_t spill_min_denominator;
     uint8_t spill_parent4child_denominator;
     unsigned merge_threshold_16dot16_percent;
+#if !(defined(_WIN32) || defined(_WIN64))
+    unsigned writethrough_threshold;
+#endif /* Windows */
     union {
       unsigned all;
       /* tracks options with non-auto values but tuned by user */
