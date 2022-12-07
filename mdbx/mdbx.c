@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY d7599f676b23c2cc157fba8b4faf8951ebdfa1135e4d15f8c1b1ea495db867d6_v0_12_2_47_g45130256
+#define MDBX_BUILD_SOURCERY 2c6519d52e2985e2ee900324d9f1e3c3bb17f3757058ad43cbd9d4f4e9761131_v0_12_2_49_gbf087d40
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -11170,17 +11170,11 @@ next_gc:;
       }
       flags -= MDBX_ALLOC_COALESCE | MDBX_ALLOC_SHOULD_SCAN;
     }
-    if (unlikely(/* list is too long already */ MDBX_PNL_GETSIZE(
-                     txn->tw.relist) >= env->me_options.rp_augment_limit) &&
-        ((/* not a slot-request from gc-update */ num &&
-          /* have enough unallocated space */ txn->mt_geo.upper >=
-              txn->mt_next_pgno + num) ||
-         gc_len + MDBX_PNL_GETSIZE(txn->tw.relist) >= MDBX_PGL_LIMIT)) {
+    if (unlikely(gc_len + MDBX_PNL_GETSIZE(txn->tw.relist) >= MDBX_PGL_LIMIT)) {
       /* Stop reclaiming to avoid large/overflow the page list.
        * This is a rare case while search for a continuously multi-page region
        * in a large database.
-       * https://libmdbx.dqdkfa.ru/dead-github/issues/123
-       */
+       * https://libmdbx.dqdkfa.ru/dead-github/issues/123 */
       NOTICE("stop reclaiming to avoid PNL overflow: %zu (current) + %zu "
              "(chunk) -> %zu",
              MDBX_PNL_GETSIZE(txn->tw.relist), gc_len,
@@ -11284,10 +11278,10 @@ scan:
 depleted_gc:
   TRACE("%s: last id #%" PRIaTXN ", re-len %zu", "gc-depleted", id,
         MDBX_PNL_GETSIZE(txn->tw.relist));
-  txn->mt_flags |= MDBX_TXN_DRAINED_GC;
   ret.err = MDBX_NOTFOUND;
   if (flags & MDBX_ALLOC_SHOULD_SCAN)
     goto scan;
+  txn->mt_flags |= MDBX_TXN_DRAINED_GC;
 
   //-------------------------------------------------------------------------
 
@@ -11390,6 +11384,7 @@ depleted_gc:
 
 no_gc:
   eASSERT(env, pgno == 0);
+  ENSURE(env, txn->mt_flags & MDBX_TXN_DRAINED_GC);
   if (unlikely(!(txn->mt_flags & MDBX_TXN_DRAINED_GC))) {
     ret.err = MDBX_BACKLOG_DEPLETED;
     goto fail;
@@ -32457,9 +32452,9 @@ __dll_export
         0,
         12,
         2,
-        47,
-        {"2022-12-08T01:27:40+03:00", "bb21ab7a9774973ac836eb4669f9e4a8ed4cfd26", "451302568723add98897ec2b72e735aa27a5afe3",
-         "v0.12.2-47-g45130256"},
+        49,
+        {"2022-12-08T02:21:00+03:00", "eb5880b9a6f2e697eea2a72de80f58b378e6dbda", "bf087d403ffac1170b9525982becf4b37a3c4c9f",
+         "v0.12.2-49-gbf087d40"},
         sourcery};
 
 __dll_export
