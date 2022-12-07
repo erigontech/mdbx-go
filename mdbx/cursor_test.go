@@ -304,7 +304,6 @@ func TestLastDup(t *testing.T) {
 	}
 
 	err = env.View(func(txn *Txn) error {
-		txn.RawRead = true
 		c, err := txn.OpenCursor(dbi)
 		if err != nil {
 			return err
@@ -649,7 +648,6 @@ func TestCursor_Del(t *testing.T) {
 	}
 
 	err = env.Update(func(txn *Txn) (err error) {
-		txn.RawRead = true
 		cur, err := txn.OpenCursor(db)
 		if err != nil {
 			return err
@@ -692,7 +690,6 @@ func TestCursor_Del(t *testing.T) {
 
 	var newitems []Item
 	err = env.View(func(txn *Txn) (err error) {
-		txn.RawRead = true
 		cur, err := txn.OpenCursor(db)
 		if err != nil {
 			return err
