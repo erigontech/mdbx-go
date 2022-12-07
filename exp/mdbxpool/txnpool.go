@@ -121,7 +121,6 @@ func (p *TxnPool) beginReadonly() (*mdbx.Txn, error) {
 	// Clear txn.Pooled to let a warning be emitted from the Txn finalizer
 	// again.  And, make sure to clear RawRead to make the Txn appear like it
 	// was just allocated.
-	txn.RawRead = false
 	txn.Pooled = false
 
 	return txn, nil
