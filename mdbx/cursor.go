@@ -122,7 +122,7 @@ func (c *Cursor) DBI() DBI {
 	return DBI(C.mdbx_cursor_dbi(c._c))
 }
 
-// Get retrieves items from the database. If c.Txn().RawRead is true the slices
+// Get retrieves items from the database. Slices
 // returned by Get reference readonly sections of memory that must not be
 // accessed after the transaction has terminated.
 //
