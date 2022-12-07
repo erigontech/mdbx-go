@@ -154,13 +154,7 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 	// routines will be bad for the Go runtime when operating on Go memory
 	// (panic or potentially garbage memory reference).
 	if op == Set {
-		if c.txn.RawRead {
-			key = setkey
-		} else {
-			p := make([]byte, len(setkey))
-			copy(p, setkey)
-			key = p
-		}
+		key = setkey
 	} else {
 		if op != LastDup {
 			key = c.txn.bytes(c.txn.key)

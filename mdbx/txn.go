@@ -55,12 +55,6 @@ type Txn struct {
 
 	errLogf func(format string, v ...interface{})
 
-	// If RawRead is true []byte values retrieved from Get() calls on the Txn
-	// and its cursors will point directly into the memory-mapped structure.
-	// Such slices will be readonly and must only be referenced wthin the
-	// transaction's lifetime.
-	RawRead bool
-
 	// Pooled may be set to true while a Txn is stored in a sync.Pool, after
 	// Txn.Reset reset has been called and before Txn.Renew.  This will keep
 	// the Txn finalizer from unnecessarily warning the application about
@@ -503,10 +497,7 @@ func (txn *Txn) subFlag(flags uint, fn TxnOp) error {
 }
 
 func (txn *Txn) bytes(val *C.MDBX_val) []byte {
-	if txn.RawRead {
-		return getBytes(val)
-	}
-	return getBytesCopy(val)
+	return getBytes(val)
 }
 
 // Get retrieves items from database dbi.  If txn.RawRead is true the slice
