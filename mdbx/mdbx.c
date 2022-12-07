@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 302f8db2d0dc6b6889efb4732ae64138c94b957b5c2f89e4ea81f312123042db_v0_12_2_47_g1ceff4b1
+#define MDBX_BUILD_SOURCERY d7599f676b23c2cc157fba8b4faf8951ebdfa1135e4d15f8c1b1ea495db867d6_v0_12_2_47_g45130256
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -10687,18 +10687,18 @@ static pgno_t *scan4seq_resolver(pgno_t *range, const size_t len,
 
 static __inline bool is_gc_usable(MDBX_txn *txn, const MDBX_cursor *mc,
                                   const uint8_t flags) {
+  /* If txn is updating the GC, then the retired-list cannot play catch-up with
+   * itself by growing while trying to save it. */
+  if (mc->mc_dbi == FREE_DBI && !(flags & MDBX_ALLOC_RESERVE) &&
+      !(mc->mc_flags & C_GCU))
+    return false;
+
   /* avoid search inside empty tree and while tree is updating,
      https://libmdbx.dqdkfa.ru/dead-github/issues/31 */
   if (unlikely(txn->mt_dbs[FREE_DBI].md_entries == 0)) {
     txn->mt_flags |= MDBX_TXN_DRAINED_GC;
     return false;
   }
-
-  /* If txn is updating the GC, then the retired-list cannot play catch-up with
-   * itself by growing while trying to save it. */
-  if (mc->mc_dbi == FREE_DBI && !(flags & MDBX_ALLOC_RESERVE) &&
-      !(mc->mc_flags & C_GCU))
-    return false;
 
   return true;
 }
@@ -11036,11 +11036,7 @@ static pgr_t page_alloc_slowpath(const MDBX_cursor *const mc, const size_t num,
   //---------------------------------------------------------------------------
 
   if (unlikely(!is_gc_usable(txn, mc, flags))) {
-    if (unlikely(!(txn->mt_flags & MDBX_TXN_DRAINED_GC))) {
-      eASSERT(env, false);
-      ret.err = MDBX_BACKLOG_DEPLETED;
-      goto fail;
-    }
+    eASSERT(env, txn->mt_flags & MDBX_TXN_DRAINED_GC);
     goto no_gc;
   }
 
@@ -11129,6 +11125,7 @@ next_gc:;
     if (unlikely(id >= detent))
       goto depleted_gc;
   }
+  txn->mt_flags &= ~MDBX_TXN_DRAINED_GC;
 
   /* Reading next GC record */
   MDBX_val data;
@@ -11252,7 +11249,6 @@ next_gc:;
           MDBX_PNL_GETSIZE(txn->tw.relist));
     goto early_exit;
   }
-  txn->mt_flags &= ~MDBX_TXN_DRAINED_GC;
 
   /* TODO: delete reclaimed records */
 
@@ -11394,6 +11390,10 @@ depleted_gc:
 
 no_gc:
   eASSERT(env, pgno == 0);
+  if (unlikely(!(txn->mt_flags & MDBX_TXN_DRAINED_GC))) {
+    ret.err = MDBX_BACKLOG_DEPLETED;
+    goto fail;
+  }
   if (flags & MDBX_ALLOC_RESERVE) {
     ret.err = MDBX_NOTFOUND;
     goto fail;
@@ -14259,7 +14259,7 @@ retry:
                                 and one cycle. */
             ;
       }
-      goto retry;
+      continue;
     }
 
     /* handle reclaimed and lost pages - merge and store both into gc */
@@ -32458,8 +32458,8 @@ __dll_export
         12,
         2,
         47,
-        {"2022-12-07T16:43:28+03:00", "ca278c89b1c501ea5fff27dc3286efcee0cbd204", "1ceff4b1272bd32002522ccecf4376dcdc3553b9",
-         "v0.12.2-47-g1ceff4b1"},
+        {"2022-12-08T01:27:40+03:00", "bb21ab7a9774973ac836eb4669f9e4a8ed4cfd26", "451302568723add98897ec2b72e735aa27a5afe3",
+         "v0.12.2-47-g45130256"},
         sourcery};
 
 __dll_export
