@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY f7a29fb74a867c7c733e792691fc95671e88cb70c4de2a7be02a9ae40f93ffc3_v0_12_2_45_gfc1bb016
+#define MDBX_BUILD_SOURCERY 853335219e9a26219f028e57b6e359e6fbb14cde7925628d2a773f92cf084cf0_v0_12_2_46_ga4a197d9
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -3205,9 +3205,11 @@ struct MDBX_txn {
   /* Additional flag for sync_locked() */
 #define MDBX_SHRINK_ALLOWED UINT32_C(0x40000000)
 
+#define MDBX_TXN_DRAINED_GC 0x20 /* GC was depleted up to oldest reader */
+
 #define TXN_FLAGS                                                              \
   (MDBX_TXN_FINISHED | MDBX_TXN_ERROR | MDBX_TXN_DIRTY | MDBX_TXN_SPILLS |     \
-   MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID)
+   MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID | MDBX_TXN_DRAINED_GC)
 
 #if (TXN_FLAGS & (MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS)) ||       \
     ((MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS | TXN_FLAGS) &         \

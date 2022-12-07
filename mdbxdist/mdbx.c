@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY f7a29fb74a867c7c733e792691fc95671e88cb70c4de2a7be02a9ae40f93ffc3_v0_12_2_45_gfc1bb016
+#define MDBX_BUILD_SOURCERY 853335219e9a26219f028e57b6e359e6fbb14cde7925628d2a773f92cf084cf0_v0_12_2_46_ga4a197d9
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -3183,9 +3183,11 @@ struct MDBX_txn {
   /* Additional flag for sync_locked() */
 #define MDBX_SHRINK_ALLOWED UINT32_C(0x40000000)
 
+#define MDBX_TXN_DRAINED_GC 0x20 /* GC was depleted up to oldest reader */
+
 #define TXN_FLAGS                                                              \
   (MDBX_TXN_FINISHED | MDBX_TXN_ERROR | MDBX_TXN_DIRTY | MDBX_TXN_SPILLS |     \
-   MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID)
+   MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID | MDBX_TXN_DRAINED_GC)
 
 #if (TXN_FLAGS & (MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS)) ||       \
     ((MDBX_TXN_RW_BEGIN_FLAGS | MDBX_TXN_RO_BEGIN_FLAGS | TXN_FLAGS) &         \
@@ -10684,15 +10686,17 @@ static pgno_t *scan4seq_resolver(pgno_t *range, const size_t len,
 
 static __inline bool is_gc_usable(MDBX_txn *txn, const MDBX_cursor *mc,
                                   const uint8_t flags) {
+  /* avoid search inside empty tree and while tree is updating,
+     https://libmdbx.dqdkfa.ru/dead-github/issues/31 */
+  if (unlikely(txn->mt_dbs[FREE_DBI].md_entries == 0)) {
+    txn->mt_flags |= MDBX_TXN_DRAINED_GC;
+    return false;
+  }
+
   /* If txn is updating the GC, then the retired-list cannot play catch-up with
    * itself by growing while trying to save it. */
   if (mc->mc_dbi == FREE_DBI && !(flags & MDBX_ALLOC_RESERVE) &&
       !(mc->mc_flags & C_GCU))
-    return false;
-
-  /* avoid (recursive) search inside empty tree and while tree is
-     updating, https://libmdbx.dqdkfa.ru/dead-github/issues/31 */
-  if (txn->mt_dbs[FREE_DBI].md_entries == 0)
     return false;
 
   return true;
@@ -11030,8 +11034,15 @@ static pgr_t page_alloc_slowpath(const MDBX_cursor *const mc, const size_t num,
 
   //---------------------------------------------------------------------------
 
-  if (unlikely(!is_gc_usable(txn, mc, flags)))
+  if (unlikely(!is_gc_usable(txn, mc, flags))) {
+    if (unlikely(mc->mc_dbi == FREE_DBI &&
+                 !(txn->mt_flags & MDBX_TXN_DRAINED_GC))) {
+      eASSERT(env, false);
+      ret.err = MDBX_BACKLOG_DEPLETED;
+      goto fail;
+    }
     goto no_gc;
+  }
 
   eASSERT(env, (flags & (MDBX_ALLOC_COALESCE | MDBX_ALLOC_LIFO |
                          MDBX_ALLOC_SHOULD_SCAN)) == 0);
@@ -11241,6 +11252,7 @@ next_gc:;
           MDBX_PNL_GETSIZE(txn->tw.relist));
     goto early_exit;
   }
+  txn->mt_flags &= ~MDBX_TXN_DRAINED_GC;
 
   /* TODO: delete reclaimed records */
 
@@ -11274,6 +11286,9 @@ scan:
   }
 
 depleted_gc:
+  TRACE("%s: last id #%" PRIaTXN ", re-len %zu", "gc-depleted", id,
+        MDBX_PNL_GETSIZE(txn->tw.relist));
+  txn->mt_flags |= MDBX_TXN_DRAINED_GC;
   ret.err = MDBX_NOTFOUND;
   if (flags & MDBX_ALLOC_SHOULD_SCAN)
     goto scan;
@@ -13866,6 +13881,8 @@ static int gcu_prepare_backlog(MDBX_txn *txn, gcu_context_t *ctx) {
         (size_t)txn->mt_dbs[FREE_DBI].md_leaf_pages,
         (size_t)txn->mt_dbs[FREE_DBI].md_overflow_pages,
         (size_t)txn->mt_dbs[FREE_DBI].md_entries);
+  tASSERT(txn,
+          err != MDBX_NOTFOUND || (txn->mt_flags & MDBX_TXN_DRAINED_GC) != 0);
   return (err != MDBX_NOTFOUND) ? err : MDBX_SUCCESS;
 }
 
@@ -32444,9 +32461,9 @@ __dll_export
         0,
         12,
         2,
-        45,
-        {"2022-12-07T00:11:21+03:00", "b99e50a7368d7e6a7526c419a5051c2326a5c882", "fc1bb016b6b968778fbb3ab46081b04cd424d304",
-         "v0.12.2-45-gfc1bb016"},
+        46,
+        {"2022-12-07T00:11:21+03:00", "a695ffad3caf8521948a634dc3f296db1c0cab3e", "a4a197d907851796b1c629fcb4ddad4d26ac5569",
+         "v0.12.2-46-ga4a197d9"},
         sourcery};
 
 __dll_export
