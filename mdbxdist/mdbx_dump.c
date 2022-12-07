@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 853335219e9a26219f028e57b6e359e6fbb14cde7925628d2a773f92cf084cf0_v0_12_2_46_ga4a197d9
+#define MDBX_BUILD_SOURCERY 302f8db2d0dc6b6889efb4732ae64138c94b957b5c2f89e4ea81f312123042db_v0_12_2_47_g1ceff4b1
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -3444,9 +3444,10 @@ struct MDBX_env {
   uint16_t *me_dbflags;             /* array of flags from MDBX_db.md_flags */
   MDBX_atomic_uint32_t *me_dbiseqs; /* array of dbi sequence numbers */
   unsigned
-      me_maxgc_ov1page;    /* Number of pgno_t fit in a single overflow page */
-  uint32_t me_live_reader; /* have liveness lock in reader table */
-  void *me_userctx;        /* User-settable context */
+      me_maxgc_ov1page; /* Number of pgno_t fit in a single overflow page */
+  unsigned me_maxgc_per_branch;
+  uint32_t me_live_reader;        /* have liveness lock in reader table */
+  void *me_userctx;               /* User-settable context */
   MDBX_hsr_func *me_hsr_callback; /* Callback for kicking laggard readers */
 
   struct {
