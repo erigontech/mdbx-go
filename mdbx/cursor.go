@@ -126,10 +126,8 @@ func (c *Cursor) DBI() DBI {
 // returned by Get reference readonly sections of memory that must not be
 // accessed after the transaction has terminated.
 //
-// In a Txn with RawRead set to true the Set op causes the returned key to
+// Set op causes the returned key to
 // share its memory with setkey (making it writable memory). In a Txn with
-// RawRead set to false the Set op returns key values with memory distinct from
-// setkey, as is always the case when using RawRead.
 //
 // Get ignores setval if setkey is empty.
 //

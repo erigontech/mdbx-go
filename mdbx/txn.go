@@ -500,9 +500,8 @@ func (txn *Txn) bytes(val *C.MDBX_val) []byte {
 	return getBytes(val)
 }
 
-// Get retrieves items from database dbi.  If txn.RawRead is true the slice
-// returned by Get references a readonly section of memory that must not be
-// accessed after txn has terminated.
+// Get retrieves items from database dbi.Slice returned by Get references a
+// readonly section of memory that must not be accessed after txn has terminated.
 //
 // See mdbx_get.
 func (txn *Txn) Get(dbi DBI, key []byte) ([]byte, error) {
