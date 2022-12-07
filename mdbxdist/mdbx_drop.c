@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 0b7c0069bccc183aafc8f11b08062617e938c8ab38665acd520f1dbc0377ddcf_v0_12_2_42_gf38f7c28
+#define MDBX_BUILD_SOURCERY f7a29fb74a867c7c733e792691fc95671e88cb70c4de2a7be02a9ae40f93ffc3_v0_12_2_45_gfc1bb016
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -3086,7 +3086,7 @@ typedef struct MDBX_lockinfo {
 #endif /* MDBX_WORDBITS */
 
 #define MDBX_READERS_LIMIT 32767
-#define MDBX_RADIXSORT_THRESHOLD 333
+#define MDBX_RADIXSORT_THRESHOLD 142
 
 /*----------------------------------------------------------------------------*/
 
@@ -3112,13 +3112,9 @@ typedef txnid_t *MDBX_TXL;
 typedef struct MDBX_dp {
   MDBX_page *ptr;
   pgno_t pgno;
-  union {
-    uint32_t extra;
-    __anonymous_struct_extension__ struct {
-      unsigned multi : 1;
-      unsigned lru : 31;
-    };
-  };
+  uint32_t mlru;
+#define MDBX_dp_multi_mask 1
+#define MDBX_dp_lru_mask UINT32_C(0xffffFFFe)
 } MDBX_dp;
 
 /* An DPL (dirty-page list) is a sorted array of MDBX_DPs. */
