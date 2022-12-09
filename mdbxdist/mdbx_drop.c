@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 302f8db2d0dc6b6889efb4732ae64138c94b957b5c2f89e4ea81f312123042db_v0_12_2_47_g1ceff4b1
+#define MDBX_BUILD_SOURCERY cea3c4ece613c5b38bf21264cdb7c32d35614f83be95511af948d79c47961bbd_v0_12_2_50_g13489203
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -3087,6 +3087,7 @@ typedef struct MDBX_lockinfo {
 
 #define MDBX_READERS_LIMIT 32767
 #define MDBX_RADIXSORT_THRESHOLD 142
+#define MDBX_GOLD_RATIO_DBL 1.6180339887498948482
 
 /*----------------------------------------------------------------------------*/
 
@@ -3130,7 +3131,8 @@ typedef struct MDBX_dpl {
 } MDBX_dpl;
 
 /* PNL sizes */
-#define MDBX_PNL_GRANULATE 1024
+#define MDBX_PNL_GRANULATE_LOG2 10
+#define MDBX_PNL_GRANULATE (1 << MDBX_PNL_GRANULATE_LOG2)
 #define MDBX_PNL_INITIAL                                                       \
   (MDBX_PNL_GRANULATE - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(pgno_t))
 
@@ -3270,7 +3272,7 @@ struct MDBX_txn {
     struct {
       meta_troika_t troika;
       /* In write txns, array of cursors for each DB */
-      pgno_t *relist;         /* Reclaimed GC pages */
+      MDBX_PNL relist;        /* Reclaimed GC pages */
       txnid_t last_reclaimed; /* ID of last used record */
 #if MDBX_ENABLE_REFUND
       pgno_t loose_refund_wl /* FIXME: describe */;
@@ -3470,6 +3472,7 @@ struct MDBX_env {
       /* tracks options with non-auto values but tuned by user */
       struct {
         unsigned dp_limit : 1;
+        unsigned rp_augment_limit : 1;
       } non_auto;
     } flags;
   } me_options;

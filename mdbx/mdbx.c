@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 2c6519d52e2985e2ee900324d9f1e3c3bb17f3757058ad43cbd9d4f4e9761131_v0_12_2_49_gbf087d40
+#define MDBX_BUILD_SOURCERY cea3c4ece613c5b38bf21264cdb7c32d35614f83be95511af948d79c47961bbd_v0_12_2_50_g13489203
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -3063,6 +3063,7 @@ typedef struct MDBX_lockinfo {
 
 #define MDBX_READERS_LIMIT 32767
 #define MDBX_RADIXSORT_THRESHOLD 142
+#define MDBX_GOLD_RATIO_DBL 1.6180339887498948482
 
 /*----------------------------------------------------------------------------*/
 
@@ -3106,7 +3107,8 @@ typedef struct MDBX_dpl {
 } MDBX_dpl;
 
 /* PNL sizes */
-#define MDBX_PNL_GRANULATE 1024
+#define MDBX_PNL_GRANULATE_LOG2 10
+#define MDBX_PNL_GRANULATE (1 << MDBX_PNL_GRANULATE_LOG2)
 #define MDBX_PNL_INITIAL                                                       \
   (MDBX_PNL_GRANULATE - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(pgno_t))
 
@@ -3246,7 +3248,7 @@ struct MDBX_txn {
     struct {
       meta_troika_t troika;
       /* In write txns, array of cursors for each DB */
-      pgno_t *relist;         /* Reclaimed GC pages */
+      MDBX_PNL relist;        /* Reclaimed GC pages */
       txnid_t last_reclaimed; /* ID of last used record */
 #if MDBX_ENABLE_REFUND
       pgno_t loose_refund_wl /* FIXME: describe */;
@@ -3446,6 +3448,7 @@ struct MDBX_env {
       /* tracks options with non-auto values but tuned by user */
       struct {
         unsigned dp_limit : 1;
+        unsigned rp_augment_limit : 1;
       } non_auto;
     } flags;
   } me_options;
@@ -9862,6 +9865,14 @@ __cold static void munlock_all(const MDBX_env *env) {
   munlock_after(env, 0, bytes_align2os_bytes(env, env->me_dxb_mmap.current));
 }
 
+__cold static unsigned default_rp_augment_limit(const MDBX_env *env) {
+  /* default drp_augment_limit = ceil(npages / gold_ratio) */
+  const size_t augment = (env->me_dbgeo.now >> (env->me_psize2log + 10)) * 633u;
+  eASSERT(env, augment < MDBX_PGL_LIMIT);
+  return pnl_bytes2size(pnl_size2bytes(
+      (augment > MDBX_PNL_INITIAL) ? augment : MDBX_PNL_INITIAL));
+}
+
 __cold static int map_resize(MDBX_env *env, const pgno_t used_pgno,
                              const pgno_t size_pgno, const pgno_t limit_pgno,
                              const bool implicit) {
@@ -10052,6 +10063,11 @@ bailout:
     eASSERT(env, limit_bytes == env->me_dxb_mmap.limit);
     eASSERT(env, size_bytes <= env->me_dxb_mmap.filesize);
     eASSERT(env, size_bytes == env->me_dxb_mmap.current);
+    /* update env-geo to avoid influences */
+    env->me_dbgeo.now = env->me_dxb_mmap.current;
+    env->me_dbgeo.upper = env->me_dxb_mmap.limit;
+    if (!env->me_options.flags.non_auto.rp_augment_limit)
+      env->me_options.rp_augment_limit = default_rp_augment_limit(env);
 #ifdef MDBX_USE_VALGRIND
     if (prev_limit != env->me_dxb_mmap.limit || prev_map != env->me_map) {
       VALGRIND_DISCARD(env->me_valgrind_handle);
@@ -10711,14 +10727,68 @@ __hot static bool is_already_reclaimed(const MDBX_txn *txn, txnid_t id) {
   return false;
 }
 
-__hot static pgno_t pnl_get_single(MDBX_PNL pnl) {
-  const size_t len = MDBX_PNL_GETSIZE(pnl);
+__hot static pgno_t relist_get_single(MDBX_txn *txn) {
+  const size_t len = MDBX_PNL_GETSIZE(txn->tw.relist);
   assert(len > 0);
-  pgno_t *target = MDBX_PNL_EDGE(pnl);
+  pgno_t *target = MDBX_PNL_EDGE(txn->tw.relist);
   const ptrdiff_t dir = MDBX_PNL_ASCENDING ? 1 : -1;
 
-  /* пытаемся пропускать последовательности при наличии одиночных элементов */
-  if (likely(len > 2) && unlikely(target[dir] == *target + 1)) {
+  /* Есть ТРИ потенциально выигрышные, но противо-направленные тактики:
+   *
+   * 1. Стараться использовать страницы с наименьшими номерами. Так обмен с
+   * диском будет более кучным, а у страниц ближе к концу БД будет больше шансов
+   * попасть под авто-компактификацию. Частично эта тактика уже реализована, но
+   * для её эффективности требуется явно приоритезировать выделение страниц:
+   *   - поддерживать для relist, для ближних и для дальних страниц;
+   *   - использовать страницы из дальнего списка, если первый пуст,
+   *     а второй слишком большой, либо при пустой GC.
+   *
+   * 2. Стараться выделять страницы последовательно. Так записываемые на диск
+   * регионы будут линейными, что принципиально ускоряет запись на HDD.
+   * Одновременно, в среднем это не повлияет на чтение, точнее говоря, если
+   * порядок чтения не совпадает с порядком изменения (иначе говоря, если
+   * чтение не коррклирует с обновлениями и/или вставками) то не повлияет, иначе
+   * может ускорить. Однако, последовательности в среднем достаточно редки.
+   * Поэтому для эффективности требуется аккумулировать и поддерживать в ОЗУ
+   * огромные списки страниц, а затем сохранять их обратно в БД. Текущий формат
+   * БД (без битовых карт) для этого крайне не удачен. Поэтому эта тактика не
+   * имеет шансов быть успешной без смены формата БД (Mithril).
+   *
+   * 3. Стараться экономить последовательности страниц. Это позволяет избегать
+   * лишнего чтения/поиска в GC при более-менее постоянном размещении и/или
+   * обновлении данных требующих более одной страницы. Проблема в том, что без
+   * информации от приложения библиотека не может знать насколько
+   * востребованными будут последовательности в ближайшей перспективе, а
+   * экономия последовательностей "на всякий случай" не только затратна
+   * сама-по-себе, но и работает во вред.
+   *
+   * Поэтому:
+   *  - в TODO добавляется разделение relist на «ближние» и «дальние» страницы,
+   *    с последующей реализацией первой тактики;
+   *  - преимущественное использование последовательностей отправляется
+   *    в MithrilDB как составляющая "HDD frendly" feature;
+   *  - реализованная в 3757eb72f7c6b46862f8f17881ac88e8cecc1979 экономия
+   *    последовательностей отключается через MDBX_ENABLE_SAVING_SEQUENCES=0.
+   *
+   * В качестве альтернативы для безусловной «экономии» последовательностей,
+   * в следующих версиях libmdbx, вероятно, будет предложено
+   * API для взаимодействия с GC:
+   *  - получение размера GC, включая гистограммы размеров последовательностей
+   *    и близости к концу БД;
+   *  - включение формирования "линейного запаса" для последующего использования
+   *    в рамках текущей транзакции;
+   *  - намеренная загрузка GC в память для коагуляции и "выпрямления";
+   *  - намеренное копирование данных из страниц в конце БД для последующего
+   *    из освобождения, т.е. контролируемая компактификация по запросу. */
+
+#ifndef MDBX_ENABLE_SAVING_SEQUENCES
+#define MDBX_ENABLE_SAVING_SEQUENCES 0
+#endif
+  if (MDBX_ENABLE_SAVING_SEQUENCES && unlikely(target[dir] == *target + 1) &&
+      len > 2) {
+    /* Пытаемся пропускать последовательности при наличии одиночных элементов.
+     * TODO: необходимо кэшировать пропускаемые последовательности
+     * чтобы не сканировать список сначала при каждом выделении. */
     pgno_t *scan = target + dir + dir;
     size_t left = len;
     do {
@@ -10729,7 +10799,7 @@ __hot static pgno_t pnl_get_single(MDBX_PNL pnl) {
 #else
         /* вырезаем элемент с перемещением хвоста */
         const pgno_t pgno = *scan;
-        MDBX_PNL_SETSIZE(pnl, len - 1);
+        MDBX_PNL_SETSIZE(txn->tw.relist, len - 1);
         while (++scan <= target)
           scan[-1] = *scan;
         return pgno;
@@ -10742,45 +10812,47 @@ __hot static pgno_t pnl_get_single(MDBX_PNL pnl) {
   const pgno_t pgno = *target;
 #if MDBX_PNL_ASCENDING
   /* вырезаем элемент с перемещением хвоста */
-  MDBX_PNL_SETSIZE(pnl, len - 1);
-  for (const pgno_t *const end = pnl + len - 1; target <= end; ++target)
+  MDBX_PNL_SETSIZE(txn->tw.relist, len - 1);
+  for (const pgno_t *const end = txn->tw.relist + len - 1; target <= end;
+       ++target)
     *target = target[1];
 #else
   /* перемещать хвост не нужно, просто усекам список */
-  MDBX_PNL_SETSIZE(pnl, len - 1);
+  MDBX_PNL_SETSIZE(txn->tw.relist, len - 1);
 #endif
   return pgno;
 }
 
-__hot static pgno_t pnl_get_sequence(MDBX_PNL pnl, const size_t num,
-                                     uint8_t flags) {
-  const size_t len = MDBX_PNL_GETSIZE(pnl);
-  pgno_t *edge = MDBX_PNL_EDGE(pnl);
+__hot static pgno_t relist_get_sequence(MDBX_txn *txn, const size_t num,
+                                        uint8_t flags) {
+  const size_t len = MDBX_PNL_GETSIZE(txn->tw.relist);
+  pgno_t *edge = MDBX_PNL_EDGE(txn->tw.relist);
   assert(len >= num && num > 1);
   const size_t seq = num - 1;
 #if !MDBX_PNL_ASCENDING
   if (edge[-(ptrdiff_t)seq] - *edge == seq) {
     if (unlikely(flags & MDBX_ALLOC_RESERVE))
       return P_INVALID;
-    assert(edge == scan4range_checker(pnl, seq));
+    assert(edge == scan4range_checker(txn->tw.relist, seq));
     /* перемещать хвост не нужно, просто усекам список */
-    MDBX_PNL_SETSIZE(pnl, len - num);
+    MDBX_PNL_SETSIZE(txn->tw.relist, len - num);
     return *edge;
   }
 #endif
   pgno_t *target = scan4seq_impl(edge, len, seq);
-  assert(target == scan4range_checker(pnl, seq));
+  assert(target == scan4range_checker(txn->tw.relist, seq));
   if (target) {
     if (unlikely(flags & MDBX_ALLOC_RESERVE))
       return P_INVALID;
     const pgno_t pgno = *target;
     /* вырезаем найденную последовательность с перемещением хвоста */
-    MDBX_PNL_SETSIZE(pnl, len - num);
+    MDBX_PNL_SETSIZE(txn->tw.relist, len - num);
 #if MDBX_PNL_ASCENDING
-    for (const pgno_t *const end = pnl + len - num; target <= end; ++target)
+    for (const pgno_t *const end = txn->tw.relist + len - num; target <= end;
+         ++target)
       *target = target[num];
 #else
-    for (const pgno_t *const end = pnl + len; ++target <= end;)
+    for (const pgno_t *const end = txn->tw.relist + len; ++target <= end;)
       target[-(ptrdiff_t)num] = *target;
 #endif
     return pgno;
@@ -11024,7 +11096,7 @@ static pgr_t page_alloc_slowpath(const MDBX_cursor *const mc, const size_t num,
     if (MDBX_PNL_GETSIZE(txn->tw.relist) >= num) {
       eASSERT(env, MDBX_PNL_LAST(txn->tw.relist) < txn->mt_next_pgno &&
                        MDBX_PNL_FIRST(txn->tw.relist) < txn->mt_next_pgno);
-      pgno = pnl_get_sequence(txn->tw.relist, num, flags);
+      pgno = relist_get_sequence(txn, num, flags);
       if (likely(pgno))
         goto done;
     }
@@ -11161,24 +11233,32 @@ next_gc:;
         eASSERT(env, MDBX_PNL_LAST(txn->tw.relist) < txn->mt_next_pgno &&
                          MDBX_PNL_FIRST(txn->tw.relist) < txn->mt_next_pgno);
         if (likely(num == 1)) {
-          pgno = pnl_get_single(txn->tw.relist);
+          pgno = relist_get_single(txn);
           goto done;
         }
-        pgno = pnl_get_sequence(txn->tw.relist, num, flags);
+        pgno = relist_get_sequence(txn, num, flags);
         if (likely(pgno))
           goto done;
       }
       flags -= MDBX_ALLOC_COALESCE | MDBX_ALLOC_SHOULD_SCAN;
     }
-    if (unlikely(gc_len + MDBX_PNL_GETSIZE(txn->tw.relist) >= MDBX_PGL_LIMIT)) {
-      /* Stop reclaiming to avoid large/overflow the page list.
-       * This is a rare case while search for a continuously multi-page region
-       * in a large database.
-       * https://libmdbx.dqdkfa.ru/dead-github/issues/123 */
-      NOTICE("stop reclaiming to avoid PNL overflow: %zu (current) + %zu "
-             "(chunk) -> %zu",
+    if (unlikely(/* list is too long already */ MDBX_PNL_GETSIZE(
+                     txn->tw.relist) >= env->me_options.rp_augment_limit) &&
+        ((/* not a slot-request from gc-update */ num &&
+          /* have enough unallocated space */ txn->mt_geo.upper >=
+              txn->mt_next_pgno + num) ||
+         gc_len + MDBX_PNL_GETSIZE(txn->tw.relist) >= MDBX_PGL_LIMIT)) {
+      /* Stop reclaiming to avoid large/overflow the page list. This is a rare
+       * case while search for a continuously multi-page region in a
+       * large database, see https://libmdbx.dqdkfa.ru/dead-github/issues/123 */
+      NOTICE("stop reclaiming %s: %zu (current) + %zu "
+             "(chunk) -> %zu, rp_augment_limit %u",
+             likely(gc_len + MDBX_PNL_GETSIZE(txn->tw.relist) < MDBX_PGL_LIMIT)
+                 ? "since rp_augment_limit was reached"
+                 : "to avoid PNL overflow",
              MDBX_PNL_GETSIZE(txn->tw.relist), gc_len,
-             gc_len + MDBX_PNL_GETSIZE(txn->tw.relist));
+             gc_len + MDBX_PNL_GETSIZE(txn->tw.relist),
+             env->me_options.rp_augment_limit);
       goto depleted_gc;
     }
   }
@@ -11261,10 +11341,10 @@ scan:
                      MDBX_PNL_FIRST(txn->tw.relist) < txn->mt_next_pgno);
     if (likely(num == 1)) {
       eASSERT(env, !(flags & MDBX_ALLOC_RESERVE));
-      pgno = pnl_get_single(txn->tw.relist);
+      pgno = relist_get_single(txn);
       goto done;
     }
-    pgno = pnl_get_sequence(txn->tw.relist, num, flags);
+    pgno = relist_get_sequence(txn, num, flags);
     if (likely(pgno))
       goto done;
   }
@@ -11384,7 +11464,6 @@ depleted_gc:
 
 no_gc:
   eASSERT(env, pgno == 0);
-  ENSURE(env, txn->mt_flags & MDBX_TXN_DRAINED_GC);
   if (unlikely(!(txn->mt_flags & MDBX_TXN_DRAINED_GC))) {
     ret.err = MDBX_BACKLOG_DEPLETED;
     goto fail;
@@ -11514,8 +11593,7 @@ __hot static pgr_t page_alloc(const MDBX_cursor *const mc) {
   }
 
   if (likely(MDBX_PNL_GETSIZE(txn->tw.relist) > 0))
-    return page_alloc_finalize(txn->mt_env, txn, mc,
-                               pnl_get_single(txn->tw.relist), 1);
+    return page_alloc_finalize(txn->mt_env, txn, mc, relist_get_single(txn), 1);
 
   return page_alloc_slowpath(mc, 1, MDBX_ALLOC_DEFAULT);
 }
@@ -13816,16 +13894,20 @@ static int gcu_prepare_backlog(MDBX_txn *txn, gcu_context_t *ctx) {
         number_of_ovpages(txn->mt_env, MDBX_PNL_SIZEOF(txn->tw.retired_pages));
   }
 
-  const size_t for_tree = for_cow + for_rebalance + for_split;
-  const size_t for_all = for_relist + for_tree;
-  if (likely(for_relist < 2 && gcu_backlog_size(txn) > for_all))
+  const size_t for_tree_before_touch = for_cow + for_rebalance + for_split;
+  const size_t for_tree_after_touch = for_rebalance + for_split;
+  const size_t for_all_before_touch = for_relist + for_tree_before_touch;
+  const size_t for_all_after_touch = for_relist + for_tree_after_touch;
+
+  if (likely(for_relist < 2 && gcu_backlog_size(txn) > for_all_before_touch))
     return MDBX_SUCCESS;
 
   TRACE(">> retired-stored %zu, left %zi, backlog %zu, need %zu (4list %zu, "
         "4split %zu, "
         "4cow %zu, 4tree %zu)",
-        ctx->retired_stored, retired_left, gcu_backlog_size(txn), for_all,
-        for_relist, for_split, for_cow, for_tree);
+        ctx->retired_stored, retired_left, gcu_backlog_size(txn),
+        for_all_before_touch, for_relist, for_split, for_cow,
+        for_tree_before_touch);
 
   int err;
   if (unlikely(for_relist > 2)) {
@@ -13857,7 +13939,7 @@ static int gcu_prepare_backlog(MDBX_txn *txn, gcu_context_t *ctx) {
             gcu_backlog_size(txn) >= for_relist || err != MDBX_SUCCESS);
   }
 
-  while (gcu_backlog_size(txn) < for_all && err == MDBX_SUCCESS)
+  while (gcu_backlog_size(txn) < for_all_after_touch && err == MDBX_SUCCESS)
     err = page_alloc_slowpath(&ctx->cursor, 0,
                               MDBX_ALLOC_RESERVE | MDBX_ALLOC_UNIMPORTANT)
               .err;
@@ -16491,8 +16573,8 @@ __cold static void setup_pagesize(MDBX_env *env, const size_t pagesize) {
          maxgc_ov1page > 42 && maxgc_ov1page < (intptr_t)MDBX_PGL_LIMIT / 4);
   env->me_maxgc_ov1page = (unsigned)maxgc_ov1page;
   env->me_maxgc_per_branch =
-      (unsigned)(pagesize - PAGEHDRSZ) /
-      (sizeof(indx_t) + sizeof(MDBX_node) + sizeof(txnid_t));
+      (unsigned)((pagesize - PAGEHDRSZ) /
+                 (sizeof(indx_t) + sizeof(MDBX_node) + sizeof(txnid_t)));
 
   STATIC_ASSERT(LEAF_NODE_MAX(MIN_PAGESIZE) > sizeof(MDBX_db) + NODESIZE + 42);
   STATIC_ASSERT(LEAF_NODE_MAX(MAX_PAGESIZE) < UINT16_MAX);
@@ -16596,14 +16678,9 @@ __cold int mdbx_env_create(MDBX_env **penv) {
   env->me_pid = osal_getpid();
   env->me_stuck_meta = -1;
 
-  env->me_options.dp_reserve_limit = 1024;
-  env->me_options.rp_augment_limit = 256 * 1024;
-  env->me_options.dp_limit = MDBX_DEBUG ? 64 * 1024 / 42 : 64 * 1024;
-  if (env->me_options.dp_limit > MAX_PAGENO + 1 - NUM_METAS)
-    env->me_options.dp_limit = MAX_PAGENO + 1 - NUM_METAS;
+  env->me_options.rp_augment_limit = MDBX_PNL_INITIAL;
+  env->me_options.dp_reserve_limit = MDBX_PNL_INITIAL;
   env->me_options.dp_initial = MDBX_PNL_INITIAL;
-  if (env->me_options.dp_initial > env->me_options.dp_limit)
-    env->me_options.dp_initial = env->me_options.dp_limit;
   env->me_options.spill_max_denominator = 8;
   env->me_options.spill_min_denominator = 8;
   env->me_options.spill_parent4child_denominator = 0;
@@ -16915,6 +16992,8 @@ mdbx_env_set_geometry(MDBX_env *env, intptr_t size_lower, intptr_t size_now,
         pgno2bytes(env, pv2pages(pages2pv(bytes2pgno(env, growth_step))));
     env->me_dbgeo.shrink =
         pgno2bytes(env, pv2pages(pages2pv(bytes2pgno(env, shrink_threshold))));
+    if (!env->me_options.flags.non_auto.rp_augment_limit)
+      env->me_options.rp_augment_limit = default_rp_augment_limit(env);
 
     ENSURE(env, env->me_dbgeo.lower >= MIN_MAPSIZE);
     ENSURE(env, env->me_dbgeo.lower / (unsigned)pagesize >= MIN_PAGENO);
@@ -16969,6 +17048,13 @@ mdbx_env_set_geometry(MDBX_env *env, intptr_t size_lower, intptr_t size_now,
     } else {
       current_geo = &env->me_txn->mt_geo;
     }
+
+    /* update env-geo to avoid influences */
+    env->me_dbgeo.now = pgno2bytes(env, current_geo->now);
+    env->me_dbgeo.lower = pgno2bytes(env, current_geo->lower);
+    env->me_dbgeo.upper = pgno2bytes(env, current_geo->upper);
+    env->me_dbgeo.grow = pgno2bytes(env, pv2pages(current_geo->grow_pv));
+    env->me_dbgeo.shrink = pgno2bytes(env, pv2pages(current_geo->shrink_pv));
 
     MDBX_geo new_geo;
     new_geo.lower = bytes2pgno(env, size_lower);
@@ -17042,16 +17128,20 @@ mdbx_env_set_geometry(MDBX_env *env, intptr_t size_lower, intptr_t size_now,
       } else {
         meta.mm_geo = new_geo;
         rc = sync_locked(env, env->me_flags, &meta, &env->me_txn0->tw.troika);
+        if (likely(rc == MDBX_SUCCESS)) {
+          env->me_dbgeo.now = pgno2bytes(env, new_geo.now = meta.mm_geo.now);
+          env->me_dbgeo.upper =
+              pgno2bytes(env, new_geo.upper = meta.mm_geo.upper);
+        }
       }
-
-      if (likely(rc == MDBX_SUCCESS)) {
-        /* store new geo to env to avoid influences */
-        env->me_dbgeo.now = pgno2bytes(env, new_geo.now);
-        env->me_dbgeo.lower = pgno2bytes(env, new_geo.lower);
-        env->me_dbgeo.upper = pgno2bytes(env, new_geo.upper);
-        env->me_dbgeo.grow = pgno2bytes(env, pv2pages(new_geo.grow_pv));
-        env->me_dbgeo.shrink = pgno2bytes(env, pv2pages(new_geo.shrink_pv));
-      }
+    }
+    if (likely(rc == MDBX_SUCCESS)) {
+      /* update env-geo to avoid influences */
+      eASSERT(env, env->me_dbgeo.now == pgno2bytes(env, new_geo.now));
+      env->me_dbgeo.lower = pgno2bytes(env, new_geo.lower);
+      eASSERT(env, env->me_dbgeo.upper == pgno2bytes(env, new_geo.upper));
+      env->me_dbgeo.grow = pgno2bytes(env, pv2pages(new_geo.grow_pv));
+      env->me_dbgeo.shrink = pgno2bytes(env, pv2pages(new_geo.shrink_pv));
     }
   }
 
@@ -18636,6 +18726,8 @@ __cold int mdbx_env_openW(MDBX_env *env, const wchar_t *pathname,
   }
 
   if ((flags & MDBX_RDONLY) == 0) {
+    if (!env->me_options.flags.non_auto.rp_augment_limit)
+      env->me_options.rp_augment_limit = default_rp_augment_limit(env);
     const size_t tsize = sizeof(MDBX_txn) + sizeof(MDBX_cursor),
                  size = tsize + env->me_maxdbs *
                                     (sizeof(MDBX_db) + sizeof(MDBX_cursor *) +
@@ -27918,8 +28010,8 @@ __cold intptr_t mdbx_limits_txnsize_max(intptr_t pagesize) {
 
   STATIC_ASSERT(MAX_MAPSIZE < INTPTR_MAX);
   const uint64_t pgl_limit =
-      pagesize * (uint64_t)(MDBX_PGL_LIMIT / 1.6180339887498948482);
-  const uint64_t map_limit = (uint64_t)(MAX_MAPSIZE / 1.6180339887498948482);
+      pagesize * (uint64_t)(MDBX_PGL_LIMIT / MDBX_GOLD_RATIO_DBL);
+  const uint64_t map_limit = (uint64_t)(MAX_MAPSIZE / MDBX_GOLD_RATIO_DBL);
   return (pgl_limit < map_limit) ? (intptr_t)pgl_limit : (intptr_t)map_limit;
 }
 
@@ -28266,11 +28358,15 @@ __cold int mdbx_env_set_option(MDBX_env *env, const MDBX_option_t option,
     break;
 
   case MDBX_opt_rp_augment_limit:
-    if (value == UINT64_MAX)
-      value = MDBX_PGL_LIMIT;
-    if (unlikely(value > MDBX_PGL_LIMIT))
+    if (value == UINT64_MAX) {
+      env->me_options.flags.non_auto.rp_augment_limit = 0;
+      env->me_options.rp_augment_limit = default_rp_augment_limit(env);
+    } else if (unlikely(value > MDBX_PGL_LIMIT))
       return MDBX_EINVAL;
-    env->me_options.rp_augment_limit = (unsigned)value;
+    else {
+      env->me_options.flags.non_auto.rp_augment_limit = 1;
+      env->me_options.rp_augment_limit = (unsigned)value;
+    }
     break;
 
   case MDBX_opt_txn_dp_limit:
@@ -32452,9 +32548,9 @@ __dll_export
         0,
         12,
         2,
-        49,
-        {"2022-12-08T02:21:00+03:00", "eb5880b9a6f2e697eea2a72de80f58b378e6dbda", "bf087d403ffac1170b9525982becf4b37a3c4c9f",
-         "v0.12.2-49-gbf087d40"},
+        50,
+        {"2022-12-09T13:44:43+03:00", "c0d74da031a90ee81f39c26740145b3b9e2399e2", "134892036b7b63338d195a1505b63b04941cff7c",
+         "v0.12.2-50-g13489203"},
         sourcery};
 
 __dll_export
