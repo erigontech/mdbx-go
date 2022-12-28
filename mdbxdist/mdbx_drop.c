@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 5bdd61721683f659af020cad536290ab4036dbb3037692510e137930ccfc06c5_v0_12_2_75_g6268b215
+#define MDBX_BUILD_SOURCERY cd311c05e8ae83379d8c1bb8658cd3532c56caac2e4e7bd1489f0cb66d6cf32c_v0_12_2_75_g5629f38d
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1999,7 +1999,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 /** Controls profiling of GC search and updates. */
 #ifndef MDBX_ENABLE_PROFGC
-#define MDBX_ENABLE_PROFGC 0
+#define MDBX_ENABLE_PROFGC 1
 #elif !(MDBX_ENABLE_PROFGC == 0 || MDBX_ENABLE_PROFGC == 1)
 #error MDBX_ENABLE_PROFGC must be defined as 0 or 1
 #endif /* MDBX_ENABLE_PROFGC */
@@ -2814,6 +2814,12 @@ typedef struct profgc_stat {
   uint32_t spe_counter;
   /* page faults (hard page faults) */
   uint32_t majflt;
+  /* Для разборок с pnl_merge() */
+  struct {
+    uint64_t time;
+    uint64_t volume;
+    uint32_t calls;
+  } pnl_merge;
 } profgc_stat_t;
 
 /* Statistics of page operations overall of all (running, completed and aborted)
@@ -2836,11 +2842,6 @@ typedef struct pgop_stat {
 
   MDBX_atomic_uint64_t prefault; /* Number of prefault write operations */
   MDBX_atomic_uint64_t mincore;  /* Number of mincore() calls */
-
-  MDBX_atomic_uint32_t
-      incoherence; /* number of https://libmdbx.dqdkfa.ru/dead-github/issues/269
-                      caught */
-  MDBX_atomic_uint32_t reserved;
 
   /* Статистика для профилирования GC.
    * Логически эти данные может быть стоит вынести в другую структуру,

@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 5bdd61721683f659af020cad536290ab4036dbb3037692510e137930ccfc06c5_v0_12_2_75_g6268b215
+#define MDBX_BUILD_SOURCERY cd311c05e8ae83379d8c1bb8658cd3532c56caac2e4e7bd1489f0cb66d6cf32c_v0_12_2_75_g5629f38d
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1975,7 +1975,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 /** Controls profiling of GC search and updates. */
 #ifndef MDBX_ENABLE_PROFGC
-#define MDBX_ENABLE_PROFGC 0
+#define MDBX_ENABLE_PROFGC 1
 #elif !(MDBX_ENABLE_PROFGC == 0 || MDBX_ENABLE_PROFGC == 1)
 #error MDBX_ENABLE_PROFGC must be defined as 0 or 1
 #endif /* MDBX_ENABLE_PROFGC */
@@ -2790,6 +2790,12 @@ typedef struct profgc_stat {
   uint32_t spe_counter;
   /* page faults (hard page faults) */
   uint32_t majflt;
+  /* Для разборок с pnl_merge() */
+  struct {
+    uint64_t time;
+    uint64_t volume;
+    uint32_t calls;
+  } pnl_merge;
 } profgc_stat_t;
 
 /* Statistics of page operations overall of all (running, completed and aborted)
@@ -2812,11 +2818,6 @@ typedef struct pgop_stat {
 
   MDBX_atomic_uint64_t prefault; /* Number of prefault write operations */
   MDBX_atomic_uint64_t mincore;  /* Number of mincore() calls */
-
-  MDBX_atomic_uint32_t
-      incoherence; /* number of https://libmdbx.dqdkfa.ru/dead-github/issues/269
-                      caught */
-  MDBX_atomic_uint32_t reserved;
 
   /* Статистика для профилирования GC.
    * Логически эти данные может быть стоит вынести в другую структуру,
@@ -8520,15 +8521,10 @@ typedef struct iov_ctx {
 
 __must_check_result static int iov_init(MDBX_txn *const txn, iov_ctx_t *ctx,
                                         size_t items, size_t npages,
-                                        mdbx_filehandle_t fd,
-                                        bool check_coherence) {
+                                        mdbx_filehandle_t fd) {
   ctx->env = txn->mt_env;
   ctx->ior = &txn->mt_env->me_ioring;
   ctx->fd = fd;
-  ctx->coherency_timestamp =
-      (check_coherence || txn->mt_env->me_lck->mti_pgop_stat.incoherence.weak)
-          ? 0
-          : UINT64_MAX /* не выполнять сверку */;
   ctx->err = osal_ioring_prepare(ctx->ior, items,
                                  pgno_align2os_bytes(txn->mt_env, npages));
   if (likely(ctx->err == MDBX_SUCCESS)) {
@@ -8561,62 +8557,9 @@ static void iov_callback4dirtypages(iov_ctx_t *ctx, size_t offset, void *data,
     MDBX_ASAN_UNPOISON_MEMORY_REGION(rp, bytes);
     osal_flush_incoherent_mmap(rp, bytes, env->me_os_psize);
     /* check with timeout as the workaround
-     * for https://libmdbx.dqdkfa.ru/dead-github/issues/269
-     *
-     * Проблема проявляется только при неупорядоченности: если записанная
-     * последней мета-страница "обгоняет" ранее записанные, т.е. когда
-     * записанное в файл позже становится видимым в отображении раньше,
-     * чем записанное ранее.
-     *
-     * Исходно здесь всегда выполнялась полная сверка. Это давало полную
-     * гарантию защиты от проявления проблемы, но порождало накладные расходы.
-     * В некоторых сценариях наблюдалось снижение производительности до 10-15%,
-     * а в синтетических тестах до 30%. Конечно никто не вникал в причины,
-     * а просто останавливался на мнении "libmdbx не быстрее LMDB",
-     * например: https://clck.ru/3386er
-     *
-     * Поэтому после серии экспериментов и тестов реализовано следующее:
-     * 0. Посредством опции сборки MDBX_FORCE_CHECK_MMAP_COHERENCY=1
-     *    можно включить полную сверку после записи.
-     *    Остальные пункты являются взвешенным компромиссом между полной
-     *    гарантией обнаружения проблемы и бесполезными затратами на системах
-     *    без этого недостатка.
-     * 1. При старте транзакций проверяется соответствие выбранной мета-страницы
-     *    корневым страницам b-tree проверяется. Эта проверка показала себя
-     *    достаточной без сверки после записи. При обнаружении "некогерентности"
-     *    эти случаи подсчитываются, а при их ненулевом счетчике выполняется
-     *    полная сверка. Таким образом, произойдет переключение в режим полной
-     *    сверки, если показавшая себя достаточной проверка заметит проявление
-     *    проблемы хоты-бы раз.
-     * 2. Сверка не выполняется при фиксации транзакции, так как:
-     *    - при наличии проблемы "не-когерентности" (при отложенном копировании
-     *      или обновлении PTE, после возврата из write-syscall), проверка
-     *      в этом процессе не гарантирует актуальность данных в другом
-     *      процессе, который может запустить транзакцию сразу после коммита;
-     *    - сверка только последнего блока позволяет почти восстановить
-     *      производительность в больших транзакциях, но одновременно размывает
-     *      уверенность в отсутствии сбоев, чем обесценивает всю затею;
-     *    - после записи данных будет записана мета-страница, соответствие
-     *      которой корневым страницам b-tree проверяется при старте
-     *      транзакций, и только эта проверка показала себя достаточной;
-     * 3. При спиллинге производится полная сверка записанных страниц. Тут был
-     *    соблазн сверять не полностью, а например начало и конец каждого блока.
-     *    Но при спиллинге возможна ситуация повторного вытеснения страниц, в
-     *    том числе large/overflow. При этом возникает риск прочитать в текущей
-     *    транзакции старую версию страницы, до повторной записи. В этом случае
-     *    могут возникать крайне редкие невоспроизводимые ошибки. С учетом того
-     *    что спиллинг выполняет крайне редко, решено отказаться от экономии
-     *    в пользу надежности. */
-#ifndef MDBX_FORCE_CHECK_MMAP_COHERENCY
-#define MDBX_FORCE_CHECK_MMAP_COHERENCY 0
-#endif /* MDBX_FORCE_CHECK_MMAP_COHERENCY */
-    if ((MDBX_FORCE_CHECK_MMAP_COHERENCY || ctx->coherency_timestamp != UINT64_MAX)
-        && unlikely(memcmp(wp, rp, bytes))) {
+     * for https://libmdbx.dqdkfa.ru/dead-github/issues/269 */
+    if (unlikely(memcmp(wp, rp, bytes))) {
       ctx->coherency_timestamp = 0;
-      env->me_lck->mti_pgop_stat.incoherence.weak =
-          (env->me_lck->mti_pgop_stat.incoherence.weak >= INT32_MAX)
-              ? INT32_MAX
-              : env->me_lck->mti_pgop_stat.incoherence.weak + 1;
       WARNING("catch delayed/non-arrived page %" PRIaPGNO " %s", wp->mp_pgno,
               "(workaround for incoherent flaw of unified page/buffer cache)");
       do
@@ -9106,8 +9049,7 @@ __cold static int txn_spill_slowpath(MDBX_txn *const txn, MDBX_cursor *const m0,
 #if defined(_WIN32) || defined(_WIN64)
                  txn->mt_env->me_overlapped_fd ? txn->mt_env->me_overlapped_fd :
 #endif
-                                               txn->mt_env->me_lazy_fd,
-                 true);
+                                               txn->mt_env->me_lazy_fd);
     if (unlikely(rc != MDBX_SUCCESS))
       goto bailout;
 
@@ -11377,7 +11319,15 @@ next_gc:;
   }
 
   /* Merge in descending sorted order */
+#if MDBX_ENABLE_PROFGC
+  const uint64_t merge_begin = osal_monotime();
+#endif /* MDBX_ENABLE_PROFGC */
   pnl_merge(txn->tw.relist, gc_pnl);
+#if MDBX_ENABLE_PROFGC
+  prof->pnl_merge.calls += 1;
+  prof->pnl_merge.volume += MDBX_PNL_GETSIZE(txn->tw.relist);
+  prof->pnl_merge.time += osal_monotime() - merge_begin;
+#endif /* MDBX_ENABLE_PROFGC */
   flags |= MDBX_ALLOC_SHOULD_SCAN;
   if (AUDIT_ENABLED()) {
     if (unlikely(!pnl_check(txn->tw.relist, txn->mt_next_pgno))) {
@@ -11548,7 +11498,7 @@ depleted_gc:
 no_gc:
   eASSERT(env, pgno == 0);
 #ifndef MDBX_ENABLE_BACKLOG_DEPLETED
-#define MDBX_ENABLE_BACKLOG_DEPLETED 0
+#define MDBX_ENABLE_BACKLOG_DEPLETED 1
 #endif /* MDBX_ENABLE_BACKLOG_DEPLETED*/
   if (MDBX_ENABLE_BACKLOG_DEPLETED &&
       unlikely(!(txn->mt_flags & MDBX_TXN_DRAINED_GC))) {
@@ -12563,11 +12513,6 @@ static bool coherency_check(const MDBX_env *env, const txnid_t txnid,
       ok = false;
     }
   }
-  if (unlikely(!ok) && report)
-    env->me_lck->mti_pgop_stat.incoherence.weak =
-        (env->me_lck->mti_pgop_stat.incoherence.weak >= INT32_MAX)
-            ? INT32_MAX
-            : env->me_lck->mti_pgop_stat.incoherence.weak + 1;
   return ok;
 }
 
@@ -12617,16 +12562,11 @@ static int coherency_check_written(const MDBX_env *env, const txnid_t txnid,
   const bool report = !(timestamp && *timestamp);
   const txnid_t head_txnid = meta_txnid(meta);
   if (unlikely(head_txnid < MIN_TXNID || (head_txnid < txnid))) {
-    if (report) {
-      env->me_lck->mti_pgop_stat.incoherence.weak =
-          (env->me_lck->mti_pgop_stat.incoherence.weak >= INT32_MAX)
-              ? INT32_MAX
-              : env->me_lck->mti_pgop_stat.incoherence.weak + 1;
+    if (report)
       WARNING("catch %s txnid %" PRIaTXN " for meta_%" PRIaPGNO " %s",
               (head_txnid < MIN_TXNID) ? "invalid" : "unexpected", head_txnid,
               bytes2pgno(env, ptr_dist(meta, env->me_map)),
               "(workaround for incoherent flaw of unified page/buffer cache)");
-    }
     return coherency_timeout(timestamp, 0);
   }
   return coherency_check_readed(env, head_txnid, meta->mm_dbs, meta, timestamp);
@@ -15372,6 +15312,16 @@ static void take_gcprof(MDBX_txn *txn, MDBX_commit_latency *latency) {
     latency->gc_prof.wipes = ptr->gc_prof.wipes;
     latency->gc_prof.flushes = ptr->gc_prof.flushes;
     latency->gc_prof.kicks = ptr->gc_prof.kicks;
+
+    latency->gc_prof.pnl_merge_work.time =
+        osal_monotime_to_16dot16(ptr->gc_prof.work.pnl_merge.time);
+    latency->gc_prof.pnl_merge_work.calls = ptr->gc_prof.work.pnl_merge.calls;
+    latency->gc_prof.pnl_merge_work.volume = ptr->gc_prof.work.pnl_merge.volume;
+    latency->gc_prof.pnl_merge_self.time =
+        osal_monotime_to_16dot16(ptr->gc_prof.self.pnl_merge.time);
+    latency->gc_prof.pnl_merge_self.calls = ptr->gc_prof.self.pnl_merge.calls;
+    latency->gc_prof.pnl_merge_self.volume = ptr->gc_prof.self.pnl_merge.volume;
+
     if (txn == env->me_txn0)
       memset(&ptr->gc_prof, 0, sizeof(ptr->gc_prof));
   } else
@@ -15721,7 +15671,7 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
 
     iov_ctx_t write_ctx;
     rc = iov_init(txn, &write_ctx, txn->tw.dirtylist->length,
-                  txn->tw.dirtylist->pages_including_loose, fd, false);
+                  txn->tw.dirtylist->pages_including_loose, fd);
     if (unlikely(rc != MDBX_SUCCESS)) {
       ERROR("txn-%s: error %d", "iov-init", rc);
       goto fail;
@@ -32843,8 +32793,8 @@ __dll_export
         12,
         2,
         75,
-        {"2022-12-25T23:15:00+03:00", "a4997aa9caa000951e2286933f038c687d94f915", "6268b215f3b9f7ea764a1600b6f55450519eaa2c",
-         "v0.12.2-75-g6268b215"},
+        {"2022-12-22T02:55:00+03:00", "d5e3330e8f6c94c2bb8eb981a65edfe5197078d0", "5629f38dbfb34e18e3669535048905624fbd8b70",
+         "v0.12.2-75-g5629f38d"},
         sourcery};
 
 __dll_export
