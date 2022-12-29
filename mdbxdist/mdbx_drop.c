@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY c5e53579a4e8062726eadd4738e5f0e3a4fdf8091e80f37d2cde69cebb5f60c9_v0_12_2_56_gb959e217
+#define MDBX_BUILD_SOURCERY f3781c4bae04091ecdd166e6e7d564fee1fe8714023a30ec329e3d5bc624d651_v0_12_2_91_g4cee83b7
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1516,10 +1516,11 @@ osal_thread_create(osal_thread_t *thread,
 MDBX_INTERNAL_FUNC int osal_thread_join(osal_thread_t thread);
 
 enum osal_syncmode_bits {
-  MDBX_SYNC_KICK = 0,
-  MDBX_SYNC_DATA = 1,
-  MDBX_SYNC_SIZE = 2,
-  MDBX_SYNC_IODQ = 4
+  MDBX_SYNC_NONE = 0,
+  MDBX_SYNC_KICK = 1,
+  MDBX_SYNC_DATA = 2,
+  MDBX_SYNC_SIZE = 4,
+  MDBX_SYNC_IODQ = 8
 };
 
 MDBX_INTERNAL_FUNC int osal_fsync(mdbx_filehandle_t fd,
@@ -1957,6 +1958,8 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #define MDBX_ENV_CHECKPID 1
 #endif
 #define MDBX_ENV_CHECKPID_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_ENV_CHECKPID)
+#elif !(MDBX_ENV_CHECKPID == 0 || MDBX_ENV_CHECKPID == 1)
+#error MDBX_ENV_CHECKPID must be defined as 0 or 1
 #else
 #define MDBX_ENV_CHECKPID_CONFIG MDBX_STRINGIFY(MDBX_ENV_CHECKPID)
 #endif /* MDBX_ENV_CHECKPID */
@@ -1966,6 +1969,8 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #ifndef MDBX_TXN_CHECKOWNER
 #define MDBX_TXN_CHECKOWNER 1
 #define MDBX_TXN_CHECKOWNER_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_TXN_CHECKOWNER)
+#elif !(MDBX_TXN_CHECKOWNER == 0 || MDBX_TXN_CHECKOWNER == 1)
+#error MDBX_TXN_CHECKOWNER must be defined as 0 or 1
 #else
 #define MDBX_TXN_CHECKOWNER_CONFIG MDBX_STRINGIFY(MDBX_TXN_CHECKOWNER)
 #endif /* MDBX_TXN_CHECKOWNER */
@@ -1979,6 +1984,8 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #define MDBX_TRUST_RTC 1
 #endif
 #define MDBX_TRUST_RTC_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_TRUST_RTC)
+#elif !(MDBX_TRUST_RTC == 0 || MDBX_TRUST_RTC == 1)
+#error MDBX_TRUST_RTC must be defined as 0 or 1
 #else
 #define MDBX_TRUST_RTC_CONFIG MDBX_STRINGIFY(MDBX_TRUST_RTC)
 #endif /* MDBX_TRUST_RTC */
@@ -1992,7 +1999,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 /** Controls profiling of GC search and updates. */
 #ifndef MDBX_ENABLE_PROFGC
-#define MDBX_ENABLE_PROFGC 0
+#define MDBX_ENABLE_PROFGC 1
 #elif !(MDBX_ENABLE_PROFGC == 0 || MDBX_ENABLE_PROFGC == 1)
 #error MDBX_ENABLE_PROFGC must be defined as 0 or 1
 #endif /* MDBX_ENABLE_PROFGC */
@@ -2003,18 +2010,6 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #elif !(MDBX_ENABLE_PGOP_STAT == 0 || MDBX_ENABLE_PGOP_STAT == 1)
 #error MDBX_ENABLE_PGOP_STAT must be defined as 0 or 1
 #endif /* MDBX_ENABLE_PGOP_STAT */
-
-/** Controls prevention of page-faults of reclaimed and allocated pages in the
- *  MDBX_WRITEMAP mode by clearing ones through file handle before touching. */
-#ifndef MDBX_ENABLE_PREFAULT
-#if MDBX_MMAP_INCOHERENT_FILE_WRITE
-#define MDBX_ENABLE_PREFAULT 0
-#else
-#define MDBX_ENABLE_PREFAULT 1
-#endif
-#elif !(MDBX_ENABLE_PREFAULT == 0 || MDBX_ENABLE_PREFAULT == 1)
-#error MDBX_ENABLE_PREFAULT must be defined as 0 or 1
-#endif /* MDBX_ENABLE_PREFAULT */
 
 /** Controls using Unix' mincore() to determine whether DB-pages
  * are resident in memory. */
@@ -2229,6 +2224,8 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #define MDBX_USE_OFDLOCKS 0
 #endif
 #define MDBX_USE_OFDLOCKS_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_USE_OFDLOCKS)
+#elif !(MDBX_USE_OFDLOCKS == 0 || MDBX_USE_OFDLOCKS == 1)
+#error MDBX_USE_OFDLOCKS must be defined as 0 or 1
 #else
 #define MDBX_USE_OFDLOCKS_CONFIG MDBX_STRINGIFY(MDBX_USE_OFDLOCKS)
 #endif /* MDBX_USE_OFDLOCKS */
@@ -2242,6 +2239,8 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_USE_SENDFILE 0
 #endif
+#elif !(MDBX_USE_SENDFILE == 0 || MDBX_USE_SENDFILE == 1)
+#error MDBX_USE_SENDFILE must be defined as 0 or 1
 #endif /* MDBX_USE_SENDFILE */
 
 /** Advanced: Using copy_file_range() syscall (autodetection by default). */
@@ -2251,6 +2250,8 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_USE_COPYFILERANGE 0
 #endif
+#elif !(MDBX_USE_COPYFILERANGE == 0 || MDBX_USE_COPYFILERANGE == 1)
+#error MDBX_USE_COPYFILERANGE must be defined as 0 or 1
 #endif /* MDBX_USE_COPYFILERANGE */
 
 /** Advanced: Using sync_file_range() syscall (autodetection by default). */
@@ -2262,6 +2263,8 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_USE_SYNCFILERANGE 0
 #endif
+#elif !(MDBX_USE_SYNCFILERANGE == 0 || MDBX_USE_SYNCFILERANGE == 1)
+#error MDBX_USE_SYNCFILERANGE must be defined as 0 or 1
 #endif /* MDBX_USE_SYNCFILERANGE */
 
 //------------------------------------------------------------------------------
@@ -2273,6 +2276,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_CPU_WRITEBACK_INCOHERENT 1
 #endif
+#elif !(MDBX_CPU_WRITEBACK_INCOHERENT == 0 ||                                  \
+        MDBX_CPU_WRITEBACK_INCOHERENT == 1)
+#error MDBX_CPU_WRITEBACK_INCOHERENT must be defined as 0 or 1
 #endif /* MDBX_CPU_WRITEBACK_INCOHERENT */
 
 #ifndef MDBX_MMAP_INCOHERENT_FILE_WRITE
@@ -2281,6 +2287,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_MMAP_INCOHERENT_FILE_WRITE 0
 #endif
+#elif !(MDBX_MMAP_INCOHERENT_FILE_WRITE == 0 ||                                \
+        MDBX_MMAP_INCOHERENT_FILE_WRITE == 1)
+#error MDBX_MMAP_INCOHERENT_FILE_WRITE must be defined as 0 or 1
 #endif /* MDBX_MMAP_INCOHERENT_FILE_WRITE */
 
 #ifndef MDBX_MMAP_INCOHERENT_CPU_CACHE
@@ -2293,7 +2302,20 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 /* LY: assume no relevant mmap/dcache issues. */
 #define MDBX_MMAP_INCOHERENT_CPU_CACHE 0
 #endif
+#elif !(MDBX_MMAP_INCOHERENT_CPU_CACHE == 0 ||                                 \
+        MDBX_MMAP_INCOHERENT_CPU_CACHE == 1)
+#error MDBX_MMAP_INCOHERENT_CPU_CACHE must be defined as 0 or 1
 #endif /* MDBX_MMAP_INCOHERENT_CPU_CACHE */
+
+#ifndef MDBX_MMAP_USE_MS_ASYNC
+#if MDBX_MMAP_INCOHERENT_FILE_WRITE || MDBX_MMAP_INCOHERENT_CPU_CACHE
+#define MDBX_MMAP_USE_MS_ASYNC 1
+#else
+#define MDBX_MMAP_USE_MS_ASYNC 0
+#endif
+#elif !(MDBX_MMAP_USE_MS_ASYNC == 0 || MDBX_MMAP_USE_MS_ASYNC == 1)
+#error MDBX_MMAP_USE_MS_ASYNC must be defined as 0 or 1
+#endif /* MDBX_MMAP_USE_MS_ASYNC */
 
 #ifndef MDBX_64BIT_ATOMIC
 #if MDBX_WORDBITS >= 64 || defined(DOXYGEN)
@@ -2302,6 +2324,8 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #define MDBX_64BIT_ATOMIC 0
 #endif
 #define MDBX_64BIT_ATOMIC_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_64BIT_ATOMIC)
+#elif !(MDBX_64BIT_ATOMIC == 0 || MDBX_64BIT_ATOMIC == 1)
+#error MDBX_64BIT_ATOMIC must be defined as 0 or 1
 #else
 #define MDBX_64BIT_ATOMIC_CONFIG MDBX_STRINGIFY(MDBX_64BIT_ATOMIC)
 #endif /* MDBX_64BIT_ATOMIC */
@@ -2327,6 +2351,8 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #endif
 #elif defined(_MSC_VER) || defined(__APPLE__) || defined(DOXYGEN)
 #define MDBX_64BIT_CAS 1
+#elif !(MDBX_64BIT_CAS == 0 || MDBX_64BIT_CAS == 1)
+#error MDBX_64BIT_CAS must be defined as 0 or 1
 #else
 #define MDBX_64BIT_CAS MDBX_64BIT_ATOMIC
 #endif
@@ -2788,6 +2814,12 @@ typedef struct profgc_stat {
   uint32_t spe_counter;
   /* page faults (hard page faults) */
   uint32_t majflt;
+  /* Для разборок с pnl_merge() */
+  struct {
+    uint64_t time;
+    uint64_t volume;
+    uint32_t calls;
+  } pnl_merge;
 } profgc_stat_t;
 
 /* Statistics of page operations overall of all (running, completed and aborted)
@@ -2810,6 +2842,11 @@ typedef struct pgop_stat {
 
   MDBX_atomic_uint64_t prefault; /* Number of prefault write operations */
   MDBX_atomic_uint64_t mincore;  /* Number of mincore() calls */
+
+  MDBX_atomic_uint32_t
+      incoherence; /* number of https://libmdbx.dqdkfa.ru/dead-github/issues/269
+                      caught */
+  MDBX_atomic_uint32_t reserved;
 
   /* Статистика для профилирования GC.
    * Логически эти данные может быть стоит вынести в другую структуру,
@@ -3299,6 +3336,7 @@ struct MDBX_txn {
           MDBX_PNL list;
         } spilled;
         size_t writemap_dirty_npages;
+        size_t writemap_spilled_npages;
       };
     } tw;
   };
@@ -3448,6 +3486,7 @@ struct MDBX_env {
   uint32_t me_live_reader;        /* have liveness lock in reader table */
   void *me_userctx;               /* User-settable context */
   MDBX_hsr_func *me_hsr_callback; /* Callback for kicking laggard readers */
+  pgno_t me_madv_threshold;
 
   struct {
     unsigned dp_reserve_limit;
@@ -3868,9 +3907,6 @@ typedef struct MDBX_node {
 /* LY: more parallelable on VLIW Elbrus */
 #define CMP2INT(a, b) (((a) > (b)) - ((b) > (a)))
 #endif
-
-/* Do not spill pages to disk if txn is getting full, may fail instead */
-#define MDBX_NOSPILL 0x8000
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static __inline pgno_t
 int64pgno(int64_t i64) {
