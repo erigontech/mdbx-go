@@ -10927,7 +10927,6 @@ retry:;
           return err;
 
         /* pre-sync done */
-        wops = 1;
         rc = MDBX_SUCCESS /* means "some data was synced" */;
       }
 
