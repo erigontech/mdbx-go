@@ -10898,6 +10898,7 @@ retry:;
   if (!inside_txn) {
     if (!locked) {
       int err;
+      unsigned wops = 0;
       /* pre-sync to avoid latency for writer */
       if (unsynced_pages > /* FIXME: define threshold */ 16 &&
           (flags & MDBX_SAFE_NOSYNC) == 0) {
@@ -10927,6 +10928,7 @@ retry:;
           return err;
 
         /* pre-sync done */
+        wops = 1;
         rc = MDBX_SUCCESS /* means "some data was synced" */;
       }
 
