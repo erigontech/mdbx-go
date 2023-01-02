@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY e96338ed7f4feb22ef8e58fb57a6644c84627f1af27db4c947a56fdd1139cbf0_v0_12_2_91_ge409e1a8
+#define MDBX_BUILD_SOURCERY 4ec03eb1489c87d395cce2d824a7ce8744f4889937837e836988485fea95e100_v0_12_2_99_gb3de5c0c
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1859,6 +1859,46 @@ MDBX_INTERNAL_VAR MDBX_SetFileIoOverlappedRange mdbx_SetFileIoOverlappedRange;
 
 /*----------------------------------------------------------------------------*/
 
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static __always_inline uint64_t
+osal_bswap64(uint64_t v) {
+#if __GNUC_PREREQ(4, 4) || __CLANG_PREREQ(4, 0) ||                             \
+    __has_builtin(__builtin_bswap64)
+  return __builtin_bswap64(v);
+#elif defined(_MSC_VER) && !defined(__clang__)
+  return _byteswap_uint64(v);
+#elif defined(__bswap_64)
+  return __bswap_64(v);
+#elif defined(bswap_64)
+  return bswap_64(v);
+#else
+  return v << 56 | v >> 56 | ((v << 40) & UINT64_C(0x00ff000000000000)) |
+         ((v << 24) & UINT64_C(0x0000ff0000000000)) |
+         ((v << 8) & UINT64_C(0x000000ff00000000)) |
+         ((v >> 8) & UINT64_C(0x00000000ff000000)) |
+         ((v >> 24) & UINT64_C(0x0000000000ff0000)) |
+         ((v >> 40) & UINT64_C(0x000000000000ff00));
+#endif
+}
+
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static __always_inline uint32_t
+osal_bswap32(uint32_t v) {
+#if __GNUC_PREREQ(4, 4) || __CLANG_PREREQ(4, 0) ||                             \
+    __has_builtin(__builtin_bswap32)
+  return __builtin_bswap32(v);
+#elif defined(_MSC_VER) && !defined(__clang__)
+  return _byteswap_ulong(v);
+#elif defined(__bswap_32)
+  return __bswap_32(v);
+#elif defined(bswap_32)
+  return bswap_32(v);
+#else
+  return v << 24 | v >> 24 | ((v << 8) & UINT32_C(0x00ff0000)) |
+         ((v >> 8) & UINT32_C(0x0000ff00));
+#endif
+}
+
+/*----------------------------------------------------------------------------*/
+
 #if defined(_MSC_VER) && _MSC_VER >= 1900
 /* LY: MSVC 2015/2017/2019 has buggy/inconsistent PRIuPTR/PRIxPTR macros
  * for internal format-args checker. */
@@ -2417,6 +2457,142 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #if MDBX_DEBUG
 #undef NDEBUG
 #endif
+
+#ifndef __cplusplus
+/*----------------------------------------------------------------------------*/
+/* Debug and Logging stuff */
+
+#define MDBX_RUNTIME_FLAGS_INIT                                                \
+  ((MDBX_DEBUG) > 0) * MDBX_DBG_ASSERT + ((MDBX_DEBUG) > 1) * MDBX_DBG_AUDIT
+
+extern uint8_t runtime_flags;
+extern uint8_t loglevel;
+extern MDBX_debug_func *debug_logger;
+
+MDBX_MAYBE_UNUSED static __inline void jitter4testing(bool tiny) {
+#if MDBX_DEBUG
+  if (MDBX_DBG_JITTER & runtime_flags)
+    osal_jitter(tiny);
+#else
+  (void)tiny;
+#endif
+}
+
+MDBX_INTERNAL_FUNC void MDBX_PRINTF_ARGS(4, 5)
+    debug_log(int level, const char *function, int line, const char *fmt, ...)
+        MDBX_PRINTF_ARGS(4, 5);
+MDBX_INTERNAL_FUNC void debug_log_va(int level, const char *function, int line,
+                                     const char *fmt, va_list args);
+
+#if MDBX_DEBUG
+#define LOG_ENABLED(msg) unlikely(msg <= loglevel)
+#define AUDIT_ENABLED() unlikely((runtime_flags & MDBX_DBG_AUDIT))
+#else /* MDBX_DEBUG */
+#define LOG_ENABLED(msg) (msg < MDBX_LOG_VERBOSE && msg <= loglevel)
+#define AUDIT_ENABLED() (0)
+#endif /* MDBX_DEBUG */
+
+#if MDBX_FORCE_ASSERTIONS
+#define ASSERT_ENABLED() (1)
+#elif MDBX_DEBUG
+#define ASSERT_ENABLED() likely((runtime_flags & MDBX_DBG_ASSERT))
+#else
+#define ASSERT_ENABLED() (0)
+#endif /* assertions */
+
+#define DEBUG_EXTRA(fmt, ...)                                                  \
+  do {                                                                         \
+    if (LOG_ENABLED(MDBX_LOG_EXTRA))                                           \
+      debug_log(MDBX_LOG_EXTRA, __func__, __LINE__, fmt, __VA_ARGS__);         \
+  } while (0)
+
+#define DEBUG_EXTRA_PRINT(fmt, ...)                                            \
+  do {                                                                         \
+    if (LOG_ENABLED(MDBX_LOG_EXTRA))                                           \
+      debug_log(MDBX_LOG_EXTRA, NULL, 0, fmt, __VA_ARGS__);                    \
+  } while (0)
+
+#define TRACE(fmt, ...)                                                        \
+  do {                                                                         \
+    if (LOG_ENABLED(MDBX_LOG_TRACE))                                           \
+      debug_log(MDBX_LOG_TRACE, __func__, __LINE__, fmt "\n", __VA_ARGS__);    \
+  } while (0)
+
+#define DEBUG(fmt, ...)                                                        \
+  do {                                                                         \
+    if (LOG_ENABLED(MDBX_LOG_DEBUG))                                           \
+      debug_log(MDBX_LOG_DEBUG, __func__, __LINE__, fmt "\n", __VA_ARGS__);    \
+  } while (0)
+
+#define VERBOSE(fmt, ...)                                                      \
+  do {                                                                         \
+    if (LOG_ENABLED(MDBX_LOG_VERBOSE))                                         \
+      debug_log(MDBX_LOG_VERBOSE, __func__, __LINE__, fmt "\n", __VA_ARGS__);  \
+  } while (0)
+
+#define NOTICE(fmt, ...)                                                       \
+  do {                                                                         \
+    if (LOG_ENABLED(MDBX_LOG_NOTICE))                                          \
+      debug_log(MDBX_LOG_NOTICE, __func__, __LINE__, fmt "\n", __VA_ARGS__);   \
+  } while (0)
+
+#define WARNING(fmt, ...)                                                      \
+  do {                                                                         \
+    if (LOG_ENABLED(MDBX_LOG_WARN))                                            \
+      debug_log(MDBX_LOG_WARN, __func__, __LINE__, fmt "\n", __VA_ARGS__);     \
+  } while (0)
+
+#undef ERROR /* wingdi.h                                                       \
+  Yeah, morons from M$ put such definition to the public header. */
+
+#define ERROR(fmt, ...)                                                        \
+  do {                                                                         \
+    if (LOG_ENABLED(MDBX_LOG_ERROR))                                           \
+      debug_log(MDBX_LOG_ERROR, __func__, __LINE__, fmt "\n", __VA_ARGS__);    \
+  } while (0)
+
+#define FATAL(fmt, ...)                                                        \
+  debug_log(MDBX_LOG_FATAL, __func__, __LINE__, fmt "\n", __VA_ARGS__);
+
+#if MDBX_DEBUG
+#define ASSERT_FAIL(env, msg, func, line) mdbx_assert_fail(env, msg, func, line)
+#else /* MDBX_DEBUG */
+MDBX_NORETURN __cold void assert_fail(const char *msg, const char *func,
+                                      unsigned line);
+#define ASSERT_FAIL(env, msg, func, line)                                      \
+  do {                                                                         \
+    (void)(env);                                                               \
+    assert_fail(msg, func, line);                                              \
+  } while (0)
+#endif /* MDBX_DEBUG */
+
+#define ENSURE_MSG(env, expr, msg)                                             \
+  do {                                                                         \
+    if (unlikely(!(expr)))                                                     \
+      ASSERT_FAIL(env, msg, __func__, __LINE__);                               \
+  } while (0)
+
+#define ENSURE(env, expr) ENSURE_MSG(env, expr, #expr)
+
+/* assert(3) variant in environment context */
+#define eASSERT(env, expr)                                                     \
+  do {                                                                         \
+    if (ASSERT_ENABLED())                                                      \
+      ENSURE(env, expr);                                                       \
+  } while (0)
+
+/* assert(3) variant in cursor context */
+#define cASSERT(mc, expr) eASSERT((mc)->mc_txn->mt_env, expr)
+
+/* assert(3) variant in transaction context */
+#define tASSERT(txn, expr) eASSERT((txn)->mt_env, expr)
+
+#ifndef xMDBX_TOOLS /* Avoid using internal eASSERT() */
+#undef assert
+#define assert(expr) eASSERT(NULL, expr)
+#endif
+
+#endif /* __cplusplus */
 
 /*----------------------------------------------------------------------------*/
 /* Atomics */
@@ -3120,10 +3296,7 @@ typedef txnid_t *MDBX_TXL;
 /* An Dirty-Page list item is an pgno/pointer pair. */
 typedef struct MDBX_dp {
   MDBX_page *ptr;
-  pgno_t pgno;
-  uint32_t mlru;
-#define MDBX_dp_multi_mask 1
-#define MDBX_dp_lru_mask UINT32_C(0xffffFFFe)
+  pgno_t pgno, npages;
 } MDBX_dp;
 
 /* An DPL (dirty-page list) is a sorted array of MDBX_DPs. */
@@ -3558,139 +3731,6 @@ struct MDBX_env {
 
 #ifndef __cplusplus
 /*----------------------------------------------------------------------------*/
-/* Debug and Logging stuff */
-
-#define MDBX_RUNTIME_FLAGS_INIT                                                \
-  ((MDBX_DEBUG) > 0) * MDBX_DBG_ASSERT + ((MDBX_DEBUG) > 1) * MDBX_DBG_AUDIT
-
-extern uint8_t runtime_flags;
-extern uint8_t loglevel;
-extern MDBX_debug_func *debug_logger;
-
-MDBX_MAYBE_UNUSED static __inline void jitter4testing(bool tiny) {
-#if MDBX_DEBUG
-  if (MDBX_DBG_JITTER & runtime_flags)
-    osal_jitter(tiny);
-#else
-  (void)tiny;
-#endif
-}
-
-MDBX_INTERNAL_FUNC void MDBX_PRINTF_ARGS(4, 5)
-    debug_log(int level, const char *function, int line, const char *fmt, ...)
-        MDBX_PRINTF_ARGS(4, 5);
-MDBX_INTERNAL_FUNC void debug_log_va(int level, const char *function, int line,
-                                     const char *fmt, va_list args);
-
-#if MDBX_DEBUG
-#define LOG_ENABLED(msg) unlikely(msg <= loglevel)
-#define AUDIT_ENABLED() unlikely((runtime_flags & MDBX_DBG_AUDIT))
-#else /* MDBX_DEBUG */
-#define LOG_ENABLED(msg) (msg < MDBX_LOG_VERBOSE && msg <= loglevel)
-#define AUDIT_ENABLED() (0)
-#endif /* MDBX_DEBUG */
-
-#if MDBX_FORCE_ASSERTIONS
-#define ASSERT_ENABLED() (1)
-#elif MDBX_DEBUG
-#define ASSERT_ENABLED() likely((runtime_flags & MDBX_DBG_ASSERT))
-#else
-#define ASSERT_ENABLED() (0)
-#endif /* assertions */
-
-#define DEBUG_EXTRA(fmt, ...)                                                  \
-  do {                                                                         \
-    if (LOG_ENABLED(MDBX_LOG_EXTRA))                                           \
-      debug_log(MDBX_LOG_EXTRA, __func__, __LINE__, fmt, __VA_ARGS__);         \
-  } while (0)
-
-#define DEBUG_EXTRA_PRINT(fmt, ...)                                            \
-  do {                                                                         \
-    if (LOG_ENABLED(MDBX_LOG_EXTRA))                                           \
-      debug_log(MDBX_LOG_EXTRA, NULL, 0, fmt, __VA_ARGS__);                    \
-  } while (0)
-
-#define TRACE(fmt, ...)                                                        \
-  do {                                                                         \
-    if (LOG_ENABLED(MDBX_LOG_TRACE))                                           \
-      debug_log(MDBX_LOG_TRACE, __func__, __LINE__, fmt "\n", __VA_ARGS__);    \
-  } while (0)
-
-#define DEBUG(fmt, ...)                                                        \
-  do {                                                                         \
-    if (LOG_ENABLED(MDBX_LOG_DEBUG))                                           \
-      debug_log(MDBX_LOG_DEBUG, __func__, __LINE__, fmt "\n", __VA_ARGS__);    \
-  } while (0)
-
-#define VERBOSE(fmt, ...)                                                      \
-  do {                                                                         \
-    if (LOG_ENABLED(MDBX_LOG_VERBOSE))                                         \
-      debug_log(MDBX_LOG_VERBOSE, __func__, __LINE__, fmt "\n", __VA_ARGS__);  \
-  } while (0)
-
-#define NOTICE(fmt, ...)                                                       \
-  do {                                                                         \
-    if (LOG_ENABLED(MDBX_LOG_NOTICE))                                          \
-      debug_log(MDBX_LOG_NOTICE, __func__, __LINE__, fmt "\n", __VA_ARGS__);   \
-  } while (0)
-
-#define WARNING(fmt, ...)                                                      \
-  do {                                                                         \
-    if (LOG_ENABLED(MDBX_LOG_WARN))                                            \
-      debug_log(MDBX_LOG_WARN, __func__, __LINE__, fmt "\n", __VA_ARGS__);     \
-  } while (0)
-
-#undef ERROR /* wingdi.h                                                       \
-  Yeah, morons from M$ put such definition to the public header. */
-
-#define ERROR(fmt, ...)                                                        \
-  do {                                                                         \
-    if (LOG_ENABLED(MDBX_LOG_ERROR))                                           \
-      debug_log(MDBX_LOG_ERROR, __func__, __LINE__, fmt "\n", __VA_ARGS__);    \
-  } while (0)
-
-#define FATAL(fmt, ...)                                                        \
-  debug_log(MDBX_LOG_FATAL, __func__, __LINE__, fmt "\n", __VA_ARGS__);
-
-#if MDBX_DEBUG
-#define ASSERT_FAIL(env, msg, func, line) mdbx_assert_fail(env, msg, func, line)
-#else /* MDBX_DEBUG */
-MDBX_NORETURN __cold void assert_fail(const char *msg, const char *func,
-                                      unsigned line);
-#define ASSERT_FAIL(env, msg, func, line)                                      \
-  do {                                                                         \
-    (void)(env);                                                               \
-    assert_fail(msg, func, line);                                              \
-  } while (0)
-#endif /* MDBX_DEBUG */
-
-#define ENSURE_MSG(env, expr, msg)                                             \
-  do {                                                                         \
-    if (unlikely(!(expr)))                                                     \
-      ASSERT_FAIL(env, msg, __func__, __LINE__);                               \
-  } while (0)
-
-#define ENSURE(env, expr) ENSURE_MSG(env, expr, #expr)
-
-/* assert(3) variant in environment context */
-#define eASSERT(env, expr)                                                     \
-  do {                                                                         \
-    if (ASSERT_ENABLED())                                                      \
-      ENSURE(env, expr);                                                       \
-  } while (0)
-
-/* assert(3) variant in cursor context */
-#define cASSERT(mc, expr) eASSERT((mc)->mc_txn->mt_env, expr)
-
-/* assert(3) variant in transaction context */
-#define tASSERT(txn, expr) eASSERT((txn)->mt_env, expr)
-
-#ifndef xMDBX_TOOLS /* Avoid using internal eASSERT() */
-#undef assert
-#define assert(expr) eASSERT(NULL, expr)
-#endif
-
-/*----------------------------------------------------------------------------*/
 /* Cache coherence and mmap invalidation */
 
 #if MDBX_CPU_WRITEBACK_INCOHERENT
@@ -3876,13 +3916,7 @@ typedef struct MDBX_node {
  *                |  1, a > b
  *                \
  */
-#ifndef __e2k__
-/* LY: fast enough on most systems */
-#define CMP2INT(a, b) (((b) > (a)) ? -1 : (a) > (b))
-#else
-/* LY: more parallelable on VLIW Elbrus */
-#define CMP2INT(a, b) (((a) > (b)) - ((b) > (a)))
-#endif
+#define CMP2INT(a, b) (((a) != (b)) ? (((a) < (b)) ? -1 : 1) : 0)
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static __inline pgno_t
 int64pgno(int64_t i64) {
@@ -6749,7 +6783,7 @@ static __always_inline size_t dpl_setlen(MDBX_dpl *dl, size_t len) {
   dl->length = len;
   dl->items[len + 1].ptr = (MDBX_page *)&dpl_stub_pageE;
   dl->items[len + 1].pgno = P_INVALID;
-  dl->items[len + 1].mlru = 0;
+  dl->items[len + 1].npages = 1;
   return len;
 }
 
@@ -6764,7 +6798,7 @@ static __always_inline void dpl_clear(MDBX_dpl *dl) {
   dl->pages_including_loose = 0;
   dl->items[0].ptr = (MDBX_page *)&dpl_stub_pageB;
   dl->items[0].pgno = 0;
-  dl->items[0].mlru = 0;
+  dl->items[0].npages = 1;
   assert(dl->items[0].pgno == 0 && dl->items[dl->length + 1].pgno == P_INVALID);
 }
 
@@ -6800,6 +6834,11 @@ static int dpl_alloc(MDBX_txn *txn) {
   const size_t wanna = (txn->mt_env->me_options.dp_initial < txn->mt_geo.upper)
                            ? txn->mt_env->me_options.dp_initial
                            : txn->mt_geo.upper;
+#if MDBX_FORCE_ASSERTIONS || MDBX_DEBUG
+  if (txn->tw.dirtylist)
+    /* обнуляем чтобы не сработал ассерт внутри dpl_reserve() */
+    txn->tw.dirtylist->sorted = txn->tw.dirtylist->length = 0;
+#endif /* asertions enabled */
   if (unlikely(!txn->tw.dirtylist || txn->tw.dirtylist->detent < wanna ||
                txn->tw.dirtylist->detent > wanna + wanna) &&
       unlikely(!dpl_reserve(txn, wanna)))
@@ -6935,9 +6974,7 @@ __hot __noinline static size_t dpl_search(const MDBX_txn *txn, pgno_t pgno) {
 MDBX_NOTHROW_PURE_FUNCTION static __inline unsigned
 dpl_npages(const MDBX_dpl *dl, size_t i) {
   assert(0 <= (intptr_t)i && i <= dl->length);
-  unsigned n = 1;
-  if (unlikely(dl->items[i].mlru & MDBX_dp_multi_mask))
-    n = dl->items[i].ptr->mp_pages;
+  unsigned n = dl->items[i].npages;
   assert(n == (IS_OVERFLOW(dl->items[i].ptr) ? dl->items[i].ptr->mp_pages : 1));
   return n;
 }
@@ -7028,13 +7065,14 @@ static void dpl_remove(const MDBX_txn *txn, size_t i) {
 
 static __noinline void txn_lru_reduce(MDBX_txn *txn) {
   NOTICE("lru-reduce %u -> %u", txn->tw.dirtylru, txn->tw.dirtylru >> 1);
+  tASSERT(txn, (txn->mt_flags & (MDBX_TXN_RDONLY | MDBX_WRITEMAP)) == 0);
   do {
     txn->tw.dirtylru >>= 1;
     MDBX_dpl *dl = txn->tw.dirtylist;
     for (size_t i = 1; i <= dl->length; ++i) {
-      uint32_t mlru = dl->items[i].mlru;
-      mlru = (mlru & MDBX_dp_multi_mask) + ((mlru >> 1) & MDBX_dp_lru_mask);
-      dl->items[i].mlru = mlru;
+      size_t *const ptr =
+          ptr_disp(dl->items[i].ptr, -(ptrdiff_t)sizeof(size_t));
+      *ptr >>= 1;
     }
     txn = txn->mt_parent;
   } while (txn);
@@ -7042,18 +7080,19 @@ static __noinline void txn_lru_reduce(MDBX_txn *txn) {
 
 MDBX_NOTHROW_PURE_FUNCTION static __inline uint32_t dpl_age(const MDBX_txn *txn,
                                                             size_t i) {
-  tASSERT(txn, (txn->mt_flags & MDBX_TXN_RDONLY) == 0);
-  tASSERT(txn, (txn->mt_flags & MDBX_WRITEMAP) == 0 || MDBX_AVOID_MSYNC);
+  tASSERT(txn, (txn->mt_flags & (MDBX_TXN_RDONLY | MDBX_WRITEMAP)) == 0);
   const MDBX_dpl *dl = txn->tw.dirtylist;
   assert((intptr_t)i > 0 && i <= dl->length);
-  return (txn->tw.dirtylru >> 1) - (dl->items[i].mlru >> 1);
+  size_t *const ptr = ptr_disp(dl->items[i].ptr, -(ptrdiff_t)sizeof(size_t));
+  return txn->tw.dirtylru - (uint32_t)*ptr;
 }
 
 static __inline uint32_t txn_lru_turn(MDBX_txn *txn) {
-  txn->tw.dirtylru += 2;
-  if (unlikely(txn->tw.dirtylru > UINT32_MAX / 3))
+  txn->tw.dirtylru += 1;
+  if (unlikely(txn->tw.dirtylru > UINT32_MAX / 3) &&
+      (txn->mt_flags & MDBX_WRITEMAP) == 0)
     txn_lru_reduce(txn);
-  return txn->tw.dirtylru & MDBX_dp_lru_mask;
+  return txn->tw.dirtylru;
 }
 
 static __always_inline int __must_check_result dpl_append(MDBX_txn *txn,
@@ -7062,7 +7101,12 @@ static __always_inline int __must_check_result dpl_append(MDBX_txn *txn,
                                                           size_t npages) {
   tASSERT(txn, (txn->mt_flags & MDBX_TXN_RDONLY) == 0);
   tASSERT(txn, (txn->mt_flags & MDBX_WRITEMAP) == 0 || MDBX_AVOID_MSYNC);
-  const MDBX_dp dp = {page, pgno, txn_lru_turn(txn) + (npages > 1)};
+  const MDBX_dp dp = {page, pgno, (pgno_t)npages};
+  if ((txn->mt_flags & MDBX_WRITEMAP) == 0) {
+    size_t *const ptr = ptr_disp(page, -(ptrdiff_t)sizeof(size_t));
+    *ptr = txn->tw.dirtylru;
+  }
+
   MDBX_dpl *dl = txn->tw.dirtylist;
   tASSERT(txn, dl->length <= MDBX_PGL_LIMIT + MDBX_PNL_GRANULATE);
   tASSERT(txn, dl->items[0].pgno == 0 &&
@@ -7147,7 +7191,7 @@ static __always_inline int __must_check_result dpl_append(MDBX_txn *txn,
 #else
       i[1].ptr = i->ptr;
       i[1].pgno = i->pgno;
-      i[1].mlru = i->mlru;
+      i[1].npages = i->npages;
 #endif
       --i;
     }
@@ -7361,9 +7405,6 @@ static int __must_check_result fetch_sdb(MDBX_txn *txn, size_t dbi);
 static int __must_check_result setup_dbx(MDBX_dbx *const dbx,
                                          const MDBX_db *const db,
                                          const unsigned pagesize);
-
-static MDBX_cmp_func cmp_lexical, cmp_reverse, cmp_int_align4, cmp_int_align2,
-    cmp_int_unaligned, cmp_lenfast;
 
 static __inline MDBX_cmp_func *get_default_keycmp(unsigned flags);
 static __inline MDBX_cmp_func *get_default_datacmp(unsigned flags);
@@ -7768,12 +7809,13 @@ static MDBX_page *page_malloc(MDBX_txn *txn, size_t num) {
     env->me_dp_reserve_len -= 1;
   } else {
     size = pgno2bytes(env, num);
-    np = osal_malloc(size);
-    if (unlikely(!np)) {
+    void *const ptr = osal_malloc(size + sizeof(size_t));
+    if (unlikely(!ptr)) {
       txn->mt_flags |= MDBX_TXN_ERROR;
-      return np;
+      return nullptr;
     }
-    VALGRIND_MEMPOOL_ALLOC(env, np, size);
+    VALGRIND_MEMPOOL_ALLOC(env, ptr, size + sizeof(size_t));
+    np = ptr_disp(ptr, sizeof(size_t));
   }
 
   if ((env->me_flags & MDBX_NOMEMINIT) == 0) {
@@ -7810,8 +7852,9 @@ static void dpage_free(MDBX_env *env, MDBX_page *dp, size_t npages) {
     env->me_dp_reserve_len += 1;
   } else {
     /* large pages just get freed directly */
-    VALGRIND_MEMPOOL_FREE(env, dp);
-    osal_free(dp);
+    void *const ptr = ptr_disp(dp, -(ptrdiff_t)sizeof(size_t));
+    VALGRIND_MEMPOOL_FREE(env, ptr);
+    osal_free(ptr);
   }
 }
 
@@ -7863,10 +7906,12 @@ MDBX_MAYBE_UNUSED __cold static bool dirtylist_check(MDBX_txn *txn) {
     if (unlikely(dp->mp_pgno != dl->items[i].pgno))
       return false;
 
-    const uint32_t age = dpl_age(txn, i);
-    tASSERT(txn, age < UINT32_MAX / 3);
-    if (unlikely(age > UINT32_MAX / 3))
-      return false;
+    if ((txn->mt_flags & MDBX_WRITEMAP) == 0) {
+      const uint32_t age = dpl_age(txn, i);
+      tASSERT(txn, age < UINT32_MAX / 3);
+      if (unlikely(age > UINT32_MAX / 3))
+        return false;
+    }
 
     tASSERT(txn, dp->mp_flags == P_LOOSE || IS_MODIFIABLE(txn, dp));
     if (dp->mp_flags == P_LOOSE) {
@@ -8172,30 +8217,30 @@ static __inline void page_wash(MDBX_txn *txn, size_t di, MDBX_page *const mp,
 
   if (txn->tw.dirtylist) {
     tASSERT(txn, (txn->mt_flags & MDBX_WRITEMAP) == 0 || MDBX_AVOID_MSYNC);
-    if (!di)
-      di = dpl_search(txn, mp->mp_pgno);
-    tASSERT(txn, di > 0 && di <= txn->tw.dirtylist->length &&
-                     txn->tw.dirtylist->items[di].ptr == mp);
-    dpl_remove_ex(txn, di, npages);
-    txn->tw.dirtyroom++;
-    tASSERT(txn, txn->tw.dirtyroom + txn->tw.dirtylist->length ==
-                     (txn->mt_parent ? txn->mt_parent->tw.dirtyroom
-                                     : txn->mt_env->me_options.dp_limit));
+    tASSERT(txn,
+            MDBX_AVOID_MSYNC || (di && txn->tw.dirtylist->items[di].ptr == mp));
+    if (!MDBX_AVOID_MSYNC || di) {
+      dpl_remove_ex(txn, di, npages);
+      txn->tw.dirtyroom++;
+      tASSERT(txn, txn->tw.dirtyroom + txn->tw.dirtylist->length ==
+                       (txn->mt_parent ? txn->mt_parent->tw.dirtyroom
+                                       : txn->mt_env->me_options.dp_limit));
+      if (!MDBX_AVOID_MSYNC || !(txn->mt_flags & MDBX_WRITEMAP)) {
+        dpage_free(txn->mt_env, mp, npages);
+        return;
+      }
+    }
   } else {
     tASSERT(txn, (txn->mt_flags & MDBX_WRITEMAP) && !MDBX_AVOID_MSYNC && !di);
     txn->tw.writemap_dirty_npages -= (txn->tw.writemap_dirty_npages > npages)
                                          ? npages
                                          : txn->tw.writemap_dirty_npages;
   }
-
   VALGRIND_MAKE_MEM_UNDEFINED(mp, PAGEHDRSZ);
-  if (txn->mt_flags & MDBX_WRITEMAP) {
-    VALGRIND_MAKE_MEM_NOACCESS(page_data(mp),
-                               pgno2bytes(txn->mt_env, npages) - PAGEHDRSZ);
-    MDBX_ASAN_POISON_MEMORY_REGION(page_data(mp),
-                                   pgno2bytes(txn->mt_env, npages) - PAGEHDRSZ);
-  } else
-    dpage_free(txn->mt_env, mp, npages);
+  VALGRIND_MAKE_MEM_NOACCESS(page_data(mp),
+                             pgno2bytes(txn->mt_env, npages) - PAGEHDRSZ);
+  MDBX_ASAN_POISON_MEMORY_REGION(page_data(mp),
+                                 pgno2bytes(txn->mt_env, npages) - PAGEHDRSZ);
 }
 
 static __inline bool suitable4loose(const MDBX_txn *txn, pgno_t pgno) {
@@ -8308,6 +8353,8 @@ static int page_retire_ex(MDBX_cursor *mc, const pgno_t pgno,
     tASSERT(txn, !txn->tw.spilled.list || !search_spilled(txn, pgno));
   } else if (IS_MODIFIABLE(txn, mp)) {
     status = modifable;
+    if (txn->tw.dirtylist)
+      di = dpl_exist(txn, pgno);
     tASSERT(txn, (txn->mt_flags & MDBX_WRITEMAP) || !IS_SPILLED(txn, mp));
     tASSERT(txn, !txn->tw.spilled.list || !search_spilled(txn, pgno));
   } else if (IS_SHADOWED(txn, mp)) {
@@ -8402,7 +8449,8 @@ status_done:
   if (status == modifable) {
     /* Dirty page from this transaction */
     /* If suitable we can reuse it through loose list */
-    if (likely(npages == 1 && suitable4loose(txn, pgno))) {
+    if (likely(npages == 1 && suitable4loose(txn, pgno)) &&
+        (di || !txn->tw.dirtylist)) {
       DEBUG("loosen dirty page %" PRIaPGNO, pgno);
       if (MDBX_DEBUG != 0 || unlikely(txn->mt_env->me_flags & MDBX_PAGEPERTURB))
         memset(page_data(mp), -1, txn->mt_env->me_psize - PAGEHDRSZ);
@@ -8747,8 +8795,7 @@ static int spill_page(MDBX_txn *txn, iov_ctx_t *ctx, MDBX_page *dp,
 /* Set unspillable LRU-label for dirty pages watched by txn.
  * Returns the number of pages marked as unspillable. */
 static size_t cursor_keep(const MDBX_txn *const txn, const MDBX_cursor *mc) {
-  tASSERT(txn, (txn->mt_flags & MDBX_TXN_RDONLY) == 0);
-  tASSERT(txn, (txn->mt_flags & MDBX_WRITEMAP) == 0);
+  tASSERT(txn, (txn->mt_flags & (MDBX_TXN_RDONLY | MDBX_WRITEMAP)) == 0);
   size_t keep = 0;
   while ((mc->mc_flags & C_INITIALIZED) && mc->mc_snum) {
     tASSERT(txn, mc->mc_top == mc->mc_snum - 1);
@@ -8761,9 +8808,9 @@ static size_t cursor_keep(const MDBX_txn *const txn, const MDBX_cursor *mc) {
         size_t const n = dpl_search(txn, mp->mp_pgno);
         if (txn->tw.dirtylist->items[n].pgno == mp->mp_pgno &&
             /* не считаем дважды */ dpl_age(txn, n)) {
-          txn->tw.dirtylist->items[n].mlru =
-              (txn->tw.dirtylist->items[n].mlru & MDBX_dp_multi_mask) +
-              (txn->tw.dirtylru & MDBX_dp_lru_mask);
+          size_t *const ptr = ptr_disp(txn->tw.dirtylist->items[n].ptr,
+                                       -(ptrdiff_t)sizeof(size_t));
+          *ptr = txn->tw.dirtylru;
           tASSERT(txn, dpl_age(txn, n) == 0);
           ++keep;
         }
@@ -8773,8 +8820,7 @@ static size_t cursor_keep(const MDBX_txn *const txn, const MDBX_cursor *mc) {
     tASSERT(txn, IS_LEAF(mp));
     if (!mc->mc_xcursor || mc->mc_ki[mc->mc_top] >= page_numkeys(mp))
       break;
-    const MDBX_node *const node = page_node(mp, mc->mc_ki[mc->mc_top]);
-    if (!(node->mn_flags & F_SUBDATA))
+    if (!(node_flags(page_node(mp, mc->mc_ki[mc->mc_top])) & F_SUBDATA))
       break;
     mc = &mc->mc_xcursor->mx_cursor;
   }
@@ -8782,8 +8828,7 @@ static size_t cursor_keep(const MDBX_txn *const txn, const MDBX_cursor *mc) {
 }
 
 static size_t txn_keep(MDBX_txn *txn, MDBX_cursor *m0) {
-  tASSERT(txn, (txn->mt_flags & MDBX_TXN_RDONLY) == 0);
-  tASSERT(txn, (txn->mt_flags & MDBX_WRITEMAP) == 0);
+  tASSERT(txn, (txn->mt_flags & (MDBX_TXN_RDONLY | MDBX_WRITEMAP)) == 0);
   txn_lru_turn(txn);
   size_t keep = m0 ? cursor_keep(txn, m0) : 0;
   for (size_t i = FREE_DBI; i < txn->mt_numdbs; ++i)
@@ -8969,6 +9014,7 @@ __cold static int txn_spill_slowpath(MDBX_txn *const txn, MDBX_cursor *const m0,
     dpl_clear(txn->tw.dirtylist);
     txn->tw.dirtyroom = env->me_options.dp_limit - txn->tw.loose_count;
     for (MDBX_page *lp = txn->tw.loose_pages; lp != nullptr; lp = mp_next(lp)) {
+      tASSERT(txn, lp->mp_flags == P_LOOSE);
       rc = dpl_append(txn, lp->mp_pgno, lp, 1);
       if (unlikely(rc != MDBX_SUCCESS))
         goto bailout;
@@ -9065,10 +9111,10 @@ __cold static int txn_spill_slowpath(MDBX_txn *const txn, MDBX_cursor *const m0,
   const uint32_t reciprocal = (UINT32_C(255) << 24) / (age_max + 1);
   for (size_t i = 1; i <= dl->length; ++i) {
     const unsigned prio = spill_prio(txn, i, reciprocal);
+    size_t *const ptr = ptr_disp(dl->items[i].ptr, -(ptrdiff_t)sizeof(size_t));
     TRACE("page %" PRIaPGNO
-          ", lru %u, is_multi %c, npages %u, age %u of %u, prio %u",
-          dl->items[i].pgno, dl->items[i].mlru & MDBX_dp_lru_mask,
-          (dl->items[i].mlru & MDBX_dp_multi_mask) ? 'Y' : 'N',
+          ", lru %zu, is_multi %c, npages %u, age %u of %u, prio %u",
+          dl->items[i].pgno, *ptr, (dl->items[i].npages > 1) ? 'Y' : 'N',
           dpl_npages(dl, i), dpl_age(txn, i), age_max, prio);
     if (prio < 256) {
       radix_entries[prio] += 1;
@@ -11860,9 +11906,11 @@ __hot static int page_touch(MDBX_cursor *mc) {
     tASSERT(txn, n > 0 && n <= txn->tw.dirtylist->length);
     tASSERT(txn, txn->tw.dirtylist->items[n].pgno == mp->mp_pgno &&
                      txn->tw.dirtylist->items[n].ptr == mp);
-    txn->tw.dirtylist->items[n].mlru =
-        (txn->tw.dirtylist->items[n].mlru & MDBX_dp_multi_mask) +
-        (txn->tw.dirtylru & MDBX_dp_lru_mask);
+    if (!MDBX_AVOID_MSYNC || (txn->mt_flags & MDBX_WRITEMAP) == 0) {
+      size_t *const ptr =
+          ptr_disp(txn->tw.dirtylist->items[n].ptr, -(ptrdiff_t)sizeof(size_t));
+      *ptr = txn->tw.dirtylru;
+    }
     return MDBX_SUCCESS;
   }
   if (IS_SUBP(mp)) {
@@ -13193,7 +13241,7 @@ int mdbx_txn_begin_ex(MDBX_env *env, MDBX_txn *parent, MDBX_txn_flags_t flags,
         VALGRIND_MAKE_MEM_DEFINED(&mp_next(lp), sizeof(MDBX_page *));
         parent->tw.loose_pages = mp_next(lp);
         /* Remove from dirty list */
-        page_wash(parent, 0, lp, 1);
+        page_wash(parent, dpl_exist(parent, lp->mp_pgno), lp, 1);
       } while (parent->tw.loose_pages);
       parent->tw.loose_count = 0;
 #if MDBX_ENABLE_REFUND
@@ -15839,6 +15887,154 @@ fail:
     take_gcprof(txn, latency);
   mdbx_txn_abort(txn);
   goto provide_latency;
+}
+
+static __always_inline int cmp_int_inline(const size_t expected_alignment,
+                                          const MDBX_val *a,
+                                          const MDBX_val *b) {
+  if (likely(a->iov_len == b->iov_len)) {
+    if (sizeof(size_t) > 7 && likely(a->iov_len == 8))
+      return CMP2INT(unaligned_peek_u64(expected_alignment, a->iov_base),
+                     unaligned_peek_u64(expected_alignment, b->iov_base));
+    if (likely(a->iov_len == 4))
+      return CMP2INT(unaligned_peek_u32(expected_alignment, a->iov_base),
+                     unaligned_peek_u32(expected_alignment, b->iov_base));
+    if (sizeof(size_t) < 8 && likely(a->iov_len == 8))
+      return CMP2INT(unaligned_peek_u64(expected_alignment, a->iov_base),
+                     unaligned_peek_u64(expected_alignment, b->iov_base));
+  }
+  ERROR("mismatch and/or invalid size %p.%zu/%p.%zu for INTEGERKEY/INTEGERDUP",
+        a->iov_base, a->iov_len, b->iov_base, b->iov_len);
+  return 0;
+}
+
+__hot static int cmp_int_unaligned(const MDBX_val *a, const MDBX_val *b) {
+  return cmp_int_inline(1, a, b);
+}
+
+/* Compare two items pointing at 2-byte aligned unsigned int's. */
+#if MDBX_UNALIGNED_OK < 2 ||                                                   \
+    (MDBX_DEBUG || MDBX_FORCE_ASSERTIONS || !defined(NDEBUG))
+__hot static int cmp_int_align2(const MDBX_val *a, const MDBX_val *b) {
+  return cmp_int_inline(2, a, b);
+}
+#else
+#define cmp_int_align2 cmp_int_unaligned
+#endif /* !MDBX_UNALIGNED_OK || debug */
+
+/* Compare two items pointing at aligned unsigned int's. */
+#if MDBX_UNALIGNED_OK < 4 ||                                                   \
+    (MDBX_DEBUG || MDBX_FORCE_ASSERTIONS || !defined(NDEBUG))
+__hot static int cmp_int_align4(const MDBX_val *a, const MDBX_val *b) {
+  return cmp_int_inline(4, a, b);
+}
+#else
+#define cmp_int_align4 cmp_int_unaligned
+#endif /* !MDBX_UNALIGNED_OK || debug */
+
+/* Compare two items lexically */
+__hot static int cmp_lexical(const MDBX_val *a, const MDBX_val *b) {
+  if (a->iov_len == b->iov_len)
+    return a->iov_len ? memcmp(a->iov_base, b->iov_base, a->iov_len) : 0;
+
+  const int diff_len = (a->iov_len < b->iov_len) ? -1 : 1;
+  const size_t shortest = (a->iov_len < b->iov_len) ? a->iov_len : b->iov_len;
+  int diff_data = shortest ? memcmp(a->iov_base, b->iov_base, shortest) : 0;
+  return likely(diff_data) ? diff_data : diff_len;
+}
+
+MDBX_NOTHROW_PURE_FUNCTION static __always_inline unsigned
+tail3le(const uint8_t *p, size_t l) {
+  STATIC_ASSERT(sizeof(unsigned) > 2);
+  // 1: 0 0 0
+  // 2: 0 1 1
+  // 3: 0 1 2
+  return p[0] | p[l >> 1] << 8 | p[l - 1] << 16;
+}
+
+/* Compare two items in reverse byte order */
+__hot static int cmp_reverse(const MDBX_val *a, const MDBX_val *b) {
+  size_t left = (a->iov_len < b->iov_len) ? a->iov_len : b->iov_len;
+  if (likely(left)) {
+    const uint8_t *pa = ptr_disp(a->iov_base, a->iov_len);
+    const uint8_t *pb = ptr_disp(b->iov_base, b->iov_len);
+    while (left >= sizeof(size_t)) {
+      pa -= sizeof(size_t);
+      pb -= sizeof(size_t);
+      left -= sizeof(size_t);
+      STATIC_ASSERT(sizeof(size_t) == 4 || sizeof(size_t) == 8);
+      if (sizeof(size_t) == 4) {
+        uint32_t xa = unaligned_peek_u32(1, pa);
+        uint32_t xb = unaligned_peek_u32(1, pb);
+#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+        xa = osal_bswap32(xa);
+        xb = osal_bswap32(xb);
+#endif /* __BYTE_ORDER__ != __ORDER_BIG_ENDIAN__ */
+        if (xa != xb)
+          return (xa < xb) ? -1 : 1;
+      } else {
+        uint64_t xa = unaligned_peek_u64(1, pa);
+        uint64_t xb = unaligned_peek_u64(1, pb);
+#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+        xa = osal_bswap64(xa);
+        xb = osal_bswap64(xb);
+#endif /* __BYTE_ORDER__ != __ORDER_BIG_ENDIAN__ */
+        if (xa != xb)
+          return (xa < xb) ? -1 : 1;
+      }
+    }
+    if (sizeof(size_t) == 8 && left >= 4) {
+      pa -= 4;
+      pb -= 4;
+      left -= 4;
+      uint32_t xa = unaligned_peek_u32(1, pa);
+      uint32_t xb = unaligned_peek_u32(1, pb);
+#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+      xa = osal_bswap32(xa);
+      xb = osal_bswap32(xb);
+#endif /* __BYTE_ORDER__ != __ORDER_BIG_ENDIAN__ */
+      if (xa != xb)
+        return (xa < xb) ? -1 : 1;
+    }
+    if (left) {
+      unsigned xa = tail3le(pa - left, left);
+      unsigned xb = tail3le(pb - left, left);
+      if (xa != xb)
+        return (xa < xb) ? -1 : 1;
+    }
+  }
+  return CMP2INT(a->iov_len, b->iov_len);
+}
+
+/* Fast non-lexically comparator */
+__hot static int cmp_lenfast(const MDBX_val *a, const MDBX_val *b) {
+  int diff = CMP2INT(a->iov_len, b->iov_len);
+  return (likely(diff) || a->iov_len == 0)
+             ? diff
+             : memcmp(a->iov_base, b->iov_base, a->iov_len);
+}
+
+__hot static bool eq_fast_slowpath(const uint8_t *a, const uint8_t *b,
+                                   size_t l) {
+  if (likely(l > 3)) {
+    if (MDBX_UNALIGNED_OK >= 4 && likely(l < 9))
+      return ((unaligned_peek_u32(1, a) - unaligned_peek_u32(1, b)) |
+              (unaligned_peek_u32(1, a + l - 4) -
+               unaligned_peek_u32(1, b + l - 4))) == 0;
+    if (MDBX_UNALIGNED_OK >= 8 && sizeof(size_t) > 7 && likely(l < 17))
+      return ((unaligned_peek_u64(1, a) - unaligned_peek_u64(1, b)) |
+              (unaligned_peek_u64(1, a + l - 8) -
+               unaligned_peek_u64(1, b + l - 8))) == 0;
+    return memcmp(a, b, l) == 0;
+  }
+  if (likely(l))
+    return tail3le(a, l) == tail3le(b, l);
+  return true;
+}
+
+static __always_inline bool eq_fast(const MDBX_val *a, const MDBX_val *b) {
+  return unlikely(a->iov_len == b->iov_len) &&
+         eq_fast_slowpath(a->iov_base, b->iov_base, a->iov_len);
 }
 
 static int validate_meta(MDBX_env *env, MDBX_meta *const meta,
@@ -19131,7 +19327,9 @@ __cold int mdbx_env_close_ex(MDBX_env *env, bool dont_sync) {
     MDBX_ASAN_UNPOISON_MEMORY_REGION(dp, env->me_psize);
     VALGRIND_MAKE_MEM_DEFINED(&mp_next(dp), sizeof(MDBX_page *));
     env->me_dp_reserve = mp_next(dp);
-    osal_free(dp);
+    void *const ptr = ptr_disp(dp, -(ptrdiff_t)sizeof(size_t));
+    VALGRIND_MEMPOOL_FREE(env, ptr);
+    osal_free(ptr);
   }
   VALGRIND_DESTROY_MEMPOOL(env);
   ENSURE(env, env->me_lcklist_next == nullptr);
@@ -19146,99 +19344,6 @@ __cold int mdbx_env_close(MDBX_env *env) {
   return __inline_mdbx_env_close(env);
 }
 #endif /* LIBMDBX_NO_EXPORTS_LEGACY_API */
-
-/* Compare two items pointing at aligned unsigned int's. */
-__hot static int cmp_int_align4(const MDBX_val *a, const MDBX_val *b) {
-  eASSERT(NULL, a->iov_len == b->iov_len);
-  switch (a->iov_len) {
-  case 4:
-    return CMP2INT(unaligned_peek_u32(4, a->iov_base),
-                   unaligned_peek_u32(4, b->iov_base));
-  case 8:
-    return CMP2INT(unaligned_peek_u64(4, a->iov_base),
-                   unaligned_peek_u64(4, b->iov_base));
-  default:
-    mdbx_panic("invalid size %zu for INTEGERKEY/INTEGERDUP", a->iov_len);
-    return 0;
-  }
-}
-
-/* Compare two items pointing at 2-byte aligned unsigned int's. */
-__hot static int cmp_int_align2(const MDBX_val *a, const MDBX_val *b) {
-  eASSERT(NULL, a->iov_len == b->iov_len);
-  switch (a->iov_len) {
-  case 4:
-    return CMP2INT(unaligned_peek_u32(2, a->iov_base),
-                   unaligned_peek_u32(2, b->iov_base));
-  case 8:
-    return CMP2INT(unaligned_peek_u64(2, a->iov_base),
-                   unaligned_peek_u64(2, b->iov_base));
-  default:
-    mdbx_panic("invalid size %zu for INTEGERKEY/INTEGERDUP", a->iov_len);
-    return 0;
-  }
-}
-
-/* Compare two items pointing at unsigned values with unknown alignment.
- *
- * This is also set as MDBX_INTEGERDUP|MDBX_DUPFIXED's MDBX_dbx.md_dcmp. */
-__hot static int cmp_int_unaligned(const MDBX_val *a, const MDBX_val *b) {
-  eASSERT(NULL, a->iov_len == b->iov_len);
-  switch (a->iov_len) {
-  case 4:
-    return CMP2INT(unaligned_peek_u32(1, a->iov_base),
-                   unaligned_peek_u32(1, b->iov_base));
-  case 8:
-    return CMP2INT(unaligned_peek_u64(1, a->iov_base),
-                   unaligned_peek_u64(1, b->iov_base));
-  default:
-    mdbx_panic("invalid size %zu for INTEGERKEY/INTEGERDUP", a->iov_len);
-    return 0;
-  }
-}
-
-/* Compare two items lexically */
-__hot static int cmp_lexical(const MDBX_val *a, const MDBX_val *b) {
-  if (a->iov_len == b->iov_len)
-    return a->iov_len ? memcmp(a->iov_base, b->iov_base, a->iov_len) : 0;
-
-  const int diff_len = (a->iov_len < b->iov_len) ? -1 : 1;
-  const size_t shortest = (a->iov_len < b->iov_len) ? a->iov_len : b->iov_len;
-  int diff_data = shortest ? memcmp(a->iov_base, b->iov_base, shortest) : 0;
-  return likely(diff_data) ? diff_data : diff_len;
-}
-
-/* Compare two items in reverse byte order */
-__hot static int cmp_reverse(const MDBX_val *a, const MDBX_val *b) {
-  const size_t shortest = (a->iov_len < b->iov_len) ? a->iov_len : b->iov_len;
-  if (likely(shortest)) {
-    const uint8_t *pa = ptr_disp(a->iov_base, a->iov_len);
-    const uint8_t *pb = ptr_disp(b->iov_base, b->iov_len);
-    const uint8_t *const end = pa - shortest;
-    do {
-      int diff = *--pa - *--pb;
-      if (likely(diff))
-        return diff;
-    } while (pa != end);
-  }
-  return CMP2INT(a->iov_len, b->iov_len);
-}
-
-/* Fast non-lexically comparator */
-__hot static int cmp_lenfast(const MDBX_val *a, const MDBX_val *b) {
-  int diff = CMP2INT(a->iov_len, b->iov_len);
-  return likely(diff) || a->iov_len == 0
-             ? diff
-             : memcmp(a->iov_base, b->iov_base, a->iov_len);
-}
-
-static bool unsure_equal(MDBX_cmp_func cmp, const MDBX_val *a,
-                         const MDBX_val *b) {
-  /* checking for the use of a known good comparator
-   * or/otherwise for a full byte-to-byte match */
-  return cmp == cmp_lenfast || cmp == cmp_lexical || cmp == cmp_reverse ||
-         cmp == cmp_int_unaligned || cmp_lenfast(a, b) == 0;
-}
 
 /* Search for key within a page, using binary search.
  * Returns the smallest entry larger or equal to the key.
@@ -21095,25 +21200,21 @@ static __hot int cursor_put_nochecklen(MDBX_cursor *mc, const MDBX_val *key,
           flags -= MDBX_ALLDUPS;
           rc = MDBX_NOTFOUND;
           exact = false;
-        } else /* checking for early exit without dirtying pages */
-          if (!(flags & (MDBX_RESERVE | MDBX_MULTIPLE)) &&
-              unlikely(mc->mc_dbx->md_dcmp(data, &olddata) == 0)) {
-            if (!mc->mc_xcursor)
-              /* the same data, nothing to update */
-              return MDBX_SUCCESS;
-            if (flags & MDBX_NODUPDATA)
-              return MDBX_KEYEXIST;
-            if (flags & MDBX_APPENDDUP)
-              return MDBX_EKEYMISMATCH;
-            if (likely(unsure_equal(mc->mc_dbx->md_dcmp, data, &olddata)))
-              /* data is match exactly byte-to-byte, nothing to update */
-              return MDBX_SUCCESS;
-            else {
-              /* The data has differences, but the user-provided comparator
-               * considers them equal. So continue update since called without.
-               * Continue to update since was called without MDBX_NODUPDATA. */
+        } else if (!(flags & (MDBX_RESERVE | MDBX_MULTIPLE))) {
+          /* checking for early exit without dirtying pages */
+          if (unlikely(eq_fast(data, &olddata))) {
+            cASSERT(mc, mc->mc_dbx->md_dcmp(data, &olddata) == 0);
+            if (mc->mc_xcursor) {
+              if (flags & MDBX_NODUPDATA)
+                return MDBX_KEYEXIST;
+              if (flags & MDBX_APPENDDUP)
+                return MDBX_EKEYMISMATCH;
             }
+            /* the same data, nothing to update */
+            return MDBX_SUCCESS;
           }
+          cASSERT(mc, mc->mc_dbx->md_dcmp(data, &olddata) != 0);
+        }
       }
     } else if (unlikely(rc != MDBX_NOTFOUND))
       return rc;
@@ -21318,28 +21419,21 @@ static __hot int cursor_put_nochecklen(MDBX_cursor *mc, const MDBX_val *key,
 
         /* Was a single item before, must convert now */
         if (!(node_flags(node) & F_DUPDATA)) {
-
           /* does data match? */
-          const int cmp = mc->mc_dbx->md_dcmp(data, &olddata);
-          if ((flags & MDBX_APPENDDUP) && unlikely(cmp <= 0))
-            return MDBX_EKEYMISMATCH;
-          if (cmp == 0) {
+          if (flags & MDBX_APPENDDUP) {
+            const int cmp = mc->mc_dbx->md_dcmp(data, &olddata);
+            cASSERT(mc, cmp != 0 || eq_fast(data, &olddata));
+            if (unlikely(cmp <= 0))
+              return MDBX_EKEYMISMATCH;
+          } else if (eq_fast(data, &olddata)) {
+            cASSERT(mc, mc->mc_dbx->md_dcmp(data, &olddata) == 0);
             if (flags & MDBX_NODUPDATA)
               return MDBX_KEYEXIST;
-            if (likely(unsure_equal(mc->mc_dbx->md_dcmp, data, &olddata))) {
-              /* data is match exactly byte-to-byte, nothing to update */
-              if (unlikely(flags & MDBX_MULTIPLE)) {
-                rc = MDBX_SUCCESS;
-                goto continue_multiple;
-              }
-              return MDBX_SUCCESS;
-            } else {
-              /* The data has differences, but the user-provided comparator
-               * considers them equal. So continue update since called without.
-               * Continue to update since was called without MDBX_NODUPDATA. */
-            }
-            cASSERT(mc, node_size(key, data) <= env->me_leaf_nodemax);
-            goto current;
+            /* data is match exactly byte-to-byte, nothing to update */
+            rc = MDBX_SUCCESS;
+            if (likely((flags & MDBX_MULTIPLE) == 0))
+              return rc;
+            goto continue_multiple;
           }
 
           /* Just overwrite the current item */
@@ -28608,8 +28702,9 @@ __cold int mdbx_env_set_option(MDBX_env *env, const MDBX_option_t option,
         MDBX_ASAN_UNPOISON_MEMORY_REGION(dp, env->me_psize);
         VALGRIND_MAKE_MEM_DEFINED(&mp_next(dp), sizeof(MDBX_page *));
         env->me_dp_reserve = mp_next(dp);
-        VALGRIND_MEMPOOL_FREE(env, dp);
-        osal_free(dp);
+        void *const ptr = ptr_disp(dp, -(ptrdiff_t)sizeof(size_t));
+        VALGRIND_MEMPOOL_FREE(env, ptr);
+        osal_free(ptr);
         env->me_dp_reserve_len -= 1;
       }
     }
@@ -32879,9 +32974,9 @@ __dll_export
         0,
         12,
         2,
-        91,
-        {"2022-12-29T23:09:34+03:00", "39c43a7ffd74843ed6cfdf0469a50720af11d43e", "e409e1a80c74fdfd9d55e763132cab65feb97c4e",
-         "v0.12.2-91-ge409e1a8"},
+        99,
+        {"2023-01-01T18:12:56+03:00", "b8274338f26074d63e73a2cc0908a728bf6270c1", "b3de5c0c1ecc0a0675466a9593962d83368dd00c",
+         "v0.12.2-99-gb3de5c0c"},
         sourcery};
 
 __dll_export
