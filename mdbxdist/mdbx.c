@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 4ec03eb1489c87d395cce2d824a7ce8744f4889937837e836988485fea95e100_v0_12_2_99_gb3de5c0c
+#define MDBX_BUILD_SOURCERY 990243f267b7eedd3e096d948582a6d343600fa9de6ba48af5ec85d0d20ebd3d_v0_12_2_101_g25e5ffe6
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -3635,7 +3635,7 @@ struct MDBX_env {
   uint32_t me_live_reader;        /* have liveness lock in reader table */
   void *me_userctx;               /* User-settable context */
   MDBX_hsr_func *me_hsr_callback; /* Callback for kicking laggard readers */
-  pgno_t me_madv_threshold;
+  size_t me_madv_threshold;
 
   struct {
     unsigned dp_reserve_limit;
@@ -6236,11 +6236,11 @@ static __always_inline size_t pnl_size2bytes(size_t size) {
 #endif /* MDBX_PNL_PREALLOC_FOR_RADIXSORT */
   STATIC_ASSERT(MDBX_ASSUME_MALLOC_OVERHEAD +
                     (MDBX_PGL_LIMIT * (MDBX_PNL_PREALLOC_FOR_RADIXSORT + 1) +
-                     MDBX_PNL_GRANULATE + 2) *
+                     MDBX_PNL_GRANULATE + 3) *
                         sizeof(pgno_t) <
                 SIZE_MAX / 4 * 3);
   size_t bytes =
-      ceil_powerof2(MDBX_ASSUME_MALLOC_OVERHEAD + sizeof(pgno_t) * (size + 2),
+      ceil_powerof2(MDBX_ASSUME_MALLOC_OVERHEAD + sizeof(pgno_t) * (size + 3),
                     MDBX_PNL_GRANULATE * sizeof(pgno_t)) -
       MDBX_ASSUME_MALLOC_OVERHEAD;
   return bytes;
@@ -6248,8 +6248,8 @@ static __always_inline size_t pnl_size2bytes(size_t size) {
 
 static __always_inline pgno_t pnl_bytes2size(const size_t bytes) {
   size_t size = bytes / sizeof(pgno_t);
-  assert(size > 2 && size <= MDBX_PGL_LIMIT + /* alignment gap */ 65536);
-  size -= 2;
+  assert(size > 3 && size <= MDBX_PGL_LIMIT + /* alignment gap */ 65536);
+  size -= 3;
 #if MDBX_PNL_PREALLOC_FOR_RADIXSORT
   size >>= 1;
 #endif /* MDBX_PNL_PREALLOC_FOR_RADIXSORT */
@@ -6469,9 +6469,9 @@ __hot static size_t pnl_merge(MDBX_PNL dst, const MDBX_PNL src) {
   const size_t src_len = MDBX_PNL_GETSIZE(src);
   const size_t dst_len = MDBX_PNL_GETSIZE(dst);
   size_t total = dst_len;
+  assert(MDBX_PNL_ALLOCLEN(dst) >= total);
   if (likely(src_len > 0)) {
     total += src_len;
-    assert(MDBX_PNL_ALLOCLEN(dst) >= total);
     if (!MDBX_DEBUG && total < (MDBX_HAVE_CMOV ? 21 : 12))
       goto avoid_call_libc_for_short_cases;
     if (dst_len == 0 ||
@@ -6587,9 +6587,19 @@ __hot __noinline static size_t pnl_search_nochk(const MDBX_PNL pnl,
 static __inline size_t pnl_search(const MDBX_PNL pnl, pgno_t pgno,
                                   size_t limit) {
   assert(pnl_check_allocated(pnl, limit));
+  if (MDBX_HAVE_CMOV) {
+    /* cmov-ускоренный бинарный поиск может читать (но не использовать) один
+     * элемент за концом данных, этот элемент в пределах выделенного участка
+     * памяти, но не инициализирован. */
+    VALGRIND_MAKE_MEM_DEFINED(MDBX_PNL_END(pnl), sizeof(pgno_t));
+  }
   assert(pgno < limit);
   (void)limit;
-  return pnl_search_nochk(pnl, pgno);
+  size_t n = pnl_search_nochk(pnl, pgno);
+  if (MDBX_HAVE_CMOV) {
+    VALGRIND_MAKE_MEM_UNDEFINED(MDBX_PNL_END(pnl), sizeof(pgno_t));
+  }
+  return n;
 }
 
 static __inline size_t search_spilled(const MDBX_txn *txn, pgno_t pgno) {
@@ -7803,7 +7813,8 @@ static MDBX_page *page_malloc(MDBX_txn *txn, size_t num) {
   if (likely(num == 1 && np)) {
     eASSERT(env, env->me_dp_reserve_len > 0);
     MDBX_ASAN_UNPOISON_MEMORY_REGION(np, size);
-    VALGRIND_MEMPOOL_ALLOC(env, np, size);
+    VALGRIND_MEMPOOL_ALLOC(env, ptr_disp(np, -(ptrdiff_t)sizeof(size_t)),
+                           size + sizeof(size_t));
     VALGRIND_MAKE_MEM_DEFINED(&mp_next(np), sizeof(MDBX_page *));
     env->me_dp_reserve = mp_next(np);
     env->me_dp_reserve_len -= 1;
@@ -7847,7 +7858,7 @@ static void dpage_free(MDBX_env *env, MDBX_page *dp, size_t npages) {
     MDBX_ASAN_POISON_MEMORY_REGION(dp, env->me_psize);
     MDBX_ASAN_UNPOISON_MEMORY_REGION(&mp_next(dp), sizeof(MDBX_page *));
     mp_next(dp) = env->me_dp_reserve;
-    VALGRIND_MEMPOOL_FREE(env, dp);
+    VALGRIND_MEMPOOL_FREE(env, ptr_disp(dp, -(ptrdiff_t)sizeof(size_t)));
     env->me_dp_reserve = dp;
     env->me_dp_reserve_len += 1;
   } else {
@@ -9999,16 +10010,17 @@ static void adjust_defaults(MDBX_env *env) {
   const size_t basis = env->me_dbgeo.now;
   /* TODO: use options? */
   const unsigned factor = 9;
-  const size_t threshold = (basis < (65536ul << factor))
-                               ? 65536 /* minimal threshold */
-                           : (basis > (MEGABYTE * 4 << factor))
-                               ? MEGABYTE * 4 /* maximal threshold */
-                               : basis >> factor;
+  size_t threshold = (basis < (65536ul << factor))
+                         ? 65536 /* minimal threshold */
+                     : (basis > (MEGABYTE * 4 << factor))
+                         ? MEGABYTE * 4 /* maximal threshold */
+                         : basis >> factor;
+  threshold = (threshold < env->me_dbgeo.shrink || !env->me_dbgeo.shrink)
+                  ? threshold
+                  : env->me_dbgeo.shrink;
 
-  env->me_madv_threshold = bytes2pgno(
-      env, bytes_align2os_bytes(env, (threshold < env->me_dbgeo.shrink)
-                                         ? threshold
-                                         : env->me_dbgeo.shrink));
+  env->me_madv_threshold =
+      bytes2pgno(env, bytes_align2os_bytes(env, threshold));
 }
 
 __cold static int map_resize(MDBX_env *env, const pgno_t used_pgno,
@@ -16503,129 +16515,132 @@ static int sync_locked(MDBX_env *env, unsigned flags, MDBX_meta *const pending,
   }
 
   pgno_t shrink = 0;
-  if ((flags & MDBX_SHRINK_ALLOWED) &&
-      pending->mm_geo.now - pending->mm_geo.next >= env->me_madv_threshold) {
-    /* LY: check conditions to discard unused pages */
-    const pgno_t largest_pgno = find_largest_snapshot(
-        env, (head.ptr_c->mm_geo.next > pending->mm_geo.next)
-                 ? head.ptr_c->mm_geo.next
-                 : pending->mm_geo.next);
-    eASSERT(env, largest_pgno >= NUM_METAS);
+  if (flags & MDBX_SHRINK_ALLOWED) {
+    const size_t prev_discarded_pgno =
+        atomic_load32(&env->me_lck->mti_discarded_tail, mo_Relaxed);
+    if (prev_discarded_pgno < pending->mm_geo.next)
+      env->me_lck->mti_discarded_tail.weak = pending->mm_geo.next;
+    else if (prev_discarded_pgno >=
+             pending->mm_geo.next + env->me_madv_threshold) {
+      /* LY: check conditions to discard unused pages */
+      const pgno_t largest_pgno = find_largest_snapshot(
+          env, (head.ptr_c->mm_geo.next > pending->mm_geo.next)
+                   ? head.ptr_c->mm_geo.next
+                   : pending->mm_geo.next);
+      eASSERT(env, largest_pgno >= NUM_METAS);
+
 #if defined(MDBX_USE_VALGRIND) || defined(__SANITIZE_ADDRESS__)
-    const pgno_t edge = env->me_poison_edge;
-    if (edge > largest_pgno) {
-      env->me_poison_edge = largest_pgno;
-      VALGRIND_MAKE_MEM_NOACCESS(
-          ptr_disp(env->me_map, pgno2bytes(env, largest_pgno)),
-          pgno2bytes(env, edge - largest_pgno));
-      MDBX_ASAN_POISON_MEMORY_REGION(
-          ptr_disp(env->me_map, pgno2bytes(env, largest_pgno)),
-          pgno2bytes(env, edge - largest_pgno));
-    }
+      const pgno_t edge = env->me_poison_edge;
+      if (edge > largest_pgno) {
+        env->me_poison_edge = largest_pgno;
+        VALGRIND_MAKE_MEM_NOACCESS(
+            ptr_disp(env->me_map, pgno2bytes(env, largest_pgno)),
+            pgno2bytes(env, edge - largest_pgno));
+        MDBX_ASAN_POISON_MEMORY_REGION(
+            ptr_disp(env->me_map, pgno2bytes(env, largest_pgno)),
+            pgno2bytes(env, edge - largest_pgno));
+      }
 #endif /* MDBX_USE_VALGRIND || __SANITIZE_ADDRESS__ */
+
 #if MDBX_ENABLE_MADVISE &&                                                     \
     (defined(MADV_DONTNEED) || defined(POSIX_MADV_DONTNEED))
-    const size_t largest_bytes = pgno2bytes(env, largest_pgno);
-    /* threshold to avoid unreasonable frequent madvise() calls */
-    const size_t threshold = pgno2bytes(env, env->me_madv_threshold);
-    const size_t discard_edge_bytes = bytes_align2os_bytes(
-        env, ((MDBX_RDONLY &
-               (env->me_lck_mmap.lck ? env->me_lck_mmap.lck->mti_envmode.weak
-                                     : env->me_flags))
-                  ? largest_bytes
-                  : largest_bytes + threshold));
-    const pgno_t discard_edge_pgno = bytes2pgno(env, discard_edge_bytes);
-    const pgno_t prev_discarded_pgno =
-        atomic_load32(&env->me_lck->mti_discarded_tail, mo_Relaxed);
-    if (prev_discarded_pgno >= discard_edge_pgno + bytes2pgno(env, threshold)) {
-      NOTICE("shrink-MADV_%s %u..%u", "DONTNEED", largest_pgno,
-             prev_discarded_pgno);
-      atomic_store32(&env->me_lck->mti_discarded_tail, discard_edge_pgno,
-                     mo_Relaxed);
-      const size_t prev_discarded_bytes =
-          ceil_powerof2(pgno2bytes(env, prev_discarded_pgno), env->me_os_psize);
-      ENSURE(env, prev_discarded_bytes > discard_edge_bytes);
-      munlock_after(env, discard_edge_pgno,
-                    bytes_align2os_bytes(env, env->me_dxb_mmap.current));
-      const uint32_t munlocks_before =
-          atomic_load32(&env->me_lck->mti_mlcnt[1], mo_Relaxed);
+      const size_t discard_edge_pgno = pgno_align2os_pgno(env, largest_pgno);
+      if (prev_discarded_pgno >= discard_edge_pgno + env->me_madv_threshold) {
+        const size_t prev_discarded_bytes =
+            pgno_align2os_bytes(env, prev_discarded_pgno);
+        const size_t discard_edge_bytes = pgno2bytes(env, discard_edge_pgno);
+        /* из-за выравнивания prev_discarded_bytes и discard_edge_bytes
+         * могут быть равны */
+        if (prev_discarded_bytes > discard_edge_bytes) {
+          NOTICE("shrink-MADV_%s %zu..%zu", "DONTNEED", discard_edge_pgno,
+                 prev_discarded_pgno);
+          munlock_after(env, discard_edge_pgno,
+                        bytes_align2os_bytes(env, env->me_dxb_mmap.current));
+          const uint32_t munlocks_before =
+              atomic_load32(&env->me_lck->mti_mlcnt[1], mo_Relaxed);
 #if defined(MADV_DONTNEED)
-      int advise = MADV_DONTNEED;
+          int advise = MADV_DONTNEED;
 #if defined(MADV_FREE) &&                                                      \
     0 /* MADV_FREE works for only anonymous vma at the moment */
-      if ((env->me_flags & MDBX_WRITEMAP) && linux_kernel_version > 0x04050000)
-        advise = MADV_FREE;
+          if ((env->me_flags & MDBX_WRITEMAP) &&
+              linux_kernel_version > 0x04050000)
+            advise = MADV_FREE;
 #endif /* MADV_FREE */
-      int err = madvise(ptr_disp(env->me_map, discard_edge_bytes),
-                        prev_discarded_bytes - discard_edge_bytes, advise)
-                    ? ignore_enosys(errno)
-                    : MDBX_SUCCESS;
+          int err = madvise(ptr_disp(env->me_map, discard_edge_bytes),
+                            prev_discarded_bytes - discard_edge_bytes, advise)
+                        ? ignore_enosys(errno)
+                        : MDBX_SUCCESS;
 #else
-      int err = ignore_enosys(posix_madvise(
-          ptr_disp(env->me_map, discard_edge_bytes),
-          prev_discarded_bytes - discard_edge_bytes, POSIX_MADV_DONTNEED));
+          int err = ignore_enosys(posix_madvise(
+              ptr_disp(env->me_map, discard_edge_bytes),
+              prev_discarded_bytes - discard_edge_bytes, POSIX_MADV_DONTNEED));
 #endif
-      if (unlikely(MDBX_IS_ERROR(err))) {
-        const uint32_t mlocks_after =
-            atomic_load32(&env->me_lck->mti_mlcnt[0], mo_Relaxed);
-        if (err == MDBX_EINVAL) {
-          const int severity = (mlocks_after - munlocks_before)
-                                   ? MDBX_LOG_NOTICE
-                                   : MDBX_LOG_WARN;
-          if (LOG_ENABLED(severity))
-            debug_log(severity, __func__, __LINE__,
-                      "%s-madvise: ignore EINVAL (%d) since some pages maybe "
-                      "locked (%u/%u mlcnt-processes)",
-                      "shrink", err, mlocks_after, munlocks_before);
-        } else {
-          ERROR("%s-madvise(%s, %zu, +%zu), %u/%u mlcnt-processes, err %d",
-                "shrink", "DONTNEED", discard_edge_bytes,
-                prev_discarded_bytes - discard_edge_bytes, mlocks_after,
-                munlocks_before, err);
-          return err;
+          if (unlikely(MDBX_IS_ERROR(err))) {
+            const uint32_t mlocks_after =
+                atomic_load32(&env->me_lck->mti_mlcnt[0], mo_Relaxed);
+            if (err == MDBX_EINVAL) {
+              const int severity = (mlocks_after - munlocks_before)
+                                       ? MDBX_LOG_NOTICE
+                                       : MDBX_LOG_WARN;
+              if (LOG_ENABLED(severity))
+                debug_log(
+                    severity, __func__, __LINE__,
+                    "%s-madvise: ignore EINVAL (%d) since some pages maybe "
+                    "locked (%u/%u mlcnt-processes)",
+                    "shrink", err, mlocks_after, munlocks_before);
+            } else {
+              ERROR("%s-madvise(%s, %zu, +%zu), %u/%u mlcnt-processes, err %d",
+                    "shrink", "DONTNEED", discard_edge_bytes,
+                    prev_discarded_bytes - discard_edge_bytes, mlocks_after,
+                    munlocks_before, err);
+              return err;
+            }
+          } else
+            env->me_lck->mti_discarded_tail.weak = discard_edge_pgno;
         }
-      } else
-        env->me_lck->mti_discarded_tail.weak = discard_edge_pgno;
-    }
+      }
 #endif /* MDBX_ENABLE_MADVISE && (MADV_DONTNEED || POSIX_MADV_DONTNEED) */
 
-    /* LY: check conditions to shrink datafile */
-    const pgno_t backlog_gap = 3 + pending->mm_dbs[FREE_DBI].md_depth * 3;
-    pgno_t shrink_step = 0;
-    if (pending->mm_geo.shrink_pv &&
-        pending->mm_geo.now - pending->mm_geo.next >
-            (shrink_step = pv2pages(pending->mm_geo.shrink_pv)) + backlog_gap) {
-      if (pending->mm_geo.now > largest_pgno &&
-          pending->mm_geo.now - largest_pgno > shrink_step + backlog_gap) {
-        const pgno_t aligner =
-            pending->mm_geo.grow_pv
-                ? /* grow_step */ pv2pages(pending->mm_geo.grow_pv)
-                : shrink_step;
-        const pgno_t with_backlog_gap = largest_pgno + backlog_gap;
-        const pgno_t aligned = pgno_align2os_pgno(
-            env, with_backlog_gap + aligner - with_backlog_gap % aligner);
-        const pgno_t bottom =
-            (aligned > pending->mm_geo.lower) ? aligned : pending->mm_geo.lower;
-        if (pending->mm_geo.now > bottom) {
-          if (TROIKA_HAVE_STEADY(troika))
-            /* force steady, but only if steady-checkpoint is present */
-            flags &= MDBX_WRITEMAP | MDBX_SHRINK_ALLOWED;
-          shrink = pending->mm_geo.now - bottom;
-          pending->mm_geo.now = bottom;
-          if (unlikely(head.txnid == pending->unsafe_txnid)) {
-            const txnid_t txnid = safe64_txnid_next(pending->unsafe_txnid);
-            NOTICE("force-forward pending-txn %" PRIaTXN " -> %" PRIaTXN,
-                   pending->unsafe_txnid, txnid);
-            ENSURE(env, !env->me_txn0 ||
-                            (env->me_txn0->mt_owner != osal_thread_self() &&
-                             !env->me_txn));
-            if (unlikely(txnid > MAX_TXNID)) {
-              rc = MDBX_TXN_FULL;
-              ERROR("txnid overflow, raise %d", rc);
-              goto fail;
+      /* LY: check conditions to shrink datafile */
+      const pgno_t backlog_gap = 3 + pending->mm_dbs[FREE_DBI].md_depth * 3;
+      pgno_t shrink_step = 0;
+      if (pending->mm_geo.shrink_pv &&
+          pending->mm_geo.now - pending->mm_geo.next >
+              (shrink_step = pv2pages(pending->mm_geo.shrink_pv)) +
+                  backlog_gap) {
+        if (pending->mm_geo.now > largest_pgno &&
+            pending->mm_geo.now - largest_pgno > shrink_step + backlog_gap) {
+          const pgno_t aligner =
+              pending->mm_geo.grow_pv
+                  ? /* grow_step */ pv2pages(pending->mm_geo.grow_pv)
+                  : shrink_step;
+          const pgno_t with_backlog_gap = largest_pgno + backlog_gap;
+          const pgno_t aligned = pgno_align2os_pgno(
+              env, with_backlog_gap + aligner - with_backlog_gap % aligner);
+          const pgno_t bottom = (aligned > pending->mm_geo.lower)
+                                    ? aligned
+                                    : pending->mm_geo.lower;
+          if (pending->mm_geo.now > bottom) {
+            if (TROIKA_HAVE_STEADY(troika))
+              /* force steady, but only if steady-checkpoint is present */
+              flags &= MDBX_WRITEMAP | MDBX_SHRINK_ALLOWED;
+            shrink = pending->mm_geo.now - bottom;
+            pending->mm_geo.now = bottom;
+            if (unlikely(head.txnid == pending->unsafe_txnid)) {
+              const txnid_t txnid = safe64_txnid_next(pending->unsafe_txnid);
+              NOTICE("force-forward pending-txn %" PRIaTXN " -> %" PRIaTXN,
+                     pending->unsafe_txnid, txnid);
+              ENSURE(env, !env->me_txn0 ||
+                              (env->me_txn0->mt_owner != osal_thread_self() &&
+                               !env->me_txn));
+              if (unlikely(txnid > MAX_TXNID)) {
+                rc = MDBX_TXN_FULL;
+                ERROR("txnid overflow, raise %d", rc);
+                goto fail;
+              }
+              meta_set_txnid(env, pending, txnid);
+              eASSERT(env, coherency_check_meta(env, pending, true));
             }
-            meta_set_txnid(env, pending, txnid);
-            eASSERT(env, coherency_check_meta(env, pending, true));
           }
         }
       }
@@ -19328,7 +19343,6 @@ __cold int mdbx_env_close_ex(MDBX_env *env, bool dont_sync) {
     VALGRIND_MAKE_MEM_DEFINED(&mp_next(dp), sizeof(MDBX_page *));
     env->me_dp_reserve = mp_next(dp);
     void *const ptr = ptr_disp(dp, -(ptrdiff_t)sizeof(size_t));
-    VALGRIND_MEMPOOL_FREE(env, ptr);
     osal_free(ptr);
   }
   VALGRIND_DESTROY_MEMPOOL(env);
@@ -28703,7 +28717,6 @@ __cold int mdbx_env_set_option(MDBX_env *env, const MDBX_option_t option,
         VALGRIND_MAKE_MEM_DEFINED(&mp_next(dp), sizeof(MDBX_page *));
         env->me_dp_reserve = mp_next(dp);
         void *const ptr = ptr_disp(dp, -(ptrdiff_t)sizeof(size_t));
-        VALGRIND_MEMPOOL_FREE(env, ptr);
         osal_free(ptr);
         env->me_dp_reserve_len -= 1;
       }
@@ -32974,9 +32987,9 @@ __dll_export
         0,
         12,
         2,
-        99,
-        {"2023-01-01T18:12:56+03:00", "b8274338f26074d63e73a2cc0908a728bf6270c1", "b3de5c0c1ecc0a0675466a9593962d83368dd00c",
-         "v0.12.2-99-gb3de5c0c"},
+        101,
+        {"2023-01-04T00:21:49+03:00", "c1b35de5aea74ed0ac4212076615578a06dc7eea", "25e5ffe69909b59da14376844b899a9bcc93db6f",
+         "v0.12.2-101-g25e5ffe6"},
         sourcery};
 
 __dll_export

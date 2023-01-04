@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 4ec03eb1489c87d395cce2d824a7ce8744f4889937837e836988485fea95e100_v0_12_2_99_gb3de5c0c
+#define MDBX_BUILD_SOURCERY 990243f267b7eedd3e096d948582a6d343600fa9de6ba48af5ec85d0d20ebd3d_v0_12_2_101_g25e5ffe6
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -3657,7 +3657,7 @@ struct MDBX_env {
   uint32_t me_live_reader;        /* have liveness lock in reader table */
   void *me_userctx;               /* User-settable context */
   MDBX_hsr_func *me_hsr_callback; /* Callback for kicking laggard readers */
-  pgno_t me_madv_threshold;
+  size_t me_madv_threshold;
 
   struct {
     unsigned dp_reserve_limit;
