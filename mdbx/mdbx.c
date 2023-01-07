@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY f48c42d6ef4b12565f7497e27052b47ce77d768fcce06857da618195614c8a59_v0_12_3_1_ge7ed6501
+#define MDBX_BUILD_SOURCERY 94856b76f9a50f2597880f73c2b68302ac986f96c44020eedd2b26d544e8b9c8_v0_12_3_0_gf1fdb889
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2030,7 +2030,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 /** Controls profiling of GC search and updates. */
 #ifndef MDBX_ENABLE_PROFGC
-#define MDBX_ENABLE_PROFGC 1
+#define MDBX_ENABLE_PROFGC 0
 #elif !(MDBX_ENABLE_PROFGC == 0 || MDBX_ENABLE_PROFGC == 1)
 #error MDBX_ENABLE_PROFGC must be defined as 0 or 1
 #endif /* MDBX_ENABLE_PROFGC */
@@ -2981,12 +2981,6 @@ typedef struct profgc_stat {
   uint32_t spe_counter;
   /* page faults (hard page faults) */
   uint32_t majflt;
-  /* Для разборок с pnl_merge() */
-  struct {
-    uint64_t time;
-    uint64_t volume;
-    uint32_t calls;
-  } pnl_merge;
 } profgc_stat_t;
 
 /* Statistics of page operations overall of all (running, completed and aborted)
@@ -11474,15 +11468,7 @@ next_gc:;
   }
 
   /* Merge in descending sorted order */
-#if MDBX_ENABLE_PROFGC
-  const uint64_t merge_begin = osal_monotime();
-#endif /* MDBX_ENABLE_PROFGC */
   pnl_merge(txn->tw.relist, gc_pnl);
-#if MDBX_ENABLE_PROFGC
-  prof->pnl_merge.calls += 1;
-  prof->pnl_merge.volume += MDBX_PNL_GETSIZE(txn->tw.relist);
-  prof->pnl_merge.time += osal_monotime() - merge_begin;
-#endif /* MDBX_ENABLE_PROFGC */
   flags |= MDBX_ALLOC_SHOULD_SCAN;
   if (AUDIT_ENABLED()) {
     if (unlikely(!pnl_check(txn->tw.relist, txn->mt_next_pgno))) {
@@ -11653,7 +11639,7 @@ depleted_gc:
 no_gc:
   eASSERT(env, pgno == 0);
 #ifndef MDBX_ENABLE_BACKLOG_DEPLETED
-#define MDBX_ENABLE_BACKLOG_DEPLETED 1
+#define MDBX_ENABLE_BACKLOG_DEPLETED 0
 #endif /* MDBX_ENABLE_BACKLOG_DEPLETED*/
   if (MDBX_ENABLE_BACKLOG_DEPLETED &&
       unlikely(!(txn->mt_flags & MDBX_TXN_DRAINED_GC))) {
@@ -15476,16 +15462,6 @@ static void take_gcprof(MDBX_txn *txn, MDBX_commit_latency *latency) {
     latency->gc_prof.wipes = ptr->gc_prof.wipes;
     latency->gc_prof.flushes = ptr->gc_prof.flushes;
     latency->gc_prof.kicks = ptr->gc_prof.kicks;
-
-    latency->gc_prof.pnl_merge_work.time =
-        osal_monotime_to_16dot16(ptr->gc_prof.work.pnl_merge.time);
-    latency->gc_prof.pnl_merge_work.calls = ptr->gc_prof.work.pnl_merge.calls;
-    latency->gc_prof.pnl_merge_work.volume = ptr->gc_prof.work.pnl_merge.volume;
-    latency->gc_prof.pnl_merge_self.time =
-        osal_monotime_to_16dot16(ptr->gc_prof.self.pnl_merge.time);
-    latency->gc_prof.pnl_merge_self.calls = ptr->gc_prof.self.pnl_merge.calls;
-    latency->gc_prof.pnl_merge_self.volume = ptr->gc_prof.self.pnl_merge.volume;
-
     if (txn == env->me_txn0)
       memset(&ptr->gc_prof, 0, sizeof(ptr->gc_prof));
   } else
@@ -33081,9 +33057,9 @@ __dll_export
         0,
         12,
         3,
-        1,
-        {"2023-01-07T06:52:11+03:00", "fdae126940b2506b0c334af515a47405b967eb37", "e7ed6501144e544e4dbe52992eecc617e20c2c2b",
-         "v0.12.3-1-ge7ed6501"},
+        0,
+        {"2023-01-07T00:11:51+03:00", "7c6941447b4b70d0657d92e9375af0ecfb3e4c71", "f1fdb88938c07037e5bef12c884eca47b7437fac",
+         "v0.12.3-0-gf1fdb889"},
         sourcery};
 
 __dll_export

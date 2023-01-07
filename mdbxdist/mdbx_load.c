@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY f48c42d6ef4b12565f7497e27052b47ce77d768fcce06857da618195614c8a59_v0_12_3_1_ge7ed6501
+#define MDBX_BUILD_SOURCERY 94856b76f9a50f2597880f73c2b68302ac986f96c44020eedd2b26d544e8b9c8_v0_12_3_0_gf1fdb889
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2052,7 +2052,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 /** Controls profiling of GC search and updates. */
 #ifndef MDBX_ENABLE_PROFGC
-#define MDBX_ENABLE_PROFGC 1
+#define MDBX_ENABLE_PROFGC 0
 #elif !(MDBX_ENABLE_PROFGC == 0 || MDBX_ENABLE_PROFGC == 1)
 #error MDBX_ENABLE_PROFGC must be defined as 0 or 1
 #endif /* MDBX_ENABLE_PROFGC */
@@ -3003,12 +3003,6 @@ typedef struct profgc_stat {
   uint32_t spe_counter;
   /* page faults (hard page faults) */
   uint32_t majflt;
-  /* Для разборок с pnl_merge() */
-  struct {
-    uint64_t time;
-    uint64_t volume;
-    uint32_t calls;
-  } pnl_merge;
 } profgc_stat_t;
 
 /* Statistics of page operations overall of all (running, completed and aborted)
