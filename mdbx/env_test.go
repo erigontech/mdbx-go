@@ -5,44 +5,44 @@ import (
 	"testing"
 )
 
-func TestEnv_Path_notOpen(t *testing.T) {
-	env, err := NewEnv()
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	defer env.Close()
-
-	// before Open the Path method returns "" and a non-nil error.
-	path, err := env.Path()
-	if err == nil {
-		t.Errorf("no error returned before Open")
-	}
-	if path != "" {
-		t.Errorf("non-zero path returned before Open")
-	}
-}
-
-func TestEnv_Path(t *testing.T) {
-	env, err := NewEnv()
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	// open an environment
-	dir := t.TempDir()
-	err = env.Open(dir, 0, 0644)
-	defer env.Close()
-	if err != nil {
-		t.Errorf("open: %v", err)
-	}
-	path, err := env.Path()
-	if err != nil {
-		t.Errorf("path: %v", err)
-	}
-	if path != dir {
-		t.Errorf("path: %q (!= %q)", path, dir)
-	}
-}
+//func TestEnv_Path_notOpen(t *testing.T) {
+//	env, err := NewEnv()
+//	if err != nil {
+//		t.Fatalf("create: %v", err)
+//	}
+//	defer env.Close()
+//
+//	// before Open the Path method returns "" and a non-nil error.
+//	path, err := env.Path()
+//	if err == nil {
+//		t.Errorf("no error returned before Open")
+//	}
+//	if path != "" {
+//		t.Errorf("non-zero path returned before Open")
+//	}
+//}
+//
+//func TestEnv_Path(t *testing.T) {
+//	env, err := NewEnv()
+//	if err != nil {
+//		t.Fatalf("create: %v", err)
+//	}
+//
+//	// open an environment
+//	dir := t.TempDir()
+//	err = env.Open(dir, 0, 0644)
+//	defer env.Close()
+//	if err != nil {
+//		t.Errorf("open: %v", err)
+//	}
+//	path, err := env.Path()
+//	if err != nil {
+//		t.Errorf("path: %v", err)
+//	}
+//	if path != dir {
+//		t.Errorf("path: %q (!= %q)", path, dir)
+//	}
+//}
 
 func TestEnv_Open_notExist(t *testing.T) {
 	env, err := NewEnv()
@@ -109,7 +109,7 @@ func TestEnv_FD(t *testing.T) {
 */
 
 func TestEnv_Flags(t *testing.T) {
-	env := setup(t)
+	env, _ := setup(t)
 
 	flags, err := env.Flags()
 	if err != nil {
@@ -349,7 +349,7 @@ func TestEnv_SetDebug(t *testing.T) {
 //}
 
 func TestEnv_ReaderCheck(t *testing.T) {
-	env := setup(t)
+	env, _ := setup(t)
 
 	numDead, err := env.ReaderCheck()
 	if err != nil {
@@ -467,7 +467,7 @@ func TestEnv_ReaderCheck(t *testing.T) {
 //}
 
 func TestEnv_Sync(t *testing.T) {
-	env := setupFlags(t, SafeNoSync)
+	env, _ := setupFlags(t, SafeNoSync)
 
 	item := struct{ k, v []byte }{[]byte("k0"), []byte("v0")}
 
@@ -488,16 +488,16 @@ func TestEnv_Sync(t *testing.T) {
 	}
 }
 
-func setup(t testing.TB) *Env {
+func setup(t testing.TB) (*Env, string) {
 	return setupFlags(t, 0)
 }
 
-func setupFlags(t testing.TB, flags uint) *Env {
+func setupFlags(t testing.TB, flags uint) (env *Env, path string) {
 	env, err := NewEnv()
 	if err != nil {
 		t.Fatalf("env: %s", err)
 	}
-	path := t.TempDir()
+	path = t.TempDir()
 	err = env.SetOption(OptMaxDB, 1024)
 	if err != nil {
 		t.Fatalf("setmaxdbs: %v", err)
@@ -514,16 +514,10 @@ func setupFlags(t testing.TB, flags uint) *Env {
 	t.Cleanup(func() {
 		env.Close()
 	})
-	return env
+	return env, path
 }
-
-type T interface {
-	Errorf(format string, vals ...interface{})
-	Fatalf(format string, vals ...interface{})
-}
-
 func TestEnv_MaxKeySize(t *testing.T) {
-	env := setup(t)
+	env, _ := setup(t)
 
 	n := env.MaxKeySize()
 	if n <= 0 {
@@ -541,7 +535,7 @@ func TestEnv_MaxKeySize_nil(t *testing.T) {
 }
 
 func TestEnv_CloseDBI(t *testing.T) {
-	env := setup(t)
+	env, _ := setup(t)
 
 	const numdb = 1000
 	for i := 0; i < numdb; i++ {

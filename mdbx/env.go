@@ -315,15 +315,18 @@ type EnvInfoGeo struct {
 	Grow    uint64
 }
 type EnfInfoPageOps struct {
-	Newly   uint64        /**< Quantity of a new pages added */
-	Cow     uint64        /**< Quantity of pages copied for update */
-	Clone   uint64        /**< Quantity of parent's dirty pages clones for nested transactions */
-	Split   uint64        /**< Page splits */
-	Merge   uint64        /**< Page merges */
-	Spill   uint64        /**< Quantity of spilled dirty pages */
-	Unspill uint64        /**< Quantity of unspilled/reloaded pages */
-	Wops    uint64        /**< Number of explicit write operations (not a pages) to a disk */
-	Gcrtime time.Duration /**< Time spent loading and searching inside GC */
+	Newly    uint64 /**< Quantity of a new pages added */
+	Cow      uint64 /**< Quantity of pages copied for update */
+	Clone    uint64 /**< Quantity of parent's dirty pages clones for nested transactions */
+	Split    uint64 /**< Page splits */
+	Merge    uint64 /**< Page merges */
+	Spill    uint64 /**< Quantity of spilled dirty pages */
+	Unspill  uint64 /**< Quantity of unspilled/reloaded pages */
+	Wops     uint64 /**< Number of explicit write operations (not a pages) to a disk */
+	Minicore uint64 /**< Number of mincore() calls */
+	Prefault uint64 /**< Number of prefault write operations (not a pages) */
+	Msync    uint64 /**< Number of explicit write operations (not a pages) to a disk */
+	Fsync    uint64 /**< Number of explicit write operations (not a pages) to a disk */
 }
 
 // EnvInfo contains information an environment.
@@ -343,6 +346,7 @@ type EnvInfo struct {
 	NumReaders        uint          // maximum number of threads used in the environment
 	PageSize          uint          //
 	SystemPageSize    uint          //
+	MiLastPgNo        uint64        //
 	AutoSyncThreshold uint          //
 	SinceSync         time.Duration //
 	AutosyncPeriod    time.Duration //
@@ -378,15 +382,18 @@ func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
 			Grow:    uint64(_info.mi_geo.grow),
 		},
 		PageOps: EnfInfoPageOps{
-			Newly:   uint64(_info.mi_pgop_stat.newly),
-			Cow:     uint64(_info.mi_pgop_stat.cow),
-			Clone:   uint64(_info.mi_pgop_stat.clone),
-			Split:   uint64(_info.mi_pgop_stat.split),
-			Merge:   uint64(_info.mi_pgop_stat.merge),
-			Spill:   uint64(_info.mi_pgop_stat.spill),
-			Unspill: uint64(_info.mi_pgop_stat.unspill),
-			Wops:    uint64(_info.mi_pgop_stat.wops),
-			Gcrtime: toDurationU64(_info.mi_pgop_stat.gcrtime_seconds16dot16),
+			Newly:    uint64(_info.mi_pgop_stat.newly),
+			Cow:      uint64(_info.mi_pgop_stat.cow),
+			Clone:    uint64(_info.mi_pgop_stat.clone),
+			Split:    uint64(_info.mi_pgop_stat.split),
+			Merge:    uint64(_info.mi_pgop_stat.merge),
+			Spill:    uint64(_info.mi_pgop_stat.spill),
+			Unspill:  uint64(_info.mi_pgop_stat.unspill),
+			Wops:     uint64(_info.mi_pgop_stat.wops),
+			Prefault: uint64(_info.mi_pgop_stat.prefault),
+			Minicore: uint64(_info.mi_pgop_stat.mincore),
+			Msync:    uint64(_info.mi_pgop_stat.msync),
+			Fsync:    uint64(_info.mi_pgop_stat.fsync),
 		},
 		LastPNO:        int64(_info.mi_last_pgno),
 		LastTxnID:      int64(_info.mi_recent_txnid),
@@ -394,6 +401,7 @@ func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
 		NumReaders:     uint(_info.mi_numreaders),
 		PageSize:       uint(_info.mi_dxb_pagesize),
 		SystemPageSize: uint(_info.mi_sys_pagesize),
+		MiLastPgNo:     uint64(_info.mi_last_pgno),
 
 		AutoSyncThreshold: uint(_info.mi_autosync_threshold),
 		SinceSync:         toDuration(_info.mi_since_sync_seconds16dot16),
@@ -444,22 +452,6 @@ func (env *Env) Flags() (uint, error) {
 func (env *Env) SetDebug(logLvl LogLvl, dbg int, logger *C.MDBX_debug_func) error {
 	_ = C.mdbx_setup_debug(logLvl, C.MDBX_debug_flags_t(dbg), logger)
 	return nil
-}
-
-// Path returns the path argument passed to Open.  Path returns a non-nil error
-// if env.Open() was not previously called.
-//
-// See mdbx_env_get_path.
-func (env *Env) Path() (string, error) {
-	var cpath *C.char
-	ret := C.mdbx_env_get_path(env._env, &cpath)
-	if ret != success {
-		return "", operrno("mdbx_env_get_path", ret)
-	}
-	if cpath == nil {
-		return "", errNotOpen
-	}
-	return C.GoString(cpath), nil
 }
 
 func (env *Env) SetOption(option uint, value uint64) error {

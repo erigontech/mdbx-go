@@ -27,7 +27,7 @@ const (
 	DupSort    = C.MDBX_DUPSORT    // Use sorted duplicates.
 	DupFixed   = C.MDBX_DUPFIXED   // Duplicate items have a fixed size (DupSort).
 	ReverseDup = C.MDBX_REVERSEDUP // Reverse duplicate values (DupSort).
-	Create     = C.MDBX_CREATE     // Create DB if not already existing.
+	Create     = C.MDBX_CREATE     // Createt DB if not already existing.
 	DBAccede   = C.MDBX_DB_ACCEDE  // Use sorted duplicates.
 )
 
@@ -194,12 +194,58 @@ func (txn *Txn) Commit() (CommitLatency, error) {
 
 type CommitLatency struct {
 	Preparation time.Duration
-	GC          time.Duration
+	GCWallClock time.Duration
+	GCCpuTime   time.Duration
 	Audit       time.Duration
 	Write       time.Duration
 	Sync        time.Duration
 	Ending      time.Duration
 	Whole       time.Duration
+	GCDetails   CommitLatencyGC
+}
+
+type CommitLatencyGC struct {
+	/** \brief Время затраченное на чтение и поиск внтури GC
+	 *  ради данных пользователя. */
+	WorkRtime time.Duration
+	/** \brief Количество циклов поиска внутри GC при выделении страниц
+	 *  ради данных пользователя. */
+	WorkRsteps uint32
+	/** \brief Количество запросов на выделение последовательностей страниц
+	 *  ради данных пользователя. */
+	WorkRxpages uint32
+	WorkMajflt  uint32
+	SelfMajflt  uint32
+	WorkCounter uint32
+	SelfCounter uint32
+
+	//WorkPnlMergeTime   time.Duration
+	//WorkPnlMergeVolume uint64
+	//WorkPnlMergeCalls  uint32
+	//
+	//SelfPnlMergeTime   time.Duration
+	//SelfPnlMergeVolume uint64
+	//SelfPnlMergeCalls  uint32
+
+	/** \brief Время затраченное на чтение и поиск внтури GC
+	 *  для целей поддержки и обновления самой GC. */
+	SelfRtime time.Duration
+	SelfXtime time.Duration
+	WorkXtime time.Duration
+	/** \brief Количество циклов поиска внутри GC при выделении страниц
+	 *  для целей поддержки и обновления самой GC. */
+	SelfRsteps uint32
+	/** \brief Количество запросов на выделение последовательностей страниц
+	 *  для самой GC. */
+	SelfXpages uint32
+	/** \brief Количество итераций обновления GC,
+	 *  больше 1 если были повторы/перезапуски. */
+	Wloops uint32
+	/** \brief Количество итераций слияния записей GC. */
+	Coalescences uint32
+	Wipes        uint32
+	Flushes      uint32
+	Kicks        uint32
 }
 
 func (txn *Txn) commit() (CommitLatency, error) {
@@ -208,12 +254,37 @@ func (txn *Txn) commit() (CommitLatency, error) {
 	txn.clearTxn()
 	s := CommitLatency{
 		Preparation: toDuration(_stat.preparation),
-		GC:          toDuration(_stat.gc),
+		GCWallClock: toDuration(_stat.gc_wallclock),
+		GCCpuTime:   toDuration(_stat.gc_cputime),
 		Audit:       toDuration(_stat.audit),
 		Write:       toDuration(_stat.write),
 		Sync:        toDuration(_stat.sync),
 		Ending:      toDuration(_stat.ending),
 		Whole:       toDuration(_stat.whole),
+		GCDetails: CommitLatencyGC{
+			WorkRtime:   toDuration(_stat.gc_prof.work_rtime_monotonic),
+			WorkRsteps:  uint32(_stat.gc_prof.work_rsteps),
+			WorkRxpages: uint32(_stat.gc_prof.work_xpages),
+			WorkMajflt:  uint32(_stat.gc_prof.work_majflt),
+			//WorkPnlMergeTime:   toDuration(_stat.gc_prof.pnl_merge_work.time),
+			//WorkPnlMergeVolume: uint64(_stat.gc_prof.pnl_merge_work.volume),
+			//WorkPnlMergeCalls:  uint32(_stat.gc_prof.pnl_merge_work.calls),
+			//SelfPnlMergeTime:   toDuration(_stat.gc_prof.pnl_merge_self.time),
+			//SelfPnlMergeVolume: uint64(_stat.gc_prof.pnl_merge_self.volume),
+			//SelfPnlMergeCalls:  uint32(_stat.gc_prof.pnl_merge_self.calls),
+			SelfRtime:    toDuration(_stat.gc_prof.self_rtime_monotonic),
+			SelfXtime:    toDuration(_stat.gc_prof.self_xtime_cpu),
+			WorkXtime:    toDuration(_stat.gc_prof.work_xtime_cpu),
+			SelfRsteps:   uint32(_stat.gc_prof.self_rsteps),
+			SelfXpages:   uint32(_stat.gc_prof.self_xpages),
+			Wloops:       uint32(_stat.gc_prof.wloops),
+			Coalescences: uint32(_stat.gc_prof.coalescences),
+			Wipes:        uint32(_stat.gc_prof.wipes),
+			Flushes:      uint32(_stat.gc_prof.flushes),
+			Kicks:        uint32(_stat.gc_prof.kicks),
+			SelfCounter:  uint32(_stat.gc_prof.self_counter),
+			WorkCounter:  uint32(_stat.gc_prof.work_counter),
+		},
 	}
 	if ret != success {
 		return s, operrno("mdbx_txn_commit_ex", ret)
