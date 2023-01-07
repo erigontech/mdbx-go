@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 990243f267b7eedd3e096d948582a6d343600fa9de6ba48af5ec85d0d20ebd3d_v0_12_2_101_g25e5ffe6
+#define MDBX_BUILD_SOURCERY f48c42d6ef4b12565f7497e27052b47ce77d768fcce06857da618195614c8a59_v0_12_3_1_ge7ed6501
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1218,8 +1218,10 @@ osal_syspagesize(void) {
 
 #if defined(_WIN32) || defined(_WIN64)
 typedef wchar_t pathchar_t;
+#define MDBX_PRIsPATH "ls"
 #else
 typedef char pathchar_t;
+#define MDBX_PRIsPATH "s"
 #endif
 
 typedef struct osal_mmap {
@@ -1542,6 +1544,19 @@ enum osal_openfile_purpose {
   MDBX_OPEN_DELETE
 };
 
+MDBX_MAYBE_UNUSED static __inline bool osal_isdirsep(pathchar_t c) {
+  return
+#if defined(_WIN32) || defined(_WIN64)
+      c == '\\' ||
+#endif
+      c == '/';
+}
+
+MDBX_INTERNAL_FUNC bool osal_pathequal(const pathchar_t *l, const pathchar_t *r,
+                                       size_t len);
+MDBX_INTERNAL_FUNC pathchar_t *osal_fileext(const pathchar_t *pathname,
+                                            size_t len);
+MDBX_INTERNAL_FUNC int osal_fileexists(const pathchar_t *pathname);
 MDBX_INTERNAL_FUNC int osal_openfile(const enum osal_openfile_purpose purpose,
                                      const MDBX_env *env,
                                      const pathchar_t *pathname,

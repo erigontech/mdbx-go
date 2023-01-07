@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 990243f267b7eedd3e096d948582a6d343600fa9de6ba48af5ec85d0d20ebd3d_v0_12_2_101_g25e5ffe6
+#define MDBX_BUILD_SOURCERY f48c42d6ef4b12565f7497e27052b47ce77d768fcce06857da618195614c8a59_v0_12_3_1_ge7ed6501
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1194,8 +1194,10 @@ osal_syspagesize(void) {
 
 #if defined(_WIN32) || defined(_WIN64)
 typedef wchar_t pathchar_t;
+#define MDBX_PRIsPATH "ls"
 #else
 typedef char pathchar_t;
+#define MDBX_PRIsPATH "s"
 #endif
 
 typedef struct osal_mmap {
@@ -1518,6 +1520,19 @@ enum osal_openfile_purpose {
   MDBX_OPEN_DELETE
 };
 
+MDBX_MAYBE_UNUSED static __inline bool osal_isdirsep(pathchar_t c) {
+  return
+#if defined(_WIN32) || defined(_WIN64)
+      c == '\\' ||
+#endif
+      c == '/';
+}
+
+MDBX_INTERNAL_FUNC bool osal_pathequal(const pathchar_t *l, const pathchar_t *r,
+                                       size_t len);
+MDBX_INTERNAL_FUNC pathchar_t *osal_fileext(const pathchar_t *pathname,
+                                            size_t len);
+MDBX_INTERNAL_FUNC int osal_fileexists(const pathchar_t *pathname);
 MDBX_INTERNAL_FUNC int osal_openfile(const enum osal_openfile_purpose purpose,
                                      const MDBX_env *env,
                                      const pathchar_t *pathname,
@@ -7486,6 +7501,9 @@ __cold const char *mdbx_liberr2str(int errnum) {
   case MDBX_TXN_OVERLAPPING:
     return "MDBX_TXN_OVERLAPPING: Overlapping read and write transactions for"
            " the current thread";
+  case MDBX_DUPLICATED_CLK:
+    return "MDBX_DUPLICATED_CLK: Alternative/Duplicate LCK-file is exists, "
+           "please keep one and remove unused other";
   default:
     return NULL;
   }
@@ -18494,20 +18512,15 @@ typedef struct {
   size_t ent_len;
 } MDBX_handle_env_pathname;
 
-static bool path_equal(const pathchar_t *l, const pathchar_t *r, size_t len) {
-#if defined(_WIN32) || defined(_WIN64)
-  while (len > 0) {
-    pathchar_t a = *l++;
-    pathchar_t b = *r++;
-    a = (a == '\\') ? '/' : a;
-    b = (b == '\\') ? '/' : b;
-    if (a != b)
-      return false;
+__cold static int check_alternative_lck_absent(const pathchar_t *lck_pathname) {
+  int err = osal_fileexists(lck_pathname);
+  if (unlikely(err != MDBX_RESULT_FALSE)) {
+    if (err == MDBX_RESULT_TRUE)
+      err = MDBX_DUPLICATED_CLK;
+    ERROR("Alternative/Duplicate LCK-file '%" MDBX_PRIsPATH "' error %d",
+          lck_pathname, err);
   }
-  return true;
-#else
-  return memcmp(l, r, len * sizeof(pathchar_t)) == 0;
-#endif
+  return err;
 }
 
 __cold static int handle_env_pathname(MDBX_handle_env_pathname *ctx,
@@ -18548,7 +18561,7 @@ __cold static int handle_env_pathname(MDBX_handle_env_pathname *ctx,
     if (rc != MDBX_ENOFILE)
       return rc;
     if (mode == 0 || (*flags & MDBX_RDONLY) != 0)
-      /* can't open existing */
+      /* can't open non-existing */
       return rc /* MDBX_ENOFILE */;
 
     /* auto-create directory if requested */
@@ -18582,37 +18595,74 @@ __cold static int handle_env_pathname(MDBX_handle_env_pathname *ctx,
   assert(dxb_name[0] == '/' && lck_name[0] == '/');
   const size_t pathname_len = strlen(pathname);
 #endif
-  assert(lock_suffix[0] != '\\' && lock_suffix[0] != '/');
+  assert(!osal_isdirsep(lock_suffix[0]));
   ctx->ent_len = pathname_len;
   static const size_t dxb_name_len = ARRAY_LENGTH(dxb_name) - 1;
-  if ((*flags & MDBX_NOSUBDIR) && ctx->ent_len > dxb_name_len &&
-      path_equal(pathname + ctx->ent_len - dxb_name_len, dxb_name,
-                 dxb_name_len)) {
-    *flags -= MDBX_NOSUBDIR;
-    ctx->ent_len -= dxb_name_len;
+  if (*flags & MDBX_NOSUBDIR) {
+    if (ctx->ent_len > dxb_name_len &&
+        osal_pathequal(pathname + ctx->ent_len - dxb_name_len, dxb_name,
+                       dxb_name_len)) {
+      *flags -= MDBX_NOSUBDIR;
+      ctx->ent_len -= dxb_name_len;
+    } else if (ctx->ent_len == dxb_name_len - 1 && osal_isdirsep(dxb_name[0]) &&
+               osal_isdirsep(lck_name[0]) &&
+               osal_pathequal(pathname + ctx->ent_len - dxb_name_len + 1,
+                              dxb_name + 1, dxb_name_len - 1)) {
+      *flags -= MDBX_NOSUBDIR;
+      ctx->ent_len -= dxb_name_len - 1;
+    }
   }
 
-  const size_t bytes_needed =
-      sizeof(pathchar_t) * ctx->ent_len * 2 +
-      ((*flags & MDBX_NOSUBDIR) ? sizeof(lock_suffix) + sizeof(pathchar_t)
-                                : sizeof(lck_name) + sizeof(dxb_name));
+  const size_t suflen_with_NOSUBDIR = sizeof(lock_suffix) + sizeof(pathchar_t);
+  const size_t suflen_without_NOSUBDIR = sizeof(lck_name) + sizeof(dxb_name);
+  const size_t enogh4any = (suflen_with_NOSUBDIR > suflen_without_NOSUBDIR)
+                               ? suflen_with_NOSUBDIR
+                               : suflen_without_NOSUBDIR;
+  const size_t bytes_needed = sizeof(pathchar_t) * ctx->ent_len * 2 + enogh4any;
   ctx->buffer_for_free = osal_malloc(bytes_needed);
   if (!ctx->buffer_for_free)
     return MDBX_ENOMEM;
 
   ctx->dxb = ctx->buffer_for_free;
-  ctx->lck = ctx->dxb + ctx->ent_len + 1;
-  memcpy(ctx->dxb, pathname, sizeof(pathchar_t) * (ctx->ent_len + 1));
-  if (*flags & MDBX_NOSUBDIR) {
-    memcpy(ctx->lck + ctx->ent_len, lock_suffix, sizeof(lock_suffix));
-  } else {
-    ctx->lck += dxb_name_len;
-    memcpy(ctx->lck + ctx->ent_len, lck_name, sizeof(lck_name));
-    memcpy(ctx->dxb + ctx->ent_len, dxb_name, sizeof(dxb_name));
-  }
-  memcpy(ctx->lck, pathname, sizeof(pathchar_t) * ctx->ent_len);
+  ctx->lck = ctx->dxb + ctx->ent_len + dxb_name_len + 1;
+  pathchar_t *const buf = ctx->buffer_for_free;
+  rc = MDBX_SUCCESS;
+  if (ctx->ent_len) {
+    memcpy(buf, pathname, sizeof(pathchar_t) * pathname_len);
+    if (*flags & MDBX_NOSUBDIR) {
+      const pathchar_t *const lck_ext =
+          osal_fileext(lck_name, ARRAY_LENGTH(lck_name));
+      if (lck_ext) {
+        pathchar_t *pathname_ext = osal_fileext(buf, pathname_len);
+        memcpy(pathname_ext ? pathname_ext : buf + pathname_len, lck_ext,
+               sizeof(pathchar_t) * (ARRAY_END(lck_name) - lck_ext));
+        rc = check_alternative_lck_absent(buf);
+      }
+    } else {
+      memcpy(buf + ctx->ent_len, dxb_name, sizeof(dxb_name));
+      memcpy(buf + ctx->ent_len + dxb_name_len, lock_suffix,
+             sizeof(lock_suffix));
+      rc = check_alternative_lck_absent(buf);
+    }
 
-  return MDBX_SUCCESS;
+    memcpy(ctx->dxb, pathname, sizeof(pathchar_t) * (ctx->ent_len + 1));
+    memcpy(ctx->lck, pathname, sizeof(pathchar_t) * ctx->ent_len);
+    if (*flags & MDBX_NOSUBDIR) {
+      memcpy(ctx->lck + ctx->ent_len, lock_suffix, sizeof(lock_suffix));
+    } else {
+      memcpy(ctx->dxb + ctx->ent_len, dxb_name, sizeof(dxb_name));
+      memcpy(ctx->lck + ctx->ent_len, lck_name, sizeof(lck_name));
+    }
+  } else {
+    assert(!(*flags & MDBX_NOSUBDIR));
+    memcpy(buf, dxb_name + 1, sizeof(dxb_name) - sizeof(pathchar_t));
+    memcpy(buf + dxb_name_len - 1, lock_suffix, sizeof(lock_suffix));
+    rc = check_alternative_lck_absent(buf);
+
+    memcpy(ctx->dxb, dxb_name + 1, sizeof(dxb_name) - sizeof(pathchar_t));
+    memcpy(ctx->lck, lck_name + 1, sizeof(lck_name) - sizeof(pathchar_t));
+  }
+  return rc;
 }
 
 __cold int mdbx_env_delete(const char *pathname, MDBX_env_delete_mode_t mode) {
@@ -30711,6 +30761,50 @@ MDBX_INTERNAL_FUNC int osal_removedirectory(const pathchar_t *pathname) {
 #endif
 }
 
+MDBX_INTERNAL_FUNC int osal_fileexists(const pathchar_t *pathname) {
+#if defined(_WIN32) || defined(_WIN64)
+  if (GetFileAttributesW(pathname) != INVALID_FILE_ATTRIBUTES)
+    return MDBX_RESULT_TRUE;
+  int err = GetLastError();
+  return (err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND)
+             ? MDBX_RESULT_FALSE
+             : err;
+#else
+  if (access(pathname, F_OK) == 0)
+    return MDBX_RESULT_TRUE;
+  int err = errno;
+  return (err == ENOENT || err == ENOTDIR) ? MDBX_RESULT_FALSE : err;
+#endif
+}
+
+MDBX_INTERNAL_FUNC pathchar_t *osal_fileext(const pathchar_t *pathname,
+                                            size_t len) {
+  const pathchar_t *ext = nullptr;
+  for (size_t i = 0; i < len && pathname[i]; i++)
+    if (pathname[i] == '.')
+      ext = pathname + i;
+    else if (osal_isdirsep(pathname[i]))
+      ext = nullptr;
+  return (pathchar_t *)ext;
+}
+
+MDBX_INTERNAL_FUNC bool osal_pathequal(const pathchar_t *l, const pathchar_t *r,
+                                       size_t len) {
+#if defined(_WIN32) || defined(_WIN64)
+  for (size_t i = 0; i < len; ++i) {
+    pathchar_t a = l[i];
+    pathchar_t b = r[i];
+    a = (a == '\\') ? '/' : a;
+    b = (b == '\\') ? '/' : b;
+    if (a != b)
+      return false;
+  }
+  return true;
+#else
+  return memcmp(l, r, len * sizeof(pathchar_t)) == 0;
+#endif
+}
+
 MDBX_INTERNAL_FUNC int osal_openfile(const enum osal_openfile_purpose purpose,
                                      const MDBX_env *env,
                                      const pathchar_t *pathname,
@@ -32986,10 +33080,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         12,
-        2,
-        101,
-        {"2023-01-04T00:21:49+03:00", "c1b35de5aea74ed0ac4212076615578a06dc7eea", "25e5ffe69909b59da14376844b899a9bcc93db6f",
-         "v0.12.2-101-g25e5ffe6"},
+        3,
+        1,
+        {"2023-01-07T06:52:11+03:00", "fdae126940b2506b0c334af515a47405b967eb37", "e7ed6501144e544e4dbe52992eecc617e20c2c2b",
+         "v0.12.3-1-ge7ed6501"},
         sourcery};
 
 __dll_export
