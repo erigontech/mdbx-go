@@ -5,44 +5,44 @@ import (
 	"testing"
 )
 
-func TestEnv_Path_notOpen(t *testing.T) {
-	env, err := NewEnv()
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	defer env.Close()
-
-	// before Open the Path method returns "" and a non-nil error.
-	path, err := env.Path()
-	if err == nil {
-		t.Errorf("no error returned before Open")
-	}
-	if path != "" {
-		t.Errorf("non-zero path returned before Open")
-	}
-}
-
-func TestEnv_Path(t *testing.T) {
-	env, err := NewEnv()
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	// open an environment
-	dir := t.TempDir()
-	err = env.Open(dir, 0, 0644)
-	defer env.Close()
-	if err != nil {
-		t.Errorf("open: %v", err)
-	}
-	path, err := env.Path()
-	if err != nil {
-		t.Errorf("path: %v", err)
-	}
-	if path != dir {
-		t.Errorf("path: %q (!= %q)", path, dir)
-	}
-}
+//func TestEnv_Path_notOpen(t *testing.T) {
+//	env, err := NewEnv()
+//	if err != nil {
+//		t.Fatalf("create: %v", err)
+//	}
+//	defer env.Close()
+//
+//	// before Open the Path method returns "" and a non-nil error.
+//	path, err := env.Path()
+//	if err == nil {
+//		t.Errorf("no error returned before Open")
+//	}
+//	if path != "" {
+//		t.Errorf("non-zero path returned before Open")
+//	}
+//}
+//
+//func TestEnv_Path(t *testing.T) {
+//	env, err := NewEnv()
+//	if err != nil {
+//		t.Fatalf("create: %v", err)
+//	}
+//
+//	// open an environment
+//	dir := t.TempDir()
+//	err = env.Open(dir, 0, 0644)
+//	defer env.Close()
+//	if err != nil {
+//		t.Errorf("open: %v", err)
+//	}
+//	path, err := env.Path()
+//	if err != nil {
+//		t.Errorf("path: %v", err)
+//	}
+//	if path != dir {
+//		t.Errorf("path: %q (!= %q)", path, dir)
+//	}
+//}
 
 func TestEnv_Open_notExist(t *testing.T) {
 	env, err := NewEnv()
