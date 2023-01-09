@@ -12,30 +12,11 @@ import (
 )
 
 func TestCursorAppend(t *testing.T) {
-	env, err := NewEnv()
-	if err != nil {
-		panic(err)
-	}
-	defer env.Close()
-
-	err = env.SetOption(OptMaxDB, 1024)
-	if err != nil {
-		panic(err)
-	}
-	path := t.TempDir()
-	const pageSize = 4096
-	err = env.SetGeometry(-1, -1, 64*1024*pageSize, -1, -1, pageSize)
-	if err != nil {
-		panic(err)
-	}
-	err = env.Open(path, 0, 0664)
-	if err != nil {
-		panic(err)
-	}
+	env, _ := setup(t)
 
 	var db DBI
-	err = env.Update(func(txn *Txn) (err error) {
-		db, err = txn.OpenDBI("db", Create, nil, nil)
+	err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBI("db", Create|DupSort, nil, nil)
 		if err != nil {
 			return err
 		}
@@ -50,15 +31,15 @@ func TestCursorAppend(t *testing.T) {
 			return err
 		}
 		err = cur.Put([]byte("key1"), []byte("v2"), Append)
-		fmt.Printf("err1: %s\n", err)
+		if err != nil {
+			t.Fatal(err)
+		}
 		err = cur.Put([]byte("key1"), []byte("v1"), Append)
-		fmt.Printf("err2: %s\n", err)
-		if err == nil {
+		if err != nil {
 			t.Fatal(err)
 		}
 		err = cur.Put([]byte("key1"), []byte("v3"), Append)
-		fmt.Printf("err3: %s\n", err)
-		if err == nil {
+		if err != nil {
 			t.Fatal(err)
 		}
 		return nil
