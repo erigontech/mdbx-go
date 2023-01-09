@@ -14,18 +14,11 @@ import (
 func TestCursorAppend(t *testing.T) {
 	env, _ := setup(t)
 
-	var db DBI
 	err := env.Update(func(txn *Txn) (err error) {
-		db, err = txn.OpenDBI("db", Create|DupSort, nil, nil)
+		db, err := txn.OpenDBI("db", Create, nil, nil)
 		if err != nil {
 			return err
 		}
-		return nil
-	})
-	if err != nil {
-		t.Error(err)
-	}
-	err = env.Update(func(txn *Txn) (err error) {
 		cur, err := txn.OpenCursor(db)
 		if err != nil {
 			return err
