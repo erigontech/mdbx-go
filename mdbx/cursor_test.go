@@ -11,6 +11,56 @@ import (
 	"testing"
 )
 
+func TestCursorAppend(t *testing.T) {
+	env, err := NewEnv()
+	if err != nil {
+		panic(err)
+	}
+	defer env.Close()
+
+	err = env.SetOption(OptMaxDB, 1024)
+	if err != nil {
+		panic(err)
+	}
+	path := t.TempDir()
+	const pageSize = 4096
+	err = env.SetGeometry(-1, -1, 64*1024*pageSize, -1, -1, pageSize)
+	if err != nil {
+		panic(err)
+	}
+	err = env.Open(path, 0, 0664)
+	if err != nil {
+		panic(err)
+	}
+
+	var db DBI
+	err = env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBI("db", Create, nil, nil)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+	err = env.Update(func(txn *Txn) (err error) {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		err = cur.Put([]byte("key1"), []byte("v2"), Append)
+		fmt.Printf("err1: %s\n", err)
+		err = cur.Put([]byte("key1"), []byte("v1"), Append)
+		fmt.Printf("err2: %s\n", err)
+		err = cur.Put([]byte("key1"), []byte("v3"), Append)
+		fmt.Printf("err3: %s\n", err)
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
 func TestCursor_Txn(t *testing.T) {
 	env, _ := setup(t)
 
