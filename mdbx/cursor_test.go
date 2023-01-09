@@ -53,8 +53,14 @@ func TestCursorAppend(t *testing.T) {
 		fmt.Printf("err1: %s\n", err)
 		err = cur.Put([]byte("key1"), []byte("v1"), Append)
 		fmt.Printf("err2: %s\n", err)
+		if err == nil {
+			t.Fatal(err)
+		}
 		err = cur.Put([]byte("key1"), []byte("v3"), Append)
 		fmt.Printf("err3: %s\n", err)
+		if err == nil {
+			t.Fatal(err)
+		}
 		return nil
 	})
 	if err != nil {
