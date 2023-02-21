@@ -131,7 +131,7 @@ package mdbx
 #cgo windows CFLAGS:  -O2 -g -DMDBX_BUILD_FLAGS='' -DNDEBUG=1 -std=gnu11 -fvisibility=hidden -ffast-math -fexceptions -fno-common -W -Wno-deprecated-declarations -Wno-bad-function-cast -Wno-cast-function-type -Wall -Wno-format -Wno-format-security -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-unused-function -Wno-format-extra-args -Wno-missing-field-initializers
 
 #cgo windows LDFLAGS: -lntdll
-#cgo linux LDFLAGS: -lrt
+#cgo !android,linux LDFLAGS: -lrt
 */
 import "C"
 
