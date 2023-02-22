@@ -1,11 +1,12 @@
 package mdbx
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 )
 
-func TestName(t *testing.T) {
+func TestEmptyKeysAndValues(t *testing.T) {
 	env, err1 := NewEnv()
 	if err1 != nil {
 		t.Fatalf("Cannot create environment: %s", err1)
@@ -26,30 +27,29 @@ func TestName(t *testing.T) {
 	if err := env.Update(func(txn *Txn) (err error) {
 		db, err = txn.OpenRoot(0)
 		if err != nil {
-			return err
+			panic(err)
 		}
 
 		err = txn.Put(db, nil, []byte{}, NoOverwrite)
 		if err != nil {
-			return fmt.Errorf("put: %v", err)
+			panic(err)
 		}
 		err = txn.Put(db, []byte{}, []byte{}, NoOverwrite)
 		if err == nil { //expect err: MDBX_KEYEXIST
-			panic(1)
+			panic(err)
 		}
 		err = txn.Put(db, []byte{1}, []byte{}, NoOverwrite)
 		if err != nil {
-			return fmt.Errorf("put: %v", err)
+			panic(err)
 		}
 		err = txn.Put(db, []byte{2}, nil, NoOverwrite)
 		if err != nil {
-			return fmt.Errorf("put: %v", err)
+			panic(err)
 		}
 		err = txn.Put(db, []byte{3}, []byte{1}, NoOverwrite)
 		if err != nil {
-			return fmt.Errorf("put: %v", err)
+			panic(err)
 		}
-
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -61,39 +61,42 @@ func TestName(t *testing.T) {
 	} else if stat.Entries != uint64(numEntries) {
 		t.Errorf("Less entry in the database than expected: %d <> %d", stat.Entries, numEntries)
 	}
-	t.Logf("%#v", stat)
-
 	if err := env.View(func(txn *Txn) error {
-		cursor, err := txn.OpenCursor(db)
+		v, err := txn.Get(db, nil)
 		if err != nil {
-			cursor.Close()
-			return fmt.Errorf("cursor: %v", err)
+			panic(err)
 		}
-		bval, err := txn.Get(db, nil)
+		if !bytes.Equal(v, []byte{}) {
+			panic(fmt.Sprintf("%x", v))
+		}
+		v, err = txn.Get(db, []byte{})
 		if err != nil {
-			return fmt.Errorf("cursor get: %v", err)
+			panic(err)
 		}
-		fmt.Printf("k: %#v\n", bval)
-		bval, err = txn.Get(db, []byte{})
+		if !bytes.Equal(v, []byte{}) {
+			panic(fmt.Sprintf("%x", v))
+		}
+		v, err = txn.Get(db, []byte{1})
 		if err != nil {
-			return fmt.Errorf("cursor get: %v", err)
+			panic(err)
 		}
-		fmt.Printf("k: %#v\n", bval)
-		bval, err = txn.Get(db, []byte{1})
+		if !bytes.Equal(v, []byte{}) {
+			panic(fmt.Sprintf("%x", v))
+		}
+		v, err = txn.Get(db, []byte{2})
 		if err != nil {
-			return fmt.Errorf("cursor get: %v", err)
+			panic(err)
 		}
-		fmt.Printf("k: %#v\n", bval)
-		bval, err = txn.Get(db, []byte{2})
+		if !bytes.Equal(v, []byte{}) {
+			panic(fmt.Sprintf("%x", v))
+		}
+		v, err = txn.Get(db, []byte{3})
 		if err != nil {
-			return fmt.Errorf("cursor get: %v", err)
+			panic(err)
 		}
-		fmt.Printf("k: %#v\n", bval)
-		bval, err = txn.Get(db, []byte{3})
-		if err != nil {
-			return fmt.Errorf("cursor get: %v", err)
+		if !bytes.Equal(v, []byte{1}) {
+			panic(fmt.Sprintf("%x", v))
 		}
-		fmt.Printf("k: %#v\n", bval)
 		return nil
 	}); err != nil {
 		t.Fatal(err)
