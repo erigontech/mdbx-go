@@ -497,7 +497,7 @@ func (txn *Txn) subFlag(flags uint, fn TxnOp) error {
 }
 
 func (txn *Txn) bytes(val *C.MDBX_val) []byte {
-	return getBytes(val)
+	return castToBytes(val)
 }
 
 // Get retrieves items from database dbi.  If txn.RawRead is true the slice
@@ -520,7 +520,7 @@ func (txn *Txn) Get(dbi DBI, key []byte) ([]byte, error) {
 		*txn.val = C.MDBX_val{}
 		return nil, err
 	}
-	b := txn.bytes(txn.val)
+	b := castToBytes(txn.val)
 	*txn.val = C.MDBX_val{}
 	return b, nil
 }
@@ -565,7 +565,7 @@ func (txn *Txn) PutReserve(dbi DBI, key []byte, n int, flags uint) ([]byte, erro
 		*txn.val = C.MDBX_val{}
 		return nil, err
 	}
-	b := getBytes(txn.val)
+	b := castToBytes(txn.val)
 	*txn.val = C.MDBX_val{}
 	return b, nil
 }
