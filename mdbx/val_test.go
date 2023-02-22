@@ -44,8 +44,8 @@ func TestMultiVal_panic(t *testing.T) {
 	WrapMulti([]byte("123"), 2)
 }
 
-func TestValBytes(t *testing.T) {
-	ptr, n := valBytes(nil)
+func TestKeyBytes(t *testing.T) {
+	ptr, n := keyBytes(nil)
 	if len(ptr) == 0 {
 		t.Errorf("unexpected unaddressable slice")
 	}
@@ -54,7 +54,7 @@ func TestValBytes(t *testing.T) {
 	}
 
 	b := []byte("abc")
-	ptr, n = valBytes(b)
+	ptr, n = keyBytes(b)
 	if len(ptr) == 0 {
 		t.Errorf("unexpected unaddressable slice")
 	}
@@ -73,13 +73,5 @@ func TestVal(t *testing.T) {
 	}
 	if &p[0] != &orig[0] {
 		t.Errorf("getBytes() is not the same slice as original")
-	}
-
-	p = getBytesCopy(val)
-	if !bytes.Equal(p, orig) {
-		t.Errorf("getBytesCopy() not the same as original data: %q", p)
-	}
-	if &p[0] == &orig[0] {
-		t.Errorf("getBytesCopy() overlaps with orignal slice")
 	}
 }
