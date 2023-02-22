@@ -157,10 +157,10 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 		key = setkey
 	} else {
 		if op != LastDup {
-			key = c.txn.bytes(c.txn.key)
+			key = castToBytes(c.txn.key)
 		}
 	}
-	val = c.txn.bytes(c.txn.val)
+	val = castToBytes(c.txn.val)
 
 	// Clear transaction storage record storage area for future use and to
 	// prevent dangling references.
@@ -260,7 +260,7 @@ func (c *Cursor) PutReserve(key []byte, n int, flags uint) ([]byte, error) {
 		*c.txn.val = C.MDBX_val{}
 		return nil, err
 	}
-	b := getBytes(c.txn.val)
+	b := castToBytes(c.txn.val)
 	*c.txn.val = C.MDBX_val{}
 	return b, nil
 }

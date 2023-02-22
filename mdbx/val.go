@@ -100,15 +100,6 @@ func (m *Multi) Page() []byte {
 	return m.page[:len(m.page):len(m.page)]
 }
 
-var eb = []byte{0}
-
-func keyBytes(b []byte) ([]byte, int) {
-	if len(b) == 0 {
-		return eb, 0
-	}
-	return b, len(b)
-}
-
 func wrapVal(b []byte) *C.MDBX_val {
 	var v unsafe.Pointer
 	if len(b) > 0 {
@@ -120,6 +111,6 @@ func wrapVal(b []byte) *C.MDBX_val {
 	}
 }
 
-func getBytes(val *C.MDBX_val) []byte {
+func castToBytes(val *C.MDBX_val) []byte {
 	return (*[valMaxSize]byte)(val.iov_base)[:val.iov_len:val.iov_len]
 }
