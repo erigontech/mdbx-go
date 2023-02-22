@@ -25,8 +25,8 @@ import (
 // source file malloc.go and the compiler typecheck.go for more information
 // about memory limits and array bound limits.
 //
-//		https://github.com/golang/go/blob/a03bdc3e6bea34abd5077205371e6fb9ef354481/src/runtime/malloc.go#L151-L164
-//		https://github.com/golang/go/blob/36a80c5941ec36d9c44d6f3c068d13201e023b5f/src/cmd/compile/internal/gc/typecheck.go#L383
+//	https://github.com/golang/go/blob/a03bdc3e6bea34abd5077205371e6fb9ef354481/src/runtime/malloc.go#L151-L164
+//	https://github.com/golang/go/blob/36a80c5941ec36d9c44d6f3c068d13201e023b5f/src/cmd/compile/internal/gc/typecheck.go#L383
 //
 // On 64-bit systems, luckily, the value 2^32-1 coincides with the maximum data
 // size for LMDB (MAXDATASIZE).
@@ -48,9 +48,9 @@ type Multi struct {
 // WrapMulti converts a page of contiguous values with stride size into a
 // Multi.  WrapMulti panics if len(page) is not a multiple of stride.
 //
-//		_, val, _ := cursor.Get(nil, nil, lmdb.FirstDup)
-//		_, page, _ := cursor.Get(nil, nil, lmdb.GetMultiple)
-//		multi := lmdb.WrapMulti(page, len(val))
+//	_, val, _ := cursor.Get(nil, nil, lmdb.FirstDup)
+//	_, page, _ := cursor.Get(nil, nil, lmdb.GetMultiple)
+//	multi := lmdb.WrapMulti(page, len(val))
 //
 // See mdb_cursor_get and MDB_GET_MULTIPLE.
 func WrapMulti(page []byte, stride int) *Multi {
@@ -89,8 +89,7 @@ func (m *Multi) Stride() int {
 
 // Size returns the total size of the Multi data and is equal to
 //
-//		m.Len()*m.Stride()
-//
+//	m.Len()*m.Stride()
 func (m *Multi) Size() int {
 	return len(m.page)
 }
@@ -101,27 +100,17 @@ func (m *Multi) Page() []byte {
 	return m.page[:len(m.page):len(m.page)]
 }
 
-var eb = []byte{0}
-
-func valBytes(b []byte) ([]byte, int) {
-	if len(b) == 0 {
-		return eb, 0
-	}
-	return b, len(b)
-}
-
 func wrapVal(b []byte) *C.MDBX_val {
-	p, n := valBytes(b)
+	var v unsafe.Pointer
+	if len(b) > 0 {
+		v = unsafe.Pointer(&b[0])
+	}
 	return &C.MDBX_val{
-		iov_base: unsafe.Pointer(&p[0]),
-		iov_len:  C.size_t(n),
+		iov_base: v,
+		iov_len:  C.size_t(len(b)),
 	}
 }
 
-func getBytes(val *C.MDBX_val) []byte {
+func castToBytes(val *C.MDBX_val) []byte {
 	return (*[valMaxSize]byte)(val.iov_base)[:val.iov_len:val.iov_len]
-}
-
-func getBytesCopy(val *C.MDBX_val) []byte {
-	return C.GoBytes(val.iov_base, C.int(val.iov_len))
 }
