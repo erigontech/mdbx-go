@@ -184,9 +184,13 @@ func (c *Cursor) getVal0(op uint) error {
 //
 // See mdb_cursor_get.
 func (c *Cursor) getVal1(setkey []byte, op uint) error {
+	var k *C.char
+	if len(setkey) > 0 {
+		k = (*C.char)(unsafe.Pointer(&setkey[0]))
+	}
 	ret := C.mdbxgo_cursor_get1(
 		c._c,
-		(*C.char)(unsafe.Pointer(&setkey[0])), C.size_t(len(setkey)),
+		k, C.size_t(len(setkey)),
 		c.txn.key,
 		c.txn.val,
 		C.MDBX_cursor_op(op),
@@ -199,36 +203,38 @@ func (c *Cursor) getVal1(setkey []byte, op uint) error {
 //
 // See mdb_cursor_get.
 func (c *Cursor) getVal2(setkey, setval []byte, op uint) error {
+	var k, v *C.char
+	if len(setkey) > 0 {
+		k = (*C.char)(unsafe.Pointer(&setkey[0]))
+	}
+	if len(setval) > 0 {
+		v = (*C.char)(unsafe.Pointer(&setval[0]))
+	}
 	ret := C.mdbxgo_cursor_get2(
 		c._c,
-		(*C.char)(unsafe.Pointer(&setkey[0])), C.size_t(len(setkey)),
-		(*C.char)(unsafe.Pointer(&setval[0])), C.size_t(len(setval)),
+		k, C.size_t(len(setkey)),
+		v, C.size_t(len(setval)),
 		c.txn.key, c.txn.val,
 		C.MDBX_cursor_op(op),
 	)
 	return operrno("mdbx_cursor_get", ret)
 }
 
-func (c *Cursor) putNilKey(flags uint) error {
-	ret := C.mdbxgo_cursor_put2(c._c, nil, 0, nil, 0, C.MDBX_put_flags_t(flags))
-	return operrno("mdbx_cursor_put", ret)
-}
-
 // Put stores an item in the database.
 //
 // See mdb_cursor_put.
 func (c *Cursor) Put(key, val []byte, flags uint) error {
-	if len(key) == 0 {
-		return c.putNilKey(flags)
+	var k, v *C.char
+	if len(key) > 0 {
+		k = (*C.char)(unsafe.Pointer(&key[0]))
 	}
-	vn := len(val)
-	if vn == 0 {
-		val = []byte{0}
+	if len(val) > 0 {
+		v = (*C.char)(unsafe.Pointer(&val[0]))
 	}
 	ret := C.mdbxgo_cursor_put2(
 		c._c,
-		(*C.char)(unsafe.Pointer(&key[0])), C.size_t(len(key)),
-		(*C.char)(unsafe.Pointer(&val[0])), C.size_t(len(val)),
+		k, C.size_t(len(key)),
+		v, C.size_t(len(val)),
 		C.MDBX_put_flags_t(flags),
 	)
 	return operrno("mdbx_cursor_put", ret)
@@ -238,14 +244,14 @@ func (c *Cursor) Put(key, val []byte, flags uint) error {
 // avoiding a memcopy.  The returned byte slice is only valid in txn's thread,
 // before it has terminated.
 func (c *Cursor) PutReserve(key []byte, n int, flags uint) ([]byte, error) {
-	if len(key) == 0 {
-		return nil, c.putNilKey(flags)
+	var k *C.char
+	if len(key) > 0 {
+		k = (*C.char)(unsafe.Pointer(&key[0]))
 	}
-
 	c.txn.val.iov_len = C.size_t(n)
 	ret := C.mdbxgo_cursor_put1(
 		c._c,
-		(*C.char)(unsafe.Pointer(&key[0])), C.size_t(len(key)),
+		k, C.size_t(len(key)),
 		c.txn.val,
 		C.MDBX_put_flags_t(flags|C.MDBX_RESERVE),
 	)
@@ -265,18 +271,19 @@ func (c *Cursor) PutReserve(key []byte, n int, flags uint) ([]byte, error) {
 //
 // See mdb_cursor_put.
 func (c *Cursor) PutMulti(key []byte, page []byte, stride int, flags uint) error {
-	if len(key) == 0 {
-		return c.putNilKey(flags)
+	var k *C.char
+	if len(key) > 0 {
+		k = (*C.char)(unsafe.Pointer(&key[0]))
 	}
-	if len(page) == 0 {
-		page = []byte{0}
+	var v *C.char
+	if len(page) > 0 {
+		v = (*C.char)(unsafe.Pointer(&page[0]))
 	}
-
 	vn := WrapMulti(page, stride).Len()
 	ret := C.mdbxgo_cursor_putmulti(
 		c._c,
-		(*C.char)(unsafe.Pointer(&key[0])), C.size_t(len(key)),
-		(*C.char)(unsafe.Pointer(&page[0])), C.size_t(vn), C.size_t(stride),
+		k, C.size_t(len(key)),
+		v, C.size_t(vn), C.size_t(stride),
 		C.MDBX_put_flags_t(flags|C.MDBX_MULTIPLE),
 	)
 	return operrno("mdbxgo_cursor_putmulti", ret)

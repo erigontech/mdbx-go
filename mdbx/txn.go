@@ -506,10 +506,13 @@ func (txn *Txn) bytes(val *C.MDBX_val) []byte {
 //
 // See mdbx_get.
 func (txn *Txn) Get(dbi DBI, key []byte) ([]byte, error) {
-	kdata, kn := valBytes(key)
+	var k *C.char
+	if len(key) > 0 {
+		k = (*C.char)(unsafe.Pointer(&key[0]))
+	}
 	ret := C.mdbxgo_get(
 		txn._txn, C.MDBX_dbi(dbi),
-		(*C.char)(unsafe.Pointer(&kdata[0])), C.size_t(kn),
+		k, C.size_t(len(key)),
 		txn.val,
 	)
 	err := operrno("mdbx_get", ret)
@@ -522,29 +525,21 @@ func (txn *Txn) Get(dbi DBI, key []byte) ([]byte, error) {
 	return b, nil
 }
 
-func (txn *Txn) putNilKey(dbi DBI, flags uint) error {
-	// mdbx_put with an empty key will always fail
-	ret := C.mdbxgo_put2(txn._txn, C.MDBX_dbi(dbi), nil, 0, nil, 0, C.MDBX_put_flags_t(flags))
-	return operrno("mdbx_put", ret)
-}
-
 // Put stores an item in database dbi.
 //
 // See mdbx_put.
-func (txn *Txn) Put(dbi DBI, key []byte, val []byte, flags uint) error {
-	kn := len(key)
-	if kn == 0 {
-		return txn.putNilKey(dbi, flags)
+func (txn *Txn) Put(dbi DBI, key, val []byte, flags uint) error {
+	var k, v *C.char
+	if len(key) > 0 {
+		k = (*C.char)(unsafe.Pointer(&key[0]))
 	}
-	vn := len(val)
-	if vn == 0 {
-		val = []byte{0}
+	if len(val) > 0 {
+		v = (*C.char)(unsafe.Pointer(&val[0]))
 	}
-
 	ret := C.mdbxgo_put2(
 		txn._txn, C.MDBX_dbi(dbi),
-		(*C.char)(unsafe.Pointer(&key[0])), C.size_t(kn),
-		(*C.char)(unsafe.Pointer(&val[0])), C.size_t(vn),
+		k, C.size_t(len(key)),
+		v, C.size_t(len(val)),
 		C.MDBX_put_flags_t(flags),
 	)
 	return operrno("mdbx_put", ret)
@@ -554,13 +549,14 @@ func (txn *Txn) Put(dbi DBI, key []byte, val []byte, flags uint) error {
 // avoiding a memcopy.  The returned byte slice is only valid in txn's thread,
 // before it has terminated.
 func (txn *Txn) PutReserve(dbi DBI, key []byte, n int, flags uint) ([]byte, error) {
-	if len(key) == 0 {
-		return nil, txn.putNilKey(dbi, flags)
-	}
 	txn.val.iov_len = C.size_t(n)
+	var k *C.char
+	if len(key) > 0 {
+		k = (*C.char)(unsafe.Pointer(&key[0]))
+	}
 	ret := C.mdbxgo_put1(
 		txn._txn, C.MDBX_dbi(dbi),
-		(*C.char)(unsafe.Pointer(&key[0])), C.size_t(len(key)),
+		k, C.size_t(len(key)),
 		txn.val,
 		C.MDBX_put_flags_t(flags|C.MDBX_RESERVE),
 	)
@@ -579,20 +575,17 @@ func (txn *Txn) PutReserve(dbi DBI, key []byte, n int, flags uint) ([]byte, erro
 //
 // See mdbx_del.
 func (txn *Txn) Del(dbi DBI, key, val []byte) error {
-	kdata, kn := valBytes(key)
-	if val == nil {
-		ret := C.mdbxgo_del(
-			txn._txn, C.MDBX_dbi(dbi),
-			(*C.char)(unsafe.Pointer(&kdata[0])), C.size_t(kn),
-			nil, 0,
-		)
-		return operrno("mdbx_del", ret)
+	var k, v *C.char
+	if len(key) > 0 {
+		k = (*C.char)(unsafe.Pointer(&key[0]))
 	}
-	vdata, vn := valBytes(val)
+	if len(val) > 0 {
+		v = (*C.char)(unsafe.Pointer(&val[0]))
+	}
 	ret := C.mdbxgo_del(
 		txn._txn, C.MDBX_dbi(dbi),
-		(*C.char)(unsafe.Pointer(&kdata[0])), C.size_t(kn),
-		(*C.char)(unsafe.Pointer(&vdata[0])), C.size_t(vn),
+		k, C.size_t(len(key)),
+		v, C.size_t(len(val)),
 	)
 	return operrno("mdbx_del", ret)
 }
@@ -626,12 +619,17 @@ type CmpFunc *C.MDBX_cmp_func
 
 // Cmp - this func follow bytes.Compare return style: The result will be 0 if a==b, -1 if a < b, and +1 if a > b.
 func (txn *Txn) Cmp(dbi DBI, a []byte, b []byte) int {
-	adata, an := valBytes(a)
-	bdata, bn := valBytes(b)
+	var adata, bdata *C.char
+	if len(a) > 0 {
+		adata = (*C.char)(unsafe.Pointer(&a[0]))
+	}
+	if len(b) > 0 {
+		bdata = (*C.char)(unsafe.Pointer(&b[0]))
+	}
 	ret := int(C.mdbxgo_cmp(
 		txn._txn, C.MDBX_dbi(dbi),
-		(*C.char)(unsafe.Pointer(&adata[0])), C.size_t(an),
-		(*C.char)(unsafe.Pointer(&bdata[0])), C.size_t(bn),
+		adata, C.size_t(len(a)),
+		bdata, C.size_t(len(b)),
 	))
 	if ret > 0 {
 		return 1
@@ -644,12 +642,17 @@ func (txn *Txn) Cmp(dbi DBI, a []byte, b []byte) int {
 
 // DCmp - this func follow bytes.Compare return style: The result will be 0 if a==b, -1 if a < b, and +1 if a > b.
 func (txn *Txn) DCmp(dbi DBI, a []byte, b []byte) int {
-	adata, an := valBytes(a)
-	bdata, bn := valBytes(b)
+	var adata, bdata *C.char
+	if len(a) > 0 {
+		adata = (*C.char)(unsafe.Pointer(&a[0]))
+	}
+	if len(b) > 0 {
+		bdata = (*C.char)(unsafe.Pointer(&b[0]))
+	}
 	ret := int(C.mdbxgo_dcmp(
 		txn._txn, C.MDBX_dbi(dbi),
-		(*C.char)(unsafe.Pointer(&adata[0])), C.size_t(an),
-		(*C.char)(unsafe.Pointer(&bdata[0])), C.size_t(bn),
+		adata, C.size_t(len(a)),
+		bdata, C.size_t(len(b)),
 	))
 	if ret > 0 {
 		return 1
