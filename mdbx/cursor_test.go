@@ -886,6 +886,90 @@ func TestCursor_Renew(t *testing.T) {
 	}
 }
 
+func TestCursor_Bind(t *testing.T) {
+	env := setup(t)
+
+	var db1, db2 DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		db1, err = txn.CreateDBI("testing1")
+		return err
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	err = env.Update(func(txn *Txn) (err error) {
+		put := func(k, v string) {
+			if err == nil {
+				err = txn.Put(db1, []byte(k), []byte(v), 0)
+			}
+		}
+		put("k1", "v1")
+		put("k2", "v2")
+		put("k3", "v3")
+		return err
+	})
+	if err != nil {
+		t.Error("err")
+	}
+
+	var cur *Cursor
+	err = env.View(func(txn *Txn) (err error) {
+		cur, err = txn.OpenCursor(db2)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = env.View(func(txn *Txn) (err error) {
+		{
+			err = cur.Bind(txn, db1)
+			if err != nil {
+				return err
+			}
+
+			k, v, err := cur.Get(nil, nil, Next)
+			if err != nil {
+				return err
+			}
+			if string(k) != "k1" {
+				return fmt.Errorf("key: %q", k)
+			}
+			if string(v) != "v1" {
+				return fmt.Errorf("val: %q", v)
+			}
+		}
+
+		{
+			c2 := CreateCursor()
+			err = c2.Bind(txn, db1)
+			if err != nil {
+				return err
+			}
+
+			k, v, err := c2.Get(nil, nil, Next)
+			if err != nil {
+				return err
+			}
+			if string(k) != "k1" {
+				return fmt.Errorf("key: %q", k)
+			}
+			if string(v) != "v1" {
+				return fmt.Errorf("val: %q", v)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
 func BenchmarkCursor(b *testing.B) {
 	env, _ := setup(b)
 
@@ -924,9 +1008,10 @@ func BenchmarkCursor(b *testing.B) {
 func BenchmarkCursor_Renew(b *testing.B) {
 	env, _ := setup(b)
 
+	var db DBI
 	var cur *Cursor
 	err := env.View(func(txn *Txn) (err error) {
-		db, err := txn.OpenRoot(0)
+		db, err = txn.OpenRoot(0)
 		if err != nil {
 			return err
 		}
@@ -939,16 +1024,38 @@ func BenchmarkCursor_Renew(b *testing.B) {
 	}
 
 	_ = env.View(func(txn *Txn) (err error) {
-		b.ResetTimer()
-		defer b.StopTimer()
-
-		for i := 0; i < b.N; i++ {
-			err = cur.Renew(txn)
-			if err != nil {
-				return err
+		b.Run("1", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				if err := cur.Renew(txn); err != nil {
+					panic(err)
+				}
 			}
-		}
-
+		})
+		b.Run("2", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				if err := cur.Bind(txn, db); err != nil {
+					panic(err)
+				}
+			}
+		})
+		b.Run("3", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				c, err := txn.OpenCursor(db)
+				if err != nil {
+					panic(err)
+				}
+				c.Close()
+			}
+		})
+		b.Run("4", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				cur := CursorFromPool()
+				if err := cur.Bind(txn, db); err != nil {
+					panic(err)
+				}
+				CursorToPool(cur)
+			}
+		})
 		return nil
 	})
 }

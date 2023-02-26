@@ -7,6 +7,8 @@ package mdbx
 */
 import "C"
 import (
+	"fmt"
+	"sync"
 	"unsafe"
 )
 
@@ -71,14 +73,24 @@ func openCursor(txn *Txn, db DBI) (*Cursor, error) {
 	return c, nil
 }
 
-// Renew associates readonly cursor with txn.
+// Renew associates cursor with txn.
 //
 // See mdb_cursor_renew.
 func (c *Cursor) Renew(txn *Txn) error {
 	ret := C.mdbx_cursor_renew(txn._txn, c._c)
-	err := operrno("mdbx_cursor_renew", ret)
-	if err != nil {
-		return err
+	if ret != success {
+		return operrno("mdbx_cursor_renew", ret)
+	}
+	c.txn = txn
+	return nil
+}
+
+// Bind Using of the `mdbx_cursor_bind()` is equivalent to calling mdbx_cursor_renew() but with specifying an arbitrary
+// dbi handle.
+func (c *Cursor) Bind(txn *Txn, db DBI) error {
+	ret := C.mdbx_cursor_bind(txn._txn, c._c, C.MDBX_dbi(db))
+	if ret != success {
+		return operrno("mdbx_cursor_bind", ret)
 	}
 	c.txn = txn
 	return nil
@@ -307,4 +319,21 @@ func (c *Cursor) Count() (uint64, error) {
 		return 0, operrno("mdbx_cursor_count", ret)
 	}
 	return uint64(_size), nil
+}
+
+var cursorPool = sync.Pool{
+	New: func() interface{} {
+		return CreateCursor()
+	},
+}
+
+func CursorFromPool() *Cursor { return cursorPool.Get().(*Cursor) }
+func CursorToPool(c *Cursor)  { cursorPool.Put(c) }
+
+func CreateCursor() *Cursor {
+	c := &Cursor{_c: C.mdbx_cursor_create(nil)}
+	if c._c == nil {
+		panic(fmt.Errorf("mdbx.CreateCursor: OOM"))
+	}
+	return c
 }
