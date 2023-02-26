@@ -25,7 +25,7 @@ _The Future will (be) [Positive](https://www.ptsecurity.com). Всё будет 
 
 \section copyright LICENSE & COPYRIGHT
 
-\authors Copyright (c) 2015-2022, Leonid Yuriev <leo@yuriev.ru>
+\authors Copyright (c) 2015-2023, Leonid Yuriev <leo@yuriev.ru>
 and other _libmdbx_ authors: please see [AUTHORS](./AUTHORS) file.
 
 \copyright Redistribution and use in source and binary forms, with or without
@@ -695,11 +695,11 @@ extern LIBMDBX_VERINFO_API const struct MDBX_build_info {
  * automatically (de)initialization, releasing reader lock table slots
  * and so on.
  *
- * If MDBX builded as a DLL this is done out-of-the-box by DllEntry() function,
+ * If MDBX built as a DLL this is done out-of-the-box by DllEntry() function,
  * which called automatically by Windows core with passing corresponding reason
  * argument.
  *
- * Otherwise, if MDBX was builded not as a DLL, some black magic
+ * Otherwise, if MDBX was built not as a DLL, some black magic
  * may be required depending of Windows version:
  *
  *  - Modern Windows versions, including Windows Vista and later, provides
@@ -881,7 +881,7 @@ enum MDBX_constants {
 /* DEBUG & LOGGING ************************************************************/
 
 /** \addtogroup c_debug
- * \note Most of debug feature enabled only when libmdbx builded with
+ * \note Most of debug feature enabled only when libmdbx built with
  * \ref MDBX_DEBUG build option. @{ */
 
 /** Log level
@@ -946,7 +946,7 @@ typedef enum MDBX_log_level_t MDBX_log_level_t;
  *
  * \details `MDBX_DBG_DUMP` and `MDBX_DBG_LEGACY_MULTIOPEN` always have an
  * effect, but `MDBX_DBG_ASSERT`, `MDBX_DBG_AUDIT` and `MDBX_DBG_JITTER` only if
- * libmdbx builded with \ref MDBX_DEBUG. */
+ * libmdbx built with \ref MDBX_DEBUG. */
 enum MDBX_debug_flags_t {
   MDBX_DBG_NONE = 0,
 
@@ -1682,7 +1682,7 @@ enum MDBX_copy_flags_t {
    * pages sequentially */
   MDBX_CP_COMPACT = 1u,
 
-  /** Force to make resizeable copy, i.e. dynamic size instead of fixed */
+  /** Force to make resizable copy, i.e. dynamic size instead of fixed */
   MDBX_CP_FORCE_DYNAMIC_SIZE = 2u
 };
 #ifndef __cplusplus
@@ -2302,6 +2302,8 @@ LIBMDBX_API int mdbx_env_get_option(const MDBX_env *env,
  * be called later to discard the \ref MDBX_env handle and release associated
  * resources.
  *
+ * \note On Windows the \ref mdbx_env_openW() is recommended to use.
+ *
  * \param [in] env       An environment handle returned
  *                       by \ref mdbx_env_create()
  *
@@ -2369,8 +2371,11 @@ LIBMDBX_API int mdbx_env_get_option(const MDBX_env *env,
 LIBMDBX_API int mdbx_env_open(MDBX_env *env, const char *pathname,
                               MDBX_env_flags_t flags, mdbx_mode_t mode);
 
-#if defined(_WIN32) || defined(_WIN64)
-LIBMDBX_API int mdbx_env_openW(MDBX_env *env, const wchar_t *pathnameW,
+#if defined(_WIN32) || defined(_WIN64) || defined(DOXYGEN)
+/** \copydoc mdbx_env_open()
+ * \note Available only on Windows.
+ * \see mdbx_env_open() */
+LIBMDBX_API int mdbx_env_openW(MDBX_env *env, const wchar_t *pathname,
                                MDBX_env_flags_t flags, mdbx_mode_t mode);
 #endif /* Windows */
 
@@ -2400,6 +2405,8 @@ typedef enum MDBX_env_delete_mode_t MDBX_env_delete_mode_t;
 /** \brief Delete the environment's files in a proper and multiprocess-safe way.
  * \ingroup c_extra
  *
+ * \note On Windows the \ref mdbx_env_deleteW() is recommended to use.
+ *
  * \param [in] pathname  The pathname for the database or the directory in which
  *                       the database files reside.
  *
@@ -2416,8 +2423,12 @@ typedef enum MDBX_env_delete_mode_t MDBX_env_delete_mode_t;
  *                            so no deletion was performed. */
 LIBMDBX_API int mdbx_env_delete(const char *pathname,
                                 MDBX_env_delete_mode_t mode);
-#if defined(_WIN32) || defined(_WIN64)
-LIBMDBX_API int mdbx_env_deleteW(const wchar_t *pathnameW,
+
+#if defined(_WIN32) || defined(_WIN64) || defined(DOXYGEN)
+/** \copydoc mdbx_env_delete()
+ * \note Available only on Windows.
+ * \see mdbx_env_delete() */
+LIBMDBX_API int mdbx_env_deleteW(const wchar_t *pathname,
                                  MDBX_env_delete_mode_t mode);
 #endif /* Windows */
 
@@ -2429,6 +2440,8 @@ LIBMDBX_API int mdbx_env_deleteW(const wchar_t *pathnameW,
  * \note This call can trigger significant file size growth if run in
  * parallel with write transactions, because it employs a read-only
  * transaction. See long-lived transactions under \ref restrictions section.
+ *
+ * \note On Windows the \ref mdbx_env_copyW() is recommended to use.
  *
  * \param [in] env    An environment handle returned by mdbx_env_create().
  *                    It must have already been opened successfully.
@@ -2449,12 +2462,16 @@ LIBMDBX_API int mdbx_env_deleteW(const wchar_t *pathnameW,
  *      account skipping free pages.
  *
  *  - \ref MDBX_CP_FORCE_DYNAMIC_SIZE
- *      Force to make resizeable copy, i.e. dynamic size instead of fixed.
+ *      Force to make resizable copy, i.e. dynamic size instead of fixed.
  *
  * \returns A non-zero error value on failure and 0 on success. */
 LIBMDBX_API int mdbx_env_copy(MDBX_env *env, const char *dest,
                               MDBX_copy_flags_t flags);
-#if defined(_WIN32) || defined(_WIN64)
+
+#if defined(_WIN32) || defined(_WIN64) || defined(DOXYGEN)
+/** \copydoc mdbx_env_copy()
+ * \note Available only on Windows.
+ * \see mdbx_env_copy() */
 LIBMDBX_API int mdbx_env_copyW(MDBX_env *env, const wchar_t *dest,
                                MDBX_copy_flags_t flags);
 #endif /* Windows */
@@ -2907,7 +2924,7 @@ enum MDBX_warmup_flags_t {
   MDBX_warmup_lock = 4,
 
   /** Alters corresponding current resource limits to be enough for lock pages
-   * by \ref MDBX_warmup_lock. However, this option should be used in simpliest
+   * by \ref MDBX_warmup_lock. However, this option should be used in simpler
    * applications since takes into account only current size of this environment
    * disregarding all other factors. For real-world database application you
    * will need full-fledged management of resources and their limits with
@@ -2943,7 +2960,7 @@ DEFINE_ENUM_FLAG_OPERATORS(MDBX_warmup_flags_t)
  * \param [in] timeout_seconds_16dot16  Optional timeout which checking only
  *                              during explicitly peeking database pages
  *                              for loading ones if the \ref MDBX_warmup_force
- *                              option was spefified.
+ *                              option was specified.
  *
  * \returns A non-zero error value on failure and 0 on success.
  * Some possible errors are:
@@ -2995,6 +3012,8 @@ LIBMDBX_API int mdbx_env_get_flags(const MDBX_env *env, unsigned *flags);
 /** \brief Return the path that was used in mdbx_env_open().
  * \ingroup c_statinfo
  *
+ * \note On Windows the \ref mdbx_env_get_pathW() is recommended to use.
+ *
  * \param [in] env     An environment handle returned by \ref mdbx_env_create()
  * \param [out] dest   Address of a string pointer to contain the path.
  *                     This is the actual string in the environment, not a
@@ -3003,9 +3022,12 @@ LIBMDBX_API int mdbx_env_get_flags(const MDBX_env *env, unsigned *flags);
  * \returns A non-zero error value on failure and 0 on success,
  *          some possible errors are:
  * \retval MDBX_EINVAL  An invalid parameter was specified. */
-#if !(defined(_WIN32) || defined(_WIN64))
 LIBMDBX_API int mdbx_env_get_path(const MDBX_env *env, const char **dest);
-#else
+
+#if defined(_WIN32) || defined(_WIN64) || defined(DOXYGEN)
+/** \copydoc mdbx_env_get_path()
+ * \note Available only on Windows.
+ * \see mdbx_env_get_path() */
 LIBMDBX_API int mdbx_env_get_pathW(const MDBX_env *env, const wchar_t **dest);
 #endif /* Windows */
 
@@ -3071,7 +3093,7 @@ LIBMDBX_API int mdbx_env_get_fd(const MDBX_env *env, mdbx_filehandle_t *fd);
  *    was called after \ref mdbx_env_open() but OUTSIDE a write transaction,
  *    then MDBX will execute internal pseudo-transaction to apply new parameters
  *    (but only if anything has been changed), and changes be visible to any
- *    others processes immediately after succesful completion of function.
+ *    others processes immediately after successful completion of function.
  *
  * Essentially a concept of "automatic size management" is simple and useful:
  *  - There are the lower and upper bounds of the database file size;
@@ -5265,7 +5287,7 @@ mdbx_get_datacmp(MDBX_db_flags_t flags);
  * \param [in] thread         The reader thread ID.
  * \param [in] bytes_used     The number of last used page
  *                            in the MVCC-snapshot which being read,
- *                            i.e. database file can't shrinked beyond this.
+ *                            i.e. database file can't be shrunk beyond this.
  * \param [in] bytes_retained The total size of the database pages that were
  *                            retired by committed write transactions after
  *                            the reader's MVCC-snapshot,
@@ -5511,13 +5533,20 @@ LIBMDBX_API int mdbx_env_pgwalk(MDBX_txn *txn, MDBX_pgvisitor_func *visitor,
  *
  * This function mostly of internal API for `mdbx_chk` utility and subject to
  * change at any time. Do not use this function to avoid shooting your own
- * leg(s). */
+ * leg(s).
+ *
+ * \note On Windows the \ref mdbx_env_open_for_recoveryW() is recommended
+ * to use. */
 LIBMDBX_API int mdbx_env_open_for_recovery(MDBX_env *env, const char *pathname,
                                            unsigned target_meta,
                                            bool writeable);
-#if defined(_WIN32) || defined(_WIN64)
+
+#if defined(_WIN32) || defined(_WIN64) || defined(DOXYGEN)
+/** \copydoc mdbx_env_open_for_recovery()
+ * \note Available only on Windows.
+ * \see mdbx_env_open_for_recovery() */
 LIBMDBX_API int mdbx_env_open_for_recoveryW(MDBX_env *env,
-                                            const wchar_t *pathnameW,
+                                            const wchar_t *pathname,
                                             unsigned target_meta,
                                             bool writeable);
 #endif /* Windows */
