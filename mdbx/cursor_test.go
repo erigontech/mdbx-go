@@ -887,7 +887,7 @@ func TestCursor_Renew(t *testing.T) {
 }
 
 func TestCursor_Bind(t *testing.T) {
-	env := setup(t)
+	env, _ := setup(t)
 
 	var db1, db2 DBI
 	err := env.Update(func(txn *Txn) (err error) {
