@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 5777e7cda5ce7601d3d4f997c2d985538a3a61e6b6e02682cca2137e05e756cb_v0_12_3_30_g29d12f1f
+#define MDBX_BUILD_SOURCERY 7a10d70b0b57e5ae8ac30e0728c9f1f7b6b3d51d69ef544f87ae054578c81daf_v0_12_4_0_g53177e48
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -808,14 +808,19 @@ __extern_C key_t ftok(const char *, int);
 #endif
 #endif /* MDBX_GOOFY_MSVC_STATIC_ANALYZER */
 
-#if MDBX_GOOFY_MSVC_STATIC_ANALYZER
+#if MDBX_GOOFY_MSVC_STATIC_ANALYZER || (defined(_MSC_VER) && _MSC_VER > 1919)
 #define MDBX_ANALYSIS_ASSUME(expr) __analysis_assume(expr)
-#define MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(warn_id, note)                       \
-  _Pragma(MDBX_STRINGIFY(prefast(suppress : warn_id)))
+#ifdef _PREFAST_
+#define MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(warn_id)                             \
+  __pragma(prefast(suppress : warn_id))
+#else
+#define MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(warn_id)                             \
+  __pragma(warning(suppress : warn_id))
+#endif
 #else
 #define MDBX_ANALYSIS_ASSUME(expr) assert(expr)
-#define MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(warn_id, note)
-#endif
+#define MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(warn_id)
+#endif /* MDBX_GOOFY_MSVC_STATIC_ANALYZER */
 
 /*----------------------------------------------------------------------------*/
 
@@ -12344,8 +12349,8 @@ static void cursors_eot(MDBX_txn *txn, const bool merge) {
       if (bk) {
         MDBX_xcursor *mx = mc->mc_xcursor;
         tASSERT(txn, txn->mt_parent != NULL);
-        MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(
-            6001, "Using uninitialized memory '*mc->mc_backup'.");
+        /* Zap: Using uninitialized memory '*mc->mc_backup'. */
+        MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(6001);
         ENSURE(txn->mt_env, bk->mc_signature == MDBX_MC_LIVE);
         tASSERT(txn, mx == bk->mc_xcursor);
         if (stage == MDBX_MC_WAIT4EOT /* Cursor was closed by user */)
@@ -18486,7 +18491,10 @@ __cold static int __must_check_result override_meta(MDBX_env *env,
     osal_flush_incoherent_mmap(env->me_map, pgno2bytes(env, NUM_METAS),
                                env->me_os_psize);
   }
-  eASSERT(env, !env->me_txn && !env->me_txn0);
+  eASSERT(env, (!env->me_txn && !env->me_txn0) ||
+                   (env->me_stuck_meta == (int)target &&
+                    (env->me_flags & (MDBX_EXCLUSIVE | MDBX_RDONLY)) ==
+                        MDBX_EXCLUSIVE));
   return rc;
 }
 
@@ -19013,7 +19021,7 @@ __cold int mdbx_env_openW(MDBX_env *env, const wchar_t *pathname,
   if (!(flags &
         (MDBX_RDONLY | MDBX_SAFE_NOSYNC | MDBX_NOMETASYNC | MDBX_EXCLUSIVE))) {
     if (MDBX_AVOID_MSYNC && (flags & MDBX_WRITEMAP)) {
-      /* Запрошен режим MDBX_SAFE_NOSYNC | MDBX_WRITEMAP при активной опции
+      /* Запрошен режим MDBX_SYNC_DURABLE | MDBX_WRITEMAP при активной опции
        * MDBX_AVOID_MSYNC.
        *
        * 1) В этой комбинации наиболее выгодно использовать WriteFileGather(),
@@ -29679,7 +29687,10 @@ __dll_export
 };
 
 #ifdef __SANITIZE_ADDRESS__
-LIBMDBX_API __attribute__((__weak__)) const char *__asan_default_options(void) {
+#if !defined(_MSC_VER) || __has_attribute(weak)
+LIBMDBX_API __attribute__((__weak__))
+#endif
+const char *__asan_default_options(void) {
   return "symbolize=1:allow_addr2line=1:"
 #if MDBX_DEBUG
          "debug=1:"
@@ -29753,7 +29764,8 @@ static int ntstatus2errcode(NTSTATUS status) {
   OVERLAPPED ov;
   memset(&ov, 0, sizeof(ov));
   ov.Internal = status;
-  MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(6387, "'_Param_(1)' could be '0'");
+  /* Zap: '_Param_(1)' could be '0' */
+  MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(6387);
   return GetOverlappedResult(NULL, &ov, &dummy, FALSE) ? MDBX_SUCCESS
                                                        : (int)GetLastError();
 }
@@ -29788,8 +29800,8 @@ extern NTSTATUS NTAPI NtMapViewOfSection(
 extern NTSTATUS NTAPI NtUnmapViewOfSection(IN HANDLE ProcessHandle,
                                            IN OPTIONAL PVOID BaseAddress);
 
-MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(28251,
-                                  "Inconsistent annotation for 'NtClose'...")
+/* Zap: Inconsistent annotation for 'NtClose'... */
+MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(28251)
 extern NTSTATUS NTAPI NtClose(HANDLE Handle);
 
 extern NTSTATUS NTAPI NtAllocateVirtualMemory(
@@ -30509,8 +30521,8 @@ MDBX_INTERNAL_FUNC void osal_ioring_walk(
     if (bytes & ior_WriteFile_flag) {
       data = Ptr64ToPtr(item->sgv[0].Buffer);
       bytes = ior->pagesize;
-      MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(
-          6385, "Reading invalid data from 'item->sgv'");
+      /* Zap: Reading invalid data from 'item->sgv' */
+      MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(6385);
       while (item->sgv[i].Buffer) {
         if (data + ior->pagesize != item->sgv[i].Buffer) {
           callback(ctx, offset, data, bytes);
@@ -30557,8 +30569,8 @@ osal_ioring_write(osal_ioring_t *ior, mdbx_filehandle_t fd) {
     if (bytes & ior_WriteFile_flag) {
       assert(ior->overlapped_fd && fd == ior->overlapped_fd);
       bytes = ior->pagesize;
-      MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(
-          6385, "Reading invalid data from 'item->sgv'");
+      /* Zap: Reading invalid data from 'item->sgv' */
+      MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(6385);
       while (item->sgv[i].Buffer) {
         bytes += ior->pagesize;
         ++i;
@@ -30697,8 +30709,8 @@ osal_ioring_write(osal_ioring_t *ior, mdbx_filehandle_t fd) {
       size_t i = 1, bytes = item->single.iov_len - ior_WriteFile_flag;
       if (bytes & ior_WriteFile_flag) {
         bytes = ior->pagesize;
-        MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(
-            6385, "Reading invalid data from 'item->sgv'");
+        /* Zap: Reading invalid data from 'item->sgv' */
+        MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(6385);
         while (item->sgv[i].Buffer) {
           bytes += ior->pagesize;
           ++i;
@@ -30793,8 +30805,8 @@ MDBX_INTERNAL_FUNC void osal_ioring_reset(osal_ioring_t *ior) {
         ior_put_event(ior, item->ov.hEvent);
       size_t i = 1;
       if ((item->single.iov_len & ior_WriteFile_flag) == 0) {
-        MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(
-            6385, "Reading invalid data from 'item->sgv'");
+        /* Zap: Reading invalid data from 'item->sgv' */
+        MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(6385);
         while (item->sgv[i].Buffer)
           ++i;
       }
@@ -30813,8 +30825,8 @@ static void ior_cleanup(osal_ioring_t *ior, const size_t since) {
   osal_ioring_reset(ior);
 #if defined(_WIN32) || defined(_WIN64)
   for (size_t i = since; i < ior->event_stack; ++i) {
-    MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(
-        6001, "Using uninitialized memory '**ior.event_pool'");
+    /* Zap: Using uninitialized memory '**ior.event_pool' */
+    MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(6001);
     CloseHandle(ior->event_pool[i]);
   }
   ior->event_stack = 0;
@@ -32454,7 +32466,8 @@ retry_mapview:;
 
 #endif /* POSIX / Windows */
 
-  MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(6287, "Redundant code");
+  /* Zap: Redundant code */
+  MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(6287);
   assert(rc != MDBX_SUCCESS ||
          (map->base != nullptr && map->base != MAP_FAILED &&
           map->current == size && map->limit == limit &&
@@ -33254,10 +33267,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         12,
-        3,
-        30,
-        {"2023-02-14T12:09:44+03:00", "056bb01c9eb5f3d038255f79108076b072918bd0", "29d12f1fc3ab10a41a6edab054ee884b9c57e6ee",
-         "v0.12.3-30-g29d12f1f"},
+        4,
+        0,
+        {"2023-03-03T23:23:08+03:00", "22fb6858ad8f8370397fd821d01b2e51d73b7e14", "53177e483c18adf5109aed7a5895915e9798ee24",
+         "v0.12.4-0-g53177e48"},
         sourcery};
 
 __dll_export
@@ -33465,9 +33478,9 @@ int mdbx_txn_lock(MDBX_env *env, bool dontwait) {
   }
 
   if (env->me_flags & MDBX_EXCLUSIVE) {
-    MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(
-        26115, "Failing to release lock 'env->me_windowsbug_lock' in function "
-               "'mdbx_txn_lock'");
+    /* Zap: Failing to release lock 'env->me_windowsbug_lock'
+     *      in function 'mdbx_txn_lock' */
+    MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(26115);
     return MDBX_SUCCESS;
   }
 
@@ -33488,9 +33501,9 @@ int mdbx_txn_lock(MDBX_env *env, bool dontwait) {
     }
   }
   if (rc == MDBX_SUCCESS) {
-    MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(
-        26115, "Failing to release lock 'env->me_windowsbug_lock' in function "
-               "'mdbx_txn_lock'");
+    /* Zap: Failing to release lock 'env->me_windowsbug_lock'
+     *      in function 'mdbx_txn_lock' */
+    MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(26115);
     return rc;
   }
 
