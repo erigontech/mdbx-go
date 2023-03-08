@@ -316,16 +316,29 @@ func TestLastDup(t *testing.T) {
 				return err
 			}
 			i++
+
 			_, v, err := c.Get(nil, nil, LastDup)
 			if err != nil {
 				return err
 			}
 			if i == 1 && string(v) != "value1.3" {
-				t.Fail()
+				panic(1)
 			}
 			if i == 2 && string(v) != "value3.3" {
-				t.Fail()
+				panic(1)
 			}
+
+			_, v, err = c.Get(nil, nil, FirstDup)
+			if err != nil {
+				return err
+			}
+			if i == 1 && string(v) != "value1.1" {
+				panic(1)
+			}
+			if i == 2 && string(v) != "value3.1" {
+				panic(1)
+			}
+
 		}
 
 		return nil

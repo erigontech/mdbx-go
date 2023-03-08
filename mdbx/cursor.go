@@ -168,7 +168,7 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 	if op == Set {
 		key = setkey
 	} else {
-		if op != LastDup {
+		if op != LastDup && op != FirstDup {
 			key = castToBytes(c.txn.key)
 		}
 	}
