@@ -10,21 +10,6 @@
 #define MDBXGO_SET_VAL(val, size, data) \
     *(val) = (MDBX_val){.iov_len = (size), .iov_base = (data)}
 
-int mdbxgo_msg_func_proxy(const char *msg, void *ctx) {
-    //  wrap msg and call the bridge function exported from lmdb.go.
-    mdbxgo_ConstCString s;
-    s.p = msg;
-    return mdbxgoMDBMsgFuncBridge(s, (size_t)ctx);
-}
-
-//int mdbxgo_reader_list(MDBX_env *env, size_t ctx) {
-//    // list readers using a static proxy function that does dynamic dispatch on
-//    // ctx.
-//	if (ctx)
-//		return mdbx_reader_list(env, &mdbxgo_msg_func_proxy, (void *)ctx);
-//	return mdbx_reader_list(env, 0, (void *)ctx);
-//}
-
 int mdbxgo_del(MDBX_txn *txn, MDBX_dbi dbi, char *kdata, size_t kn, char *vdata, size_t vn) {
     MDBX_val key, val;
     MDBXGO_SET_VAL(&key, kn, kdata);
