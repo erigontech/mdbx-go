@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 5777e7cda5ce7601d3d4f997c2d985538a3a61e6b6e02682cca2137e05e756cb_v0_12_3_30_g29d12f1f
+#define MDBX_BUILD_SOURCERY 3bd4ed05bd2736470da2556602a105008d8b53012d792b77aefd32d0baeb533b_v0_12_5_0_g9b829145
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -830,14 +830,19 @@ __extern_C key_t ftok(const char *, int);
 #endif
 #endif /* MDBX_GOOFY_MSVC_STATIC_ANALYZER */
 
-#if MDBX_GOOFY_MSVC_STATIC_ANALYZER
+#if MDBX_GOOFY_MSVC_STATIC_ANALYZER || (defined(_MSC_VER) && _MSC_VER > 1919)
 #define MDBX_ANALYSIS_ASSUME(expr) __analysis_assume(expr)
-#define MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(warn_id, note)                       \
-  _Pragma(MDBX_STRINGIFY(prefast(suppress : warn_id)))
+#ifdef _PREFAST_
+#define MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(warn_id)                             \
+  __pragma(prefast(suppress : warn_id))
+#else
+#define MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(warn_id)                             \
+  __pragma(warning(suppress : warn_id))
+#endif
 #else
 #define MDBX_ANALYSIS_ASSUME(expr) assert(expr)
-#define MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(warn_id, note)
-#endif
+#define MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(warn_id)
+#endif /* MDBX_GOOFY_MSVC_STATIC_ANALYZER */
 
 /*----------------------------------------------------------------------------*/
 
@@ -4372,6 +4377,17 @@ int main(int argc, char *argv[]) {
     printf("      WOP: %8" PRIu64
            "\t// number of explicit write operations (not a pages) to a disk\n",
            mei.mi_pgop_stat.wops);
+    printf(" PreFault: %8" PRIu64
+           "\t// number of prefault write operations (not a pages)\n",
+           mei.mi_pgop_stat.prefault);
+    printf("  mInCore: %8" PRIu64 "\t// number of mincore() calls\n",
+           mei.mi_pgop_stat.mincore);
+    printf("    mSync: %8" PRIu64
+           "\t// number of explicit msync-to-disk operations (not a pages)\n",
+           mei.mi_pgop_stat.msync);
+    printf("    fSync: %8" PRIu64
+           "\t// number of explicit fsync-to-disk operations (not a pages)\n",
+           mei.mi_pgop_stat.fsync);
   }
 
   if (envinfo) {
