@@ -106,6 +106,15 @@ const (
 	OptMergeThreshold16dot16Percent = C.MDBX_opt_merge_threshold_16dot16_percent
 )
 
+const (
+	WarmupDefault    = C.MDBX_warmup_default
+	WarmupForce      = C.MDBX_warmup_force
+	WarmupOomSafe    = C.MDBX_warmup_oomsafe
+	WarmupLock       = C.MDBX_warmup_lock
+	WarmupTouchLimit = C.MDBX_warmup_touchlimit
+	WarmupRelease    = C.MDBX_warmup_release
+)
+
 var (
 	LoggerDoNotChange = C.MDBX_LOGGER_DONTCHANGE
 )
@@ -617,4 +626,9 @@ func (env *Env) run(lock bool, flags uint, fn TxnOp) error {
 // See mdbx_dbi_close.
 func (env *Env) CloseDBI(db DBI) {
 	C.mdbx_dbi_close(env._env, C.MDBX_dbi(db))
+}
+
+func MdbxEnvWarmup(env *Env, txn *Txn, flags uint, timeout uint) error {
+	ret := C.mdbxgo_env_warmup(env._env, txn._txn, C.MDBX_warmup_flags_t(flags), C.uint(timeout))
+	return operrno("mdbx_env_warmup", ret)
 }
