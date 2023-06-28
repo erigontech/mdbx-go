@@ -41,6 +41,4 @@ int mdbxgo_reader_list(MDBX_env *env, size_t ctx);
 int mdbxgo_cmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn);
 int mdbxgo_dcmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn);
 
-int mdbxgo_env_warmup(MDBX_env *env, MDBX_txn *txn, MDBX_warmup_flags_t flags, unsigned timeout_seconds_16dot16);
-
 #endif

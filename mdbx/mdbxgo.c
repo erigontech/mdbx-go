@@ -112,7 +112,3 @@ int mdbxgo_dcmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata
     MDBXGO_SET_VAL(&b, bn, bdata);
     return mdbx_dcmp(txn, dbi, &a, &b);
 }
-
-int mdbxgo_env_warmup(MDBX_env *env, MDBX_txn *txn, MDBX_warmup_flags_t flags, unsigned timeout_seconds_16dot16) {
-    return mdbx_env_warmup(env, txn, flags, timeout_seconds_16dot16);
-}

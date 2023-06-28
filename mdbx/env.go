@@ -629,6 +629,6 @@ func (env *Env) CloseDBI(db DBI) {
 }
 
 func MdbxEnvWarmup(env *Env, txn *Txn, flags uint, timeout uint) error {
-	ret := C.mdbxgo_env_warmup(env._env, txn._txn, C.MDBX_warmup_flags_t(flags), C.uint(timeout))
+	ret := C.mdbx_env_warmup(env._env, txn._txn, C.MDBX_warmup_flags_t(flags), C.uint(timeout))
 	return operrno("mdbx_env_warmup", ret)
 }
