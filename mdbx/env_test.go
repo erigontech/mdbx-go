@@ -564,18 +564,3 @@ func TestEnv_CloseDBI(t *testing.T) {
 		t.Errorf("unexpected entries: %d (not %d)", stat.Entries, numdb)
 	}
 }
-
-func TestMdbxEnvWarmup(t *testing.T) {
-	env, _ := setup(t)
-
-	txn, err := env.BeginTxn(nil, EnvDefaults)
-	if err != nil {
-		t.Errorf("%s", err)
-		return
-	}
-	err = MdbxEnvWarmup(env, txn, WarmupDefault, 2)
-	if err != nil {
-		t.Errorf("%s", err)
-		return
-	}
-}

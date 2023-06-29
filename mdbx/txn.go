@@ -41,6 +41,15 @@ const (
 	TxNoSync     = C.MDBX_TXN_NOSYNC
 )
 
+const (
+	WarmupDefault    = C.MDBX_warmup_default
+	WarmupForce      = C.MDBX_warmup_force
+	WarmupOomSafe    = C.MDBX_warmup_oomsafe
+	WarmupLock       = C.MDBX_warmup_lock
+	WarmupTouchLimit = C.MDBX_warmup_touchlimit
+	WarmupRelease    = C.MDBX_warmup_release
+)
+
 // Txn is a database transaction in an environment.
 //
 // WARNING: A writable Txn is not threadsafe and may only be used in the
@@ -760,4 +769,13 @@ func (txn *Txn) ListDBI() (res []string, err error) {
 		res = append(res, string(k))
 	}
 	return res, nil
+}
+
+func (txn *Txn) EnvWarmup(flags, timeout uint) error {
+	ret := C.mdbx_env_warmup(
+		txn.env._env, txn._txn,
+		C.MDBX_warmup_flags_t(flags),
+		C.uint(timeout),
+	)
+	return operrno("mdbx_env_warmup", ret)
 }
