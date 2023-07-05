@@ -782,6 +782,77 @@ func TestCursor_Count_DupSort(t *testing.T) {
 	}
 }
 
+func TestCursor_Del_DupSort(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBI("testingdup", Create|DupSort, nil, nil)
+		if err != nil {
+			return err
+		}
+
+		put := func(k, v string) {
+			if err != nil {
+				return
+			}
+			err = txn.Put(db, []byte(k), []byte(v), 0)
+		}
+		put("k", "v0")
+		put("k", "v1")
+
+		return err
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = env.Update(func(txn *Txn) (err error) {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		_, _, err = cur.Get(nil, nil, First)
+		if err != nil {
+			return err
+		}
+		numdup, err := cur.Count()
+		if err != nil {
+			panic(err)
+		}
+
+		if numdup != 2 {
+			t.Errorf("unexpected count: %d != %d", numdup, 2)
+		}
+		err = cur.Del(0)
+		if err != nil {
+			panic(err)
+		}
+
+		//numdup, err = cur.Count()
+		//if err != nil {
+		//	return err
+		//}
+		//
+		//if numdup != 1 {
+		//	t.Errorf("unexpected count: %d != %d", numdup, 2)
+		//}
+		kk, vv, err := cur.Get(nil, nil, NextDup)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("kk: %s\n", kk)
+		fmt.Printf("vv: %s\n", vv)
+
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
 // This test verifies the behavior of Cursor.Count when DupSort is not enabled
 // on the database.
 func TestCursor_Count_noDupSort(t *testing.T) {
