@@ -8,7 +8,7 @@
 #include "mdbx.h"
 
 #define MDBXGO_SET_VAL(val, size, data) \
-    *(val) = (MDBX_val){.iov_len = (size), .iov_base = (data)}
+    *(val) = (MDBX_val){ .iov_len = (size), .iov_base = (data) }
 
 int mdbxgo_msg_func_proxy(const char *msg, void *ctx) {
     //  wrap msg and call the bridge function exported from lmdb.go.
@@ -17,13 +17,13 @@ int mdbxgo_msg_func_proxy(const char *msg, void *ctx) {
     return mdbxgoMDBMsgFuncBridge(s, (size_t)ctx);
 }
 
-//int mdbxgo_reader_list(MDBX_env *env, size_t ctx) {
-//    // list readers using a static proxy function that does dynamic dispatch on
-//    // ctx.
+// int mdbxgo_reader_list(MDBX_env *env, size_t ctx) {
+//     // list readers using a static proxy function that does dynamic dispatch on
+//     // ctx.
 //	if (ctx)
 //		return mdbx_reader_list(env, &mdbxgo_msg_func_proxy, (void *)ctx);
 //	return mdbx_reader_list(env, 0, (void *)ctx);
-//}
+// }
 
 int mdbxgo_del(MDBX_txn *txn, MDBX_dbi dbi, char *kdata, size_t kn, char *vdata, size_t vn) {
     MDBX_val key, val;
@@ -87,15 +87,15 @@ int mdbxgo_cursor_get2(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, si
 }
 
 /* Compare two items lexically */
-//static int __hot cmp_lexical(const MDBX_val *a, const MDBX_val *b) {
-//  if (a->iov_len == b->iov_len)
-//    return memcmp(a->iov_base, b->iov_base, a->iov_len);
+// static int __hot cmp_lexical(const MDBX_val *a, const MDBX_val *b) {
+//   if (a->iov_len == b->iov_len)
+//     return memcmp(a->iov_base, b->iov_base, a->iov_len);
 //
-//  const int diff_len = (a->iov_len < b->iov_len) ? -1 : 1;
-//  const size_t shortest = (a->iov_len < b->iov_len) ? a->iov_len : b->iov_len;
-//  int diff_data = memcmp(a->iov_base, b->iov_base, shortest);
-//  return likely(diff_data) ? diff_data : diff_len;
-//}
+//   const int diff_len = (a->iov_len < b->iov_len) ? -1 : 1;
+//   const size_t shortest = (a->iov_len < b->iov_len) ? a->iov_len : b->iov_len;
+//   int diff_data = memcmp(a->iov_base, b->iov_base, shortest);
+//   return likely(diff_data) ? diff_data : diff_len;
+// }
 
 int mdbxgo_cmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn) {
     MDBX_val a;
@@ -112,7 +112,3 @@ int mdbxgo_dcmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata
     MDBXGO_SET_VAL(&b, bn, bdata);
     return mdbx_dcmp(txn, dbi, &a, &b);
 }
-
-
-
-

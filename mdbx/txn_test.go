@@ -1262,3 +1262,19 @@ func openDBI(env *Env, key string, flags uint) (DBI, error) {
 	}
 	return db, nil
 }
+
+func TestTxnEnvWarmup(t *testing.T) {
+	env, _ := setup(t)
+
+	txn, err := env.BeginTxn(nil, EnvDefaults)
+	if err != nil {
+		t.Errorf("%s", err)
+		return
+	}
+	err = txn.EnvWarmup(WarmupDefault, 2)
+	if err != nil {
+		t.Errorf("%s", err)
+		return
+	}
+	defer txn.Abort()
+}
