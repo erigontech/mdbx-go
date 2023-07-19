@@ -771,11 +771,11 @@ func (txn *Txn) ListDBI() (res []string, err error) {
 	return res, nil
 }
 
-func (txn *Txn) EnvWarmup(flags, timeout uint) error {
+func (txn *Txn) EnvWarmup(flags uint, timeout time.Duration) error {
 	ret := C.mdbx_env_warmup(
 		txn.env._env, txn._txn,
 		C.MDBX_warmup_flags_t(flags),
-		C.uint(timeout),
+		C.uint(NewDuration16dot16(timeout)),
 	)
 	return operrno("mdbx_env_warmup", ret)
 }
