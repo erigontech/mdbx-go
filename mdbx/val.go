@@ -10,7 +10,7 @@ import "C"
 import (
 	"unsafe"
 
-	"github.com/torquem-ch/mdbx-go/mdbx/mdbxarch"
+	"github.com/erigontech/mdbx-go/mdbx/mdbxarch"
 )
 
 // Just for docs:

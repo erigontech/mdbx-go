@@ -1,3 +1,3 @@
-module github.com/torquem-ch/mdbx-go
+module github.com/erigontech/mdbx-go
 
 go 1.15
