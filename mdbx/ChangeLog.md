@@ -67,7 +67,7 @@ Fixes:
 Acknowledgements:
 
  - [Mahlon E. Smith](https://github.com/mahlonsmith) for [Ruby bindings](https://rubygems.org/gems/mdbx/).
- - [Alex Sharov](https://github.com/AskAlexSharov) for [mdbx-go](https://github.com/erigonteh/mdbx-go), bug reporting and testing.
+ - [Alex Sharov](https://github.com/AskAlexSharov) for [mdbx-go](https://github.com/erigontech/mdbx-go), bug reporting and testing.
  - [Artem Vorotnikov](https://github.com/vorot93) for bug reporting and PR.
  - [Paolo Rebuffo](https://www.linkedin.com/in/paolo-rebuffo-8255766/), [Alexey Akhunov](https://github.com/AlexeyAkhunov) and Mark Grosberg for donations.
  - [Noel Kuntze](https://github.com/Thermi) for preliminary [Python bindings](https://github.com/Thermi/libmdbx/tree/python-bindings)

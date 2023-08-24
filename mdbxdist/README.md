@@ -612,7 +612,7 @@ Bindings
 | NodeJS, [Deno](https://deno.land/) | [lmdbx-js](https://github.com/kriszyp/lmdbx-js) | [Kris Zyp](https://github.com/kriszyp/)
 | NodeJS  | [node-mdbx](https://www.npmjs.com/package/node-mdbx/) | [Сергей Федотов](mailto:sergey.fedotov@corp.mail.ru) |
 | Ruby    | [ruby-mdbx](https://rubygems.org/gems/mdbx/)          | [Mahlon E. Smith](https://github.com/mahlonsmith) |
-| Go      | [mdbx-go](https://github.com/erigonteh/mdbx-go)      | [Alex Sharov](https://github.com/AskAlexSharov) |
+| Go      | [mdbx-go](https://github.com/erigontech/mdbx-go)      | [Alex Sharov](https://github.com/AskAlexSharov) |
 | [Nim](https://en.wikipedia.org/wiki/Nim_(programming_language)) | [NimDBX](https://github.com/snej/nimdbx) | [Jens Alfke](https://github.com/snej)
 | Lua     | [lua-libmdbx](https://github.com/mah0x211/lua-libmdbx) | [Masatoshi Fukunaga](https://github.com/mah0x211) |
 | Rust    | [libmdbx-rs](https://github.com/vorot93/libmdbx-rs)   | [Artem Vorotnikov](https://github.com/vorot93) |

@@ -21,18 +21,18 @@ application dependencies are managed and pinned by tag/commit.
 
 Developers concerned with package stability should consult the documentation.
 
-#### mdbx [![GoDoc](https://godoc.org/github.com/erigonteh/mdbx-go/mdbx?status.svg)](https://godoc.org/github.com/github.com/erigonteh/mdbx-go/mdbx) [![stable](https://img.shields.io/badge/stability-stable-brightgreen.svg)](#user-content-versioning-and-stability)
+#### mdbx [![GoDoc](https://godoc.org/github.com/erigontech/mdbx-go/mdbx?status.svg)](https://godoc.org/github.com/github.com/erigontech/mdbx-go/mdbx) [![stable](https://img.shields.io/badge/stability-stable-brightgreen.svg)](#user-content-versioning-and-stability)
 
 ```go
-import "github.com/erigonteh/mdbx-go/mdbx"
+import "github.com/erigontech/mdbx-go/mdbx"
 ```
 
 Core bindings allowing low-level access to MDBX.
 
-#### exp/mdbxpool [![GoDoc](https://godoc.org/github.com/erigonteh/mdbx-go/mdbx/exp/mdbxpool?status.svg)](https://godoc.org/github.com/erigonteh/mdbx-go/mdbx/exp/mdbxpool) [![experimental](https://img.shields.io/badge/stability-experimental-red.svg)](#user-content-versioning-and-stability)
+#### exp/mdbxpool [![GoDoc](https://godoc.org/github.com/erigontech/mdbx-go/mdbx/exp/mdbxpool?status.svg)](https://godoc.org/github.com/erigontech/mdbx-go/mdbx/exp/mdbxpool) [![experimental](https://img.shields.io/badge/stability-experimental-red.svg)](#user-content-versioning-and-stability)
 
 ```go
-import "github.com/erigonteh/mdbx-go/exp/mdbxpool"
+import "github.com/erigontech/mdbx-go/exp/mdbxpool"
 ```
 
 A utility package which facilitates reuse of mdbx.Txn objects using a sync.Pool. Naively storing mdbx.Txn objects in
@@ -133,7 +133,7 @@ In mdbx-go repo: `MDBX_BUILD_TIMESTAMP=unknown make tools`
 Or if use mdbx-go as a library:
 
 ```
-go mod vendor && cd vendor/github.com/erigonteh/mdbx-go && make tools 
+go mod vendor && cd vendor/github.com/erigontech/mdbx-go && make tools 
 rm -rf vendor
 ```
 
@@ -142,7 +142,7 @@ rm -rf vendor
 - Examples see in *_test.go files of this repo
 - [The MDBX](https://libmdbx.dqdkfa.ru) And even better if read
   through [mdbx.h](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h).
-- [godoc.org](https://godoc.org/github.com/erigonteh/mdbx-go)
+- [godoc.org](https://godoc.org/github.com/erigontech/mdbx-go)
 - [The LMDB](http://symas.com/lmdb/)
 
 ### Versioning and Stability
