@@ -779,3 +779,7 @@ func (txn *Txn) EnvWarmup(flags uint, timeout time.Duration) error {
 	)
 	return operrno("mdbx_env_warmup", ret)
 }
+
+func (txn *Txn) CHandle() unsafe.Pointer {
+	return unsafe.Pointer(txn._txn);
+}
