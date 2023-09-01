@@ -492,26 +492,26 @@ func setup(t testing.TB) *Env {
 	return setupFlags(t, 0)
 }
 
-func setupFlags(t testing.TB, flags uint) *Env {
+func setupFlags(tb testing.TB, flags uint) *Env {
 	env, err := NewEnv()
 	if err != nil {
-		t.Fatalf("env: %s", err)
+		tb.Fatalf("env: %s", err)
 	}
-	path := t.TempDir()
+	path := tb.TempDir()
 	err = env.SetOption(OptMaxDB, 1024)
 	if err != nil {
-		t.Fatalf("setmaxdbs: %v", err)
+		tb.Fatalf("setmaxdbs: %v", err)
 	}
 	const pageSize = 4096
 	err = env.SetGeometry(-1, -1, 64*1024*pageSize, -1, -1, pageSize)
 	if err != nil {
-		t.Fatalf("setmaxdbs: %v", err)
+		tb.Fatalf("setmaxdbs: %v", err)
 	}
 	err = env.Open(path, flags, 0664)
 	if err != nil {
-		t.Fatalf("open: %s", err)
+		tb.Fatalf("open: %s", err)
 	}
-	t.Cleanup(func() {
+	tb.Cleanup(func() {
 		env.Close()
 	})
 	return env
