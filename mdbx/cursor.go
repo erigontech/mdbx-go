@@ -158,6 +158,8 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 	if err != nil {
 		*c.txn.key = C.MDBX_val{}
 		*c.txn.val = C.MDBX_val{}
+		*c.txn.key = C.MDBX_val{}
+		*c.txn.val = C.MDBX_val{}
 		return nil, nil, err
 	}
 
