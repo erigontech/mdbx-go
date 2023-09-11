@@ -29,4 +29,4 @@ _testmain.go
 
 *.exe
 
-go.work
+go.work*
