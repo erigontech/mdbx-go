@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY a0e7c54f688eecaf45ddd7493b737f88a97e4e8b0fdaa55c9d3b00d69e0c8548_v0_12_6_0_gc019631a
+#define MDBX_BUILD_SOURCERY ebeda40b8c0169ccf30ebd941a2b981f6fd48f58fe1f312f009155730f59d44e_v0_13_0_3_g5c20b296
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -209,6 +209,7 @@
 #include <stdlib.h>
 
 #include <assert.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
@@ -1727,6 +1728,8 @@ MDBX_INTERNAL_FUNC int osal_lck_seize(MDBX_env *env);
 ///   operational lock.
 /// \return Error code or zero on success
 MDBX_INTERNAL_FUNC int osal_lck_downgrade(MDBX_env *env);
+MDBX_MAYBE_UNUSED MDBX_INTERNAL_FUNC int osal_lck_upgrade(MDBX_env *env,
+                                                          bool dont_wait);
 
 /// \brief Locks LCK-file or/and table of readers for (de)registering.
 /// \return Error code or zero on success
@@ -1735,16 +1738,12 @@ MDBX_INTERNAL_FUNC int osal_rdt_lock(MDBX_env *env);
 /// \brief Unlocks LCK-file or/and table of readers after (de)registering.
 MDBX_INTERNAL_FUNC void osal_rdt_unlock(MDBX_env *env);
 
-/// \brief Acquires lock for DB change (on writing transaction start)
-///   Reading transactions will not be blocked.
-///   Declared as LIBMDBX_API because it is used in mdbx_chk.
+/// \brief Acquires write-transaction lock.
 /// \return Error code or zero on success
-LIBMDBX_API int mdbx_txn_lock(MDBX_env *env, bool dont_wait);
+MDBX_INTERNAL_FUNC int osal_txn_lock(MDBX_env *env, bool dont_wait);
 
-/// \brief Releases lock once DB changes is made (after writing transaction
-///   has finished).
-///   Declared as LIBMDBX_API because it is used in mdbx_chk.
-LIBMDBX_API void mdbx_txn_unlock(MDBX_env *env);
+/// \brief Releases write-transaction lock..
+MDBX_INTERNAL_FUNC void osal_txn_unlock(MDBX_env *env);
 
 /// \brief Sets alive-flag of reader presence (indicative lock) for PID of
 ///   the current process. The function does no more than needed for
@@ -2977,7 +2976,8 @@ typedef struct MDBX_page {
 
 #define PAGETYPE_WHOLE(p) ((uint8_t)(p)->mp_flags)
 
-/* Drop legacy P_DIRTY flag for sub-pages for compatilibity */
+/* Drop legacy P_DIRTY flag for sub-pages for compatilibity,
+ * for assertions only. */
 #define PAGETYPE_COMPAT(p)                                                     \
   (unlikely(PAGETYPE_WHOLE(p) & P_SUBP)                                        \
        ? PAGETYPE_WHOLE(p) & ~(P_SUBP | P_LEGACY_DIRTY)                        \
@@ -3410,10 +3410,10 @@ typedef struct troika {
 #if MDBX_WORDBITS > 32 /* Workaround for false-positives from Valgrind */
   uint32_t unused_pad;
 #endif
-#define TROIKA_HAVE_STEADY(troika) ((troika)->fsm & 7)
-#define TROIKA_STRICT_VALID(troika) ((troika)->tail_and_flags & 64)
-#define TROIKA_VALID(troika) ((troika)->tail_and_flags & 128)
-#define TROIKA_TAIL(troika) ((troika)->tail_and_flags & 3)
+#define TROIKA_HAVE_STEADY(troika) ((troika)->fsm & 7u)
+#define TROIKA_STRICT_VALID(troika) ((troika)->tail_and_flags & 64u)
+#define TROIKA_VALID(troika) ((troika)->tail_and_flags & 128u)
+#define TROIKA_TAIL(troika) ((troika)->tail_and_flags & 3u)
   txnid_t txnid[NUM_METAS];
 } meta_troika_t;
 
@@ -4061,6 +4061,36 @@ MDBX_MAYBE_UNUSED static void static_checks(void) {
           (size_t)(size), __LINE__);                                           \
     ASAN_UNPOISON_MEMORY_REGION(addr, size);                                   \
   } while (0)
+
+/******************************************************************************/
+
+/** \brief Page types for traverse the b-tree.
+ * \see mdbx_env_pgwalk() \see MDBX_pgvisitor_func */
+enum MDBX_page_type_t {
+  MDBX_page_broken,
+  MDBX_page_large,
+  MDBX_page_branch,
+  MDBX_page_leaf,
+  MDBX_page_dupfixed_leaf,
+  MDBX_subpage_leaf,
+  MDBX_subpage_dupfixed_leaf,
+  MDBX_subpage_broken,
+};
+typedef enum MDBX_page_type_t MDBX_page_type_t;
+
+typedef struct MDBX_walk_sdb {
+  MDBX_val name;
+  struct MDBX_db *internal, *nested;
+} MDBX_walk_sdb_t;
+
+/** \brief Callback function for traverse the b-tree. \see mdbx_env_pgwalk() */
+typedef int
+MDBX_pgvisitor_func(const size_t pgno, const unsigned number, void *const ctx,
+                    const int deep, const MDBX_walk_sdb_t *subdb,
+                    const size_t page_size, const MDBX_page_type_t page_type,
+                    const MDBX_error_t err, const size_t nentries,
+                    const size_t payload_bytes, const size_t header_bytes,
+                    const size_t unused_bytes);
 
 #include <ctype.h>
 
