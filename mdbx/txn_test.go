@@ -399,7 +399,7 @@ func TestTxn_OpenDBI_emptyName(t *testing.T) {
 		_, err = txn.OpenDBISimple("", 0)
 		return err
 	})
-	if !IsErrno(err, NotFound) {
+	if !IsNotFound(err) {
 		t.Errorf("mdb_dbi_open: %v", err)
 	}
 

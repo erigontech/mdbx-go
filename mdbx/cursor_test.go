@@ -250,7 +250,7 @@ func TestCursor_Get_KV(t *testing.T) {
 		}
 
 		_, _, err = cur.Get([]byte("k0"), []byte("v0"), GetBothRange)
-		if !IsErrno(err, NotFound) {
+		if !IsNotFound(err) {
 			t.Errorf("unexpected error: %s", err)
 		}
 
