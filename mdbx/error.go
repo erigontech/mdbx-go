@@ -8,6 +8,7 @@ package mdbx
 import "C"
 
 import (
+	"fmt"
 	"os"
 	"syscall"
 )
@@ -33,10 +34,10 @@ func (err *OpError) Error() string {
 // Most often helper functions such as IsNotFound may be used instead of
 // dealing with Errno values directly.
 //
-//		lmdb.IsNotFound(err)
-//		lmdb.IsErrno(err, lmdb.TxnFull)
-//		lmdb.IsErrnoSys(err, syscall.EINVAL)
-//		lmdb.IsErrnoFn(err, os.IsPermission)
+//	lmdb.IsNotFound(err)
+//	lmdb.IsErrno(err, lmdb.TxnFull)
+//	lmdb.IsErrnoSys(err, syscall.EINVAL)
+//	lmdb.IsErrnoFn(err, os.IsPermission)
 type Errno C.int
 
 // The most common error codes do not need to be handled explicity.  Errors can
@@ -76,6 +77,8 @@ const (
 // other values may still be produced.
 const minErrno, maxErrno C.int = C.MDBX_KEYEXIST, C.MDBX_LAST_ADDED_ERRCODE
 
+var ErrNotFound = fmt.Errorf("key not found")
+
 // App can re-define this messages from init() func
 var CorruptErrorHardwareRecommendations = "Maybe free space is over on disk. Otherwise it's hardware failure. Before creating issue please use tools like https://www.memtest86.com to test RAM and tools like https://www.smartmontools.org to test Disk. To handle hardware risks: use ECC RAM, use RAID of disks, run multiple application instances (or do backups). If hardware checks passed - check FS settings - 'fsync' and 'flock' must be enabled. "
 var CorruptErrorBacktraceRecommendations = "Otherwise - please create issue in Application repo." // with backtrace or coredump. To create coredump set compile option 'MDBX_FORCE_ASSERTIONS=1' and env variable 'GOTRACEBACK=crash'."
@@ -84,8 +87,9 @@ var CorruptErrorMessage = CorruptErrorHardwareRecommendations + " " + CorruptErr
 
 func (e Errno) Error() string {
 	if e == Corrupted {
-		return "MDBX_CORRUPTED: " + CorruptErrorMessage
-	} else if e == Panic {
+		return "MDBX_FATAL: " + CorruptErrorMessage
+	}
+	if e == Panic {
 		return "MDBX_PANIC: " + CorruptErrorMessage
 	}
 	return C.GoString(C.mdbx_strerror(C.int(e)))
@@ -99,9 +103,7 @@ func _operrno(op string, ret int) error {
 // IsNotFound returns true if the key requested in Txn.Get or Cursor.Get does
 // not exist or if the Cursor reached the end of the database without locating
 // a value (EOF).
-func IsNotFound(err error) bool {
-	return IsErrno(err, NotFound)
-}
+func IsNotFound(err error) bool { return err == ErrNotFound } //nolint
 
 func IsKeyExists(err error) bool {
 	return IsErrno(err, KeyExist)
