@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/torquem-ch/mdbx-go/mdbx"
+	"github.com/erigontech/mdbx-go/mdbx"
 )
 
 // UpdateHandling describes how a TxnPool handles existing mdbx.Readonly

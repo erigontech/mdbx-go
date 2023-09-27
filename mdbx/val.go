@@ -10,7 +10,7 @@ import "C"
 import (
 	"unsafe"
 
-	"github.com/torquem-ch/mdbx-go/mdbx/mdbxarch"
+	"github.com/erigontech/mdbx-go/mdbx/mdbxarch"
 )
 
 // Just for docs:
@@ -112,5 +112,8 @@ func wrapVal(b []byte) *C.MDBX_val {
 }
 
 func castToBytes(val *C.MDBX_val) []byte {
+	if val.iov_len == 0 {
+		return []byte{}
+	}
 	return (*[valMaxSize]byte)(val.iov_base)[:val.iov_len:val.iov_len]
 }
