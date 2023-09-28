@@ -690,3 +690,7 @@ func (txn *Txn) ListDBI() (res []string, err error) {
 	}
 	return res, nil
 }
+
+func (txn *Txn) CHandle() unsafe.Pointer {
+	return unsafe.Pointer(txn._txn)
+}
