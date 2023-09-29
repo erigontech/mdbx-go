@@ -1,6 +1,9 @@
 
 .PHONY: deps all test race bin
 
+CFLAGS := $(shell $(GO) env CFLAGS 2>/dev/null) # don't lose default
+CGO_CFLAGS += -Wno-unknown-warning-option -Wno-enum-int-mismatch -Wno-strict-prototypes
+
 MASTER_COMMIT=`git rev-parse --short origin/master`
 
 deps: lintci-deps
@@ -19,7 +22,7 @@ lint:
 
 lintci-deps:
 	rm -f ./build/bin/golangci-lint
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./build/bin v1.49.0
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./build/bin v1.54.2
 
 clean:
 	cd mdbxdist && make clean
