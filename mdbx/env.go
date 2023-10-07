@@ -626,3 +626,7 @@ func (env *Env) run(lock bool, flags uint, fn TxnOp) error {
 func (env *Env) CloseDBI(db DBI) {
 	C.mdbx_dbi_close(env._env, C.MDBX_dbi(db))
 }
+
+func (env *Env) CHandle() unsafe.Pointer {
+	return unsafe.Pointer(env._env)
+}
