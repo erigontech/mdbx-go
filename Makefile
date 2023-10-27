@@ -28,7 +28,7 @@ clean:
 	cd mdbxdist && make clean
 
 tools: clean
-	cd mdbxdist && MDBX_BUILD_TIMESTAMP=unknown make tools
+	cd mdbxdist && MDBX_BUILD_TIMESTAMP=unknown CFLAGS="${CFLAGS} -Wno-unknown-warning-option -Wno-enum-int-mismatch -Wno-strict-prototypes -Wno-unused-but-set-variable" make tools
 
 cp:
 	cp mdbxdist/mdbx.h mdbx/
