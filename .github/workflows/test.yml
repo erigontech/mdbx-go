@@ -33,7 +33,6 @@ jobs:
 
       - name: Install dependencies
         run: |
-          choco uninstall mingw -y
           choco upgrade mingw -y --no-progress --version 11.2.0.07112021
           choco install cmake -y --no-progress --version 3.23.1
 
