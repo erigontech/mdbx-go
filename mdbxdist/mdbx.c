@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 748ccee885a921bfe8ef7b24e71957dd3922fe37083ceb8048cb89c28c5d8f9b_v0_12_7_20_g2b0eae08
+#define MDBX_BUILD_SOURCERY d7603e99410126db376215bd0ceb9c2e32eba2af6c4988c85272497a38e29e56_v0_12_8_6_ged8c7ead
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2051,8 +2051,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 /** Controls using Unix' mincore() to determine whether DB-pages
  * are resident in memory. */
 #ifndef MDBX_ENABLE_MINCORE
-#if MDBX_ENABLE_PREFAULT &&                                                    \
-    (defined(MINCORE_INCORE) || !(defined(_WIN32) || defined(_WIN64)))
+#if defined(MINCORE_INCORE) || !(defined(_WIN32) || defined(_WIN64))
 #define MDBX_ENABLE_MINCORE 1
 #else
 #define MDBX_ENABLE_MINCORE 0
@@ -20916,11 +20915,13 @@ static __hot int cursor_get(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
     }
     break;
   case MDBX_GET_MULTIPLE:
-    if (unlikely(data == NULL || !(mc->mc_flags & C_INITIALIZED)))
+    if (unlikely(!data))
       return MDBX_EINVAL;
-    if (unlikely(!(mc->mc_db->md_flags & MDBX_DUPFIXED)))
+    if (unlikely((mc->mc_db->md_flags & MDBX_DUPFIXED) == 0))
       return MDBX_INCOMPATIBLE;
-    rc = MDBX_SUCCESS;
+    rc = (mc->mc_flags & C_INITIALIZED)
+             ? MDBX_SUCCESS
+             : cursor_set(mc, key, data, MDBX_SET).err;
     if ((mc->mc_xcursor->mx_cursor.mc_flags & (C_INITIALIZED | C_EOF)) !=
         C_INITIALIZED)
       break;
@@ -27099,30 +27100,6 @@ int mdbx_drop(MDBX_txn *txn, MDBX_dbi dbi, bool del) {
 bailout:
   mdbx_cursor_close(mc);
   return rc;
-}
-
-int mdbx_set_compare(MDBX_txn *txn, MDBX_dbi dbi, MDBX_cmp_func *cmp) {
-  int rc = check_txn(txn, MDBX_TXN_BLOCKED - MDBX_TXN_ERROR);
-  if (unlikely(rc != MDBX_SUCCESS))
-    return rc;
-
-  if (unlikely(!check_dbi(txn, dbi, DBI_USRVALID)))
-    return MDBX_BAD_DBI;
-
-  txn->mt_dbxs[dbi].md_cmp = cmp;
-  return MDBX_SUCCESS;
-}
-
-int mdbx_set_dupsort(MDBX_txn *txn, MDBX_dbi dbi, MDBX_cmp_func *cmp) {
-  int rc = check_txn(txn, MDBX_TXN_BLOCKED - MDBX_TXN_ERROR);
-  if (unlikely(rc != MDBX_SUCCESS))
-    return rc;
-
-  if (unlikely(!check_dbi(txn, dbi, DBI_USRVALID)))
-    return MDBX_BAD_DBI;
-
-  txn->mt_dbxs[dbi].md_dcmp = cmp;
-  return MDBX_SUCCESS;
 }
 
 __cold int mdbx_reader_list(const MDBX_env *env, MDBX_reader_list_func *func,
@@ -33363,10 +33340,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         12,
-        7,
-        20,
-        {"2023-10-09T22:12:06+03:00", "1f76e0a48d39074b6ca2a30b74c31b858d09cb2b", "2b0eae08f565b55d035d08cb87dea89566cf0747",
-         "v0.12.7-20-g2b0eae08"},
+        8,
+        6,
+        {"2023-10-29T12:20:54+03:00", "551a22197e35ee5c5902f8fe0c4dbf4da99722a4", "ed8c7ead4e0f7afc50491d34918eae85dff64b86",
+         "v0.12.8-6-ged8c7ead"},
         sourcery};
 
 __dll_export

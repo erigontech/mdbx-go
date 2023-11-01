@@ -1,4 +1,4 @@
-##  Copyright (c) 2012-2022 Leonid Yuriev <leo@yuriev.ru>.
+##  Copyright (c) 2012-2023 Leonid Yuriev <leo@yuriev.ru>.
 ##
 ##  Licensed under the Apache License, Version 2.0 (the "License");
 ##  you may not use this file except in compliance with the License.
@@ -13,7 +13,9 @@
 ##  limitations under the License.
 ##
 
-if(CMAKE_VERSION VERSION_LESS 3.12)
+if(CMAKE_VERSION VERSION_LESS 3.8.2)
+  cmake_minimum_required(VERSION 3.0.2)
+elseif(CMAKE_VERSION VERSION_LESS 3.12)
   cmake_minimum_required(VERSION 3.8.2)
 else()
   cmake_minimum_required(VERSION 3.12)
@@ -203,9 +205,38 @@ endif()
 
 if(NOT CMAKE_SYSTEM_ARCH)
   if(CMAKE_${CMAKE_PRIMARY_LANG}_COMPILER_ARCHITECTURE_ID)
-    set(CMAKE_SYSTEM_ARCH "${CMAKE_${CMAKE_PRIMARY_LANG}_COMPILER_ARCHITECTURE_ID}")
+    string(TOLOWER "${CMAKE_${CMAKE_PRIMARY_LANG}_COMPILER_ARCHITECTURE_ID}" CMAKE_SYSTEM_ARCH)
+    if(CMAKE_SYSTEM_ARCH STREQUAL "x86")
+      set(X86_32 TRUE)
+    elseif(CMAKE_SYSTEM_ARCH STREQUAL "x86_64" OR CMAKE_SYSTEM_ARCH STREQUAL "x64")
+      set(X86_64 TRUE)
+      set(CMAKE_SYSTEM_ARCH "x86_64")
+    elseif(CMAKE_SYSTEM_ARCH MATCHES "^(aarch.*|arm.*)")
+      if(CMAKE_TARGET_BITNESS EQUAL 64)
+        set(AARCH64 TRUE)
+      else()
+        set(ARM32 TRUE)
+      endif()
+    endif()
   elseif(CMAKE_ANDROID_ARCH_ABI)
     set(CMAKE_SYSTEM_ARCH "${CMAKE_ANDROID_ARCH_ABI}")
+    if(CMAKE_SYSTEM_ARCH STREQUAL "x86")
+      set(X86_32 TRUE)
+    elseif(CMAKE_SYSTEM_ARCH STREQUAL "x86_64")
+      set(X86_64 TRUE)
+    elseif(CMAKE_SYSTEM_ARCH MATCHES "^(aarch.*|AARCH.*|arm.*|ARM.*)")
+      if(CMAKE_TARGET_BITNESS EQUAL 64)
+        set(AARCH64 TRUE)
+      else()
+        set(ARM32 TRUE)
+      endif()
+    elseif(CMAKE_SYSTEM_ARCH MATCHES "^(mips|MIPS).*")
+      if(CMAKE_TARGET_BITNESS EQUAL 64)
+        set(MIPS64 TRUE)
+      else()
+        set(MIPS32 TRUE)
+      endif()
+    endif()
   elseif(CMAKE_COMPILER_IS_ELBRUSC OR CMAKE_COMPILER_IS_ELBRUSCXX
       OR CMAKE_${CMAKE_PRIMARY_LANG}_COMPILER_ID STREQUAL "LCC"
       OR CMAKE_SYSTEM_PROCESSOR MATCHES "e2k.*|E2K.*|elbrus.*|ELBRUS.*")
@@ -317,6 +348,8 @@ endif()
 
 if(MSVC)
   check_compiler_flag("/WX" CC_HAS_WERROR)
+  check_compiler_flag("/fsanitize=address" CC_HAS_ASAN)
+  check_compiler_flag("/fsanitize=undefined" CC_HAS_UBSAN)
 else()
   #
   # GCC started to warn for unused result starting from 4.2, and
@@ -808,19 +841,26 @@ macro(setup_compile_flags)
   endif()
 
   if(ENABLE_ASAN)
-    add_compile_flags("C;CXX" "-fsanitize=address")
+    if(NOT MSVC)
+      add_compile_flags("C;CXX" "-fsanitize=address")
+    else()
+      add_compile_flags("C;CXX" "/fsanitize=address")
+    endif()
     add_definitions(-DASAN_ENABLED=1)
   endif()
 
   if(ENABLE_UBSAN)
-    add_compile_flags("C;CXX" "-fsanitize=undefined" "-fsanitize-undefined-trap-on-error")
+    if(NOT MSVC)
+      add_compile_flags("C;CXX" "-fsanitize=undefined" "-fsanitize-undefined-trap-on-error")
+    else()
+      add_compile_flags("C;CXX" "/fsanitize=undefined")
+    endif()
     add_definitions(-DUBSAN_ENABLED=1)
   endif()
 
   if(ENABLE_GCOV)
     if(NOT HAVE_GCOV)
-      message(FATAL_ERROR
-        "ENABLE_GCOV option requested but gcov library is not found")
+      message(FATAL_ERROR "ENABLE_GCOV option requested but gcov library is not found")
     endif()
 
     add_compile_flags("C;CXX" "-fprofile-arcs" "-ftest-coverage")
@@ -929,12 +969,13 @@ endmacro(setup_compile_flags)
 macro(probe_libcxx_filesystem)
   if(CMAKE_CXX_COMPILER_LOADED AND NOT DEFINED LIBCXX_FILESYSTEM)
     list(FIND CMAKE_CXX_COMPILE_FEATURES cxx_std_11 HAS_CXX11)
-    if(NOT HAS_CXX11 LESS 0)
+    if(NOT HAS_CXX11 LESS 0 OR CXX_FALLBACK_GNU11 OR CXX_FALLBACK_11)
       include(CMakePushCheckState)
       include(CheckCXXSourceCompiles)
       cmake_push_check_state()
       set(stdfs_probe_save_libraries ${CMAKE_REQUIRED_LIBRARIES})
       set(stdfs_probe_save_flags ${CMAKE_REQUIRED_FLAGS})
+      set(stdfs_probe_flags ${CMAKE_REQUIRED_FLAGS})
       set(stdfs_probe_save_link_options ${CMAKE_REQUIRED_LINK_OPTIONS})
       unset(stdfs_probe_clear_cxx_standard)
       if(NOT DEFINED CMAKE_CXX_STANDARD)
@@ -945,18 +986,23 @@ macro(probe_libcxx_filesystem)
           set(CMAKE_CXX_STANDARD 17)
         elseif(NOT HAS_CXX14 LESS 0)
           set(CMAKE_CXX_STANDARD 14)
-        else()
+        elseif(NOT HAS_CXX11 LESS 0)
           set(CMAKE_CXX_STANDARD 11)
+        elseif(CXX_FALLBACK_GNU11)
+          set(stdfs_probe_flags ${stdfs_probe_flags} "-std=gnu++11")
+        else()
+          set(stdfs_probe_flags ${stdfs_probe_flags} "-std=c++11")
         endif()
         set(stdfs_probe_clear_cxx_standard ON)
       endif()
       if(CMAKE_COMPILER_IS_ELBRUSCXX AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 1.25.23)
         if(CMAKE_VERSION VERSION_LESS 3.14)
-          set(CMAKE_REQUIRED_FLAGS ${stdfs_probe_save_flags} "-Wl,--allow-multiple-definition")
+          set(stdfs_probe_flags ${stdfs_probe_flags} "-Wl,--allow-multiple-definition")
         else()
           set(CMAKE_REQUIRED_LINK_OPTIONS ${stdfs_probe_save_link_options} "-Wl,--allow-multiple-definition")
         endif()
       endif()
+      set(CMAKE_REQUIRED_FLAGS ${stdfs_probe_flags})
 
       set(stdfs_probe_code [[
         #if defined(__SIZEOF_INT128__) && !defined(__GLIBCXX_TYPE_INT_N_0) && defined(__clang__) && __clang_major__ < 4
@@ -993,9 +1039,15 @@ macro(probe_libcxx_filesystem)
         #endif
 
         int main(int argc, const char*argv[]) {
-          fs::path probe(argv[0]);
+          std::string str(argv[0]);
+          fs::path probe(str);
           if (argc != 1) throw fs::filesystem_error(std::string("fake"), std::error_code());
-          return fs::is_directory(probe.relative_path());
+          int r = fs::is_directory(probe.relative_path());
+          for (auto const& i : fs::directory_iterator(probe)) {
+            ++r;
+            (void)i;
+          }
+          return r;
         }
         ]])
       set(LIBCXX_FILESYSTEM "")
@@ -1037,6 +1089,7 @@ macro(probe_libcxx_filesystem)
       unset(stdfs_probe_clear_cxx_standard)
       unset(stdfs_probe_save_link_options)
       unset(stdfs_probe_save_flags)
+      unset(stdfs_probe_flags)
       unset(stdfs_probe_save_libraries)
       unset(stdfs_probe_code)
       unset(stdfs_probe_rc)
