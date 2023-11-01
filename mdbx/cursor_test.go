@@ -632,6 +632,7 @@ func TestCursor_Get_reverse(t *testing.T) {
 //}
 
 func TestCursor_Del(t *testing.T) {
+
 	env, _ := setup(t)
 
 	var db DBI
