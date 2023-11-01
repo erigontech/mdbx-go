@@ -23,15 +23,16 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
-        with:
-          go-version: '1.18'
-
       - name: Install dependencies
         run: |
           choco uninstall mingw -y
           choco upgrade mingw -y --no-progress --version 11.2.0.07112021
           choco install cmake -y --no-progress --version 3.23.1
+
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.18'
+
 
       - run: go test ./mdbx ./exp/mdbxpool
