@@ -736,20 +736,41 @@ func TestDupCursor_EmptyKeyValues(t *testing.T) {
 	var db DBI
 	err := env.Update(func(txn *Txn) (err error) {
 		db, err = txn.OpenDBI("testingdup", Create|DupSort, nil, nil)
-		cur, _ := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
 
 		// empty value - must function as valid dupsort value
-		txn.Put(db, []byte{1}, []byte{}, 0)
-		txn.Put(db, []byte{1}, []byte{8}, 0)
+		if err = txn.Put(db, []byte{1}, []byte{}, 0); err != nil {
+			panic(err)
+		}
+		if err = txn.Put(db, []byte{1}, []byte{8}, 0); err != nil {
+			panic(err)
+		}
+
 		_, v, err := cur.Get([]byte{1}, []byte{}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
 		if !bytes.Equal(v, []byte{}) {
 			panic(v)
 		}
 		_, v, err = cur.Get([]byte{1}, []byte{0}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
 		if !bytes.Equal(v, []byte{8}) {
 			panic(v)
 		}
 		_, v, err = cur.Get([]byte{}, []byte{0}, GetBoth)
+		if err == nil {
+			panic("expecting 'not found' error")
+		}
 		if v != nil {
 			panic(v)
 		}
@@ -777,31 +798,54 @@ func TestDupCursor_EmptyKeyValues(t *testing.T) {
 		}
 
 		// empty key - must function as valid dupsort key
-		txn.Put(db, []byte{}, []byte{}, 0)
-		txn.Put(db, []byte{}, []byte{2}, 0)
+		if err = txn.Put(db, []byte{}, []byte{}, 0); err != nil {
+			panic(err)
+		}
+		if err = txn.Put(db, []byte{}, []byte{2}, 0); err != nil {
+			panic(err)
+		}
 		_, v, err = cur.Get([]byte{}, []byte{}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
 		if !bytes.Equal(v, []byte{}) {
 			panic(v)
 		}
 		_, v, err = cur.Get([]byte{}, []byte{0}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
 		if !bytes.Equal(v, []byte{2}) {
 			panic(v)
 		}
 		_, v, err = cur.Get([]byte{}, []byte{0}, GetBoth)
+		if err == nil {
+			panic("expecting 'not found' error ")
+		}
 		if v != nil {
 			panic(v)
 		}
 
 		// non-existing key
 		_, v, err = cur.Get([]byte{7}, []byte{}, GetBoth)
+		if err != nil {
+			panic(err)
+		}
 		if v != nil {
 			panic(v)
 		}
 
 		// sub-db doesn't have empty value, but we must be able to search from it
-		txn.Put(db, []byte{2}, []byte{1}, 0)
-		txn.Put(db, []byte{2}, []byte{3}, 0)
+		if err = txn.Put(db, []byte{2}, []byte{1}, 0); err != nil {
+			return err
+		}
+		if err = txn.Put(db, []byte{2}, []byte{3}, 0); err != nil {
+			return err
+		}
 		_, v, err = cur.Get([]byte{2}, []byte{}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
 		if !bytes.Equal(v, []byte{1}) {
 			panic(v)
 		}
