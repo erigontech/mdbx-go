@@ -75,6 +75,11 @@ int mdbxgo_cursor_putmulti(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata
     return mdbx_cursor_put(cur, &key, &val[0], flags);
 }
 
+int mdbxgo_cursor_get01(MDBX_cursor *cur, char *vdata, size_t vn, MDBX_val *key, MDBX_val *val, MDBX_cursor_op op) {
+    MDBXGO_SET_VAL(val, vn, vdata);
+    return mdbx_cursor_get(cur, key, val, op);
+}
+
 int mdbxgo_cursor_get1(MDBX_cursor *cur, char *kdata, size_t kn, MDBX_val *key, MDBX_val *val, MDBX_cursor_op op) {
     MDBXGO_SET_VAL(key, kn, kdata);
     return mdbx_cursor_get(cur, key, val, op);
