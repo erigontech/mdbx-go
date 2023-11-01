@@ -828,8 +828,8 @@ func TestDupCursor_EmptyKeyValues(t *testing.T) {
 
 		// non-existing key
 		_, v, err = cur.Get([]byte{7}, []byte{}, GetBoth)
-		if err != nil {
-			panic(err)
+		if err == nil {
+			panic("expecting 'not found' error")
 		}
 		if v != nil {
 			panic(v)
