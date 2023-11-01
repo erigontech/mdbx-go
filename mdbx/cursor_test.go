@@ -730,7 +730,7 @@ func TestCursor_Del(t *testing.T) {
 }
 
 func TestDupCursor_EmptyKeyValues(t *testing.T) {
-	env, _ := setup(t)
+	env := setup(t)
 
 	var db DBI
 	err := env.Update(func(txn *Txn) (err error) {
