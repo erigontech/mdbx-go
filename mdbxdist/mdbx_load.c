@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 748ccee885a921bfe8ef7b24e71957dd3922fe37083ceb8048cb89c28c5d8f9b_v0_12_7_20_g2b0eae08
+#define MDBX_BUILD_SOURCERY d7603e99410126db376215bd0ceb9c2e32eba2af6c4988c85272497a38e29e56_v0_12_8_6_ged8c7ead
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2073,8 +2073,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 /** Controls using Unix' mincore() to determine whether DB-pages
  * are resident in memory. */
 #ifndef MDBX_ENABLE_MINCORE
-#if MDBX_ENABLE_PREFAULT &&                                                    \
-    (defined(MINCORE_INCORE) || !(defined(_WIN32) || defined(_WIN64)))
+#if defined(MINCORE_INCORE) || !(defined(_WIN32) || defined(_WIN64))
 #define MDBX_ENABLE_MINCORE 1
 #else
 #define MDBX_ENABLE_MINCORE 0
