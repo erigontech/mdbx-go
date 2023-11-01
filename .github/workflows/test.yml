@@ -35,4 +35,5 @@ jobs:
           go-version: '1.18'
 
 
+      - run: go env
       - run: go test ./mdbx ./exp/mdbxpool
