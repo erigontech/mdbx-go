@@ -24,6 +24,7 @@ int mdbxgo_put2(MDBX_txn *txn, MDBX_dbi dbi, char *kdata, size_t kn, char *vdata
 int mdbxgo_cursor_put1(MDBX_cursor *cur, char *kdata, size_t kn, MDBX_val *val, MDBX_put_flags_t flags);
 int mdbxgo_cursor_put2(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_put_flags_t flags);
 int mdbxgo_cursor_putmulti(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, size_t vstride, MDBX_put_flags_t flags);
+int mdbxgo_cursor_get01(MDBX_cursor *cur, char *vdata, size_t vn, MDBX_val *key, MDBX_val *val, MDBX_cursor_op op);
 int mdbxgo_cursor_get1(MDBX_cursor *cur, char *kdata, size_t kn, MDBX_val *key, MDBX_val *val, MDBX_cursor_op op);
 int mdbxgo_cursor_get2(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_val *key, MDBX_val *val, MDBX_cursor_op op);
 /* ConstCString wraps a null-terminated (const char *) because Go's type system

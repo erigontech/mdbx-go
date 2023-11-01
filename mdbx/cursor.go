@@ -148,8 +148,10 @@ func (c *Cursor) DBI() DBI {
 // See mdb_cursor_get.
 func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error) {
 	switch {
-	case len(setkey) == 0:
+	case len(setkey) == 0 && len(setval) == 0:
 		err = c.getVal0(op)
+	case len(setkey) == 0:
+		err = c.getVal01(setval, op)
 	case len(setval) == 0:
 		err = c.getVal1(setkey, op)
 	default:
@@ -203,6 +205,20 @@ func (c *Cursor) getVal1(setkey []byte, op uint) error {
 	ret := C.mdbxgo_cursor_get1(
 		c._c,
 		k, C.size_t(len(setkey)),
+		c.txn.key,
+		c.txn.val,
+		C.MDBX_cursor_op(op),
+	)
+	return operrno("mdbx_cursor_get", ret)
+}
+func (c *Cursor) getVal01(setval []byte, op uint) error {
+	var v *C.char
+	if len(setval) > 0 {
+		v = (*C.char)(unsafe.Pointer(&setval[0]))
+	}
+	ret := C.mdbxgo_cursor_get01(
+		c._c,
+		v, C.size_t(len(setval)),
 		c.txn.key,
 		c.txn.val,
 		C.MDBX_cursor_op(op),

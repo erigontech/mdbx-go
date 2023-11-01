@@ -729,6 +729,89 @@ func TestCursor_Del(t *testing.T) {
 	}
 }
 
+func TestDupCursor_EmptyKeyValues(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBI("testingdup", Create|DupSort, nil, nil)
+		cur, _ := txn.OpenCursor(db)
+
+		// empty value - must function as valid dupsort value
+		txn.Put(db, []byte{1}, []byte{}, 0)
+		txn.Put(db, []byte{1}, []byte{8}, 0)
+		_, v, err := cur.Get([]byte{1}, []byte{}, GetBothRange)
+		if !bytes.Equal(v, []byte{}) {
+			panic(v)
+		}
+		_, v, err = cur.Get([]byte{1}, []byte{0}, GetBothRange)
+		if !bytes.Equal(v, []byte{8}) {
+			panic(v)
+		}
+		_, v, err = cur.Get([]byte{}, []byte{0}, GetBoth)
+		if v != nil {
+			panic(v)
+		}
+
+		// can use empty key as valid key in non-dupsort operations
+		k, v, err := cur.Get([]byte{}, nil, SetRange)
+		if err != nil {
+			panic(err)
+		}
+		if k == nil {
+			panic("nil")
+		}
+		if !bytes.Equal(k, []byte{1}) {
+			panic(fmt.Sprintf("%x", k))
+		}
+		if !bytes.Equal(v, []byte{}) {
+			panic(fmt.Sprintf("%x", v))
+		}
+		k, v, err = cur.Get([]byte{}, nil, Set)
+		if err == nil {
+			panic("expected 'not found' error")
+		}
+		if k != nil {
+			panic("nil")
+		}
+
+		// empty key - must function as valid dupsort key
+		txn.Put(db, []byte{}, []byte{}, 0)
+		txn.Put(db, []byte{}, []byte{2}, 0)
+		_, v, err = cur.Get([]byte{}, []byte{}, GetBothRange)
+		if !bytes.Equal(v, []byte{}) {
+			panic(v)
+		}
+		_, v, err = cur.Get([]byte{}, []byte{0}, GetBothRange)
+		if !bytes.Equal(v, []byte{2}) {
+			panic(v)
+		}
+		_, v, err = cur.Get([]byte{}, []byte{0}, GetBoth)
+		if v != nil {
+			panic(v)
+		}
+
+		// non-existing key
+		_, v, err = cur.Get([]byte{7}, []byte{}, GetBoth)
+		if v != nil {
+			panic(v)
+		}
+
+		// sub-db doesn't have empty value, but we must be able to search from it
+		txn.Put(db, []byte{2}, []byte{1}, 0)
+		txn.Put(db, []byte{2}, []byte{3}, 0)
+		_, v, err = cur.Get([]byte{2}, []byte{}, GetBothRange)
+		if !bytes.Equal(v, []byte{1}) {
+			panic(v)
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
 // This test verifies the behavior of Cursor.Count when DupSort is provided.
 func TestCursor_Count_DupSort(t *testing.T) {
 	env, _ := setup(t)
