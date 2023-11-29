@@ -5,6 +5,32 @@ English version [by Google](https://gitflic-ru.translate.goog/project/erthink/li
 and [by Yandex](https://translated.turbopages.org/proxy_u/ru-en.en/https/gitflic.ru/project/erthink/libmdbx/blob?file=ChangeLog.md).
 
 
+## v0.13.0 at 2023-04-23
+
+Не выпуск, а начало ветки `0.13` с новым функционалом и изменением API.
+
+Новое:
+
+ - Расширение API функционалом проверки целостности структуры БД, с
+   переработкой и переноса функционала утилиты `mdbx_chk` внутрь библиотеки.
+
+ - Расширение API функциями lock/unlock/upgrade/downgrade основной блокировки.
+
+ - Добавление в API функций `mdbx_cursor_unbind()` и `mdbx_txn_release_all_cursors()`.
+
+ - Возвращение `MDBX_TXN_INVALID` (`INT32_MIN`) вместо `-1`
+   из `mdbx_txn_flags()` при передаче невалидной транзакции.
+
+Мелочи:
+
+ - Обновление конфигурации Doxygen до 1.9.6.
+ - Добавление `--read-var-info=yes` для Valgrind.
+ - Вывод из `mdbx_chk` информации об уровне детализации/verbosity.
+
+
+********************************************************************************
+
+
 ## v0.12.8 (сопровождение и подготовка к релизу)
 
 Поддержка стабильной ветки.
@@ -28,6 +54,7 @@ and [by Yandex](https://translated.turbopages.org/proxy_u/ru-en.en/https/gitflic
 
 
 ## v0.12.8 "Владимир Уткин" от 2023-10-17
+
 
 Стабилизирующий выпуск с исправлением обнаруженных ошибок и устранением недочетов,
 в день 100-летия со дня рождения выдающегося советского и российского ученого и конструктора [Влади́мира Фёдоровича У́ткина](https://ru.wikipedia.org/wiki/Уткин,_Владимир_Фёдорович).
