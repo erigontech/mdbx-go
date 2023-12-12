@@ -5,7 +5,7 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ ubuntu-20.04, macos-11 ] # list of os: https://github.com/actions/virtual-environments
+        os: [ ubuntu-20.04, macos-13 ] # list of os: https://github.com/actions/virtual-environments
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -33,8 +33,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          choco upgrade mingw -y --no-progress --version 11.2.0.07112021
-          choco install cmake -y --no-progress --version 3.23.1
+          choco upgrade mingw -y --no-progress --version 13.2.0
+          choco install cmake -y --no-progress --version 3.27.8
 
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
