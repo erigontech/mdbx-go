@@ -132,6 +132,8 @@ package mdbx
 
 #cgo windows LDFLAGS: -lntdll
 #cgo !android,linux LDFLAGS: -lrt
+
+#include "mdbxgo.h"
 */
 import "C"
 
@@ -162,3 +164,10 @@ CGO_CFLAGS="${CGO_CFLAGS} -DMDBX_DEBUG=1 -DMDBX_FORCE_ASSERTIONS=1 -v" go run ./
 //	verstr := C.mdbx_version(&maj, &min, &pat)
 //	return C.GoString(verstr)
 //}
+
+// Version returns the C library version string in git describe format.
+//
+// See mdbx_version.
+func Version() string {
+	return C.GoString(C.mdbx_version.git.describe)
+}
