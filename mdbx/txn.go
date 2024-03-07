@@ -762,6 +762,7 @@ func (txn *Txn) ListDBI() (res []string, err error) {
 	if err != nil {
 		return nil, err
 	}
+	defer c.Close()
 	for k, _, err := c.Get(nil, nil, First); k != nil; k, _, err = c.Get(nil, nil, Next) {
 		if err != nil {
 			return nil, err
@@ -781,5 +782,5 @@ func (txn *Txn) EnvWarmup(flags uint, timeout time.Duration) error {
 }
 
 func (txn *Txn) CHandle() unsafe.Pointer {
-	return unsafe.Pointer(txn._txn);
+	return unsafe.Pointer(txn._txn)
 }
