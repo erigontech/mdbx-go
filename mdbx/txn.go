@@ -682,6 +682,7 @@ func (txn *Txn) ListDBI() (res []string, err error) {
 	if err != nil {
 		return nil, err
 	}
+	defer c.Close()
 	for k, _, err := c.Get(nil, nil, First); k != nil; k, _, err = c.Get(nil, nil, Next) {
 		if err != nil {
 			return nil, err
