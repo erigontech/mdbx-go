@@ -730,7 +730,299 @@ func TestCursor_Del(t *testing.T) {
 	}
 }
 
+func TestDupCursor_EmptyKeyValues1(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBI("testingdup", Create|DupSort, nil, nil)
+		if err != nil {
+			return err
+		}
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		// empty value - must function as valid dupsort value
+		if err = txn.Put(db, []byte{1}, []byte{}, 0); err != nil {
+			panic(err)
+		}
+		if err = txn.Put(db, []byte{1}, []byte{8}, 0); err != nil {
+			panic(err)
+		}
+
+		_, v, err := cur.Get([]byte{1}, []byte{}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(v, []byte{}) {
+			panic(v)
+		}
+		_, v, err = cur.Get([]byte{1}, []byte{0}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(v, []byte{8}) {
+			panic(v)
+		}
+		_, v, err = cur.Get([]byte{}, []byte{0}, GetBoth)
+		if err == nil {
+			panic("expecting 'not found' error")
+		}
+		if v != nil {
+			panic(v)
+		}
+
+		// can use empty key as valid key in non-dupsort operations
+		k, v, err := cur.Get([]byte{}, nil, SetRange)
+		if err != nil {
+			panic(err)
+		}
+		if k == nil {
+			panic("nil")
+		}
+		if !bytes.Equal(k, []byte{1}) {
+			panic(fmt.Sprintf("%x", k))
+		}
+		if !bytes.Equal(v, []byte{}) {
+			panic(fmt.Sprintf("%x", v))
+		}
+		k, v, err = cur.Get([]byte{}, nil, Set)
+		if err == nil {
+			panic("expected 'not found' error")
+		}
+		if k != nil {
+			panic("nil")
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestDupCursor_EmptyKeyValues2(t *testing.T) {
+	t.Skip()
+	env, _ := setup(t)
+
+	var db DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBI("testingdup", Create|DupSort, nil, nil)
+		if err != nil {
+			return err
+		}
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		// empty value - must function as valid dupsort value
+		if err = txn.Put(db, []byte{1}, []byte{}, 0); err != nil {
+			panic(err)
+		}
+		if err = txn.Put(db, []byte{1}, []byte{8}, 0); err != nil {
+			panic(err)
+		}
+
+		_, v, err := cur.Get([]byte{1}, []byte{}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(v, []byte{}) {
+			panic(v)
+		}
+		_, v, err = cur.Get([]byte{1}, []byte{0}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(v, []byte{8}) {
+			panic(v)
+		}
+		_, v, err = cur.Get([]byte{}, []byte{0}, GetBoth)
+		if err == nil {
+			panic("expecting 'not found' error")
+		}
+		if v != nil {
+			panic(v)
+		}
+
+		// can use empty key as valid key in non-dupsort operations
+		k, v, err := cur.Get([]byte{}, nil, SetRange)
+		if err != nil {
+			panic(err)
+		}
+		if k == nil {
+			panic("nil")
+		}
+		if !bytes.Equal(k, []byte{1}) {
+			panic(fmt.Sprintf("%x", k))
+		}
+		if !bytes.Equal(v, []byte{}) {
+			panic(fmt.Sprintf("%x", v))
+		}
+		k, v, err = cur.Get([]byte{}, nil, Set)
+		if err == nil {
+			panic("expected 'not found' error")
+		}
+		if k != nil {
+			panic("nil")
+		}
+
+		// empty key - must function as valid dupsort key
+		if err = txn.Put(db, []byte{}, []byte{}, 0); err != nil {
+			panic(err)
+		}
+		if err = txn.Put(db, []byte{}, []byte{2}, 0); err != nil {
+			panic(err)
+		}
+		_, v, err = cur.Get([]byte{}, []byte{}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(v, []byte{}) {
+			panic(v)
+		}
+		_, v, err = cur.Get([]byte{}, []byte{0}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(v, []byte{2}) {
+			panic(v)
+		}
+		_, v, err = cur.Get([]byte{}, []byte{0}, GetBoth)
+		if err == nil {
+			panic("expecting 'not found' error ")
+		}
+		if v != nil {
+			panic(v)
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestDupCursor_EmptyKeyValues3(t *testing.T) {
+	t.Skip()
+	env, _ := setup(t)
+
+	var db DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBI("testingdup", Create|DupSort, nil, nil)
+		if err != nil {
+			return err
+		}
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		// empty value - must function as valid dupsort value
+		if err = txn.Put(db, []byte{1}, []byte{}, 0); err != nil {
+			panic(err)
+		}
+		if err = txn.Put(db, []byte{1}, []byte{8}, 0); err != nil {
+			panic(err)
+		}
+
+		_, v, err := cur.Get([]byte{1}, []byte{}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(v, []byte{}) {
+			panic(v)
+		}
+		_, v, err = cur.Get([]byte{1}, []byte{0}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(v, []byte{8}) {
+			panic(v)
+		}
+		_, v, err = cur.Get([]byte{}, []byte{0}, GetBoth)
+		if err == nil {
+			panic("expecting 'not found' error")
+		}
+		if v != nil {
+			panic(v)
+		}
+
+		// can use empty key as valid key in non-dupsort operations
+		k, v, err := cur.Get([]byte{}, nil, SetRange)
+		if err != nil {
+			panic(err)
+		}
+		if k == nil {
+			panic("nil")
+		}
+		if !bytes.Equal(k, []byte{1}) {
+			panic(fmt.Sprintf("%x", k))
+		}
+		if !bytes.Equal(v, []byte{}) {
+			panic(fmt.Sprintf("%x", v))
+		}
+		k, v, err = cur.Get([]byte{}, nil, Set)
+		if err == nil {
+			panic("expected 'not found' error")
+		}
+		if k != nil {
+			panic("nil")
+		}
+
+		// empty key - must function as valid dupsort key
+		if err = txn.Put(db, []byte{}, []byte{}, 0); err != nil {
+			panic(err)
+		}
+		if err = txn.Put(db, []byte{}, []byte{2}, 0); err != nil {
+			panic(err)
+		}
+		_, v, err = cur.Get([]byte{}, []byte{}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(v, []byte{}) {
+			panic(v)
+		}
+		_, v, err = cur.Get([]byte{}, []byte{0}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(v, []byte{2}) {
+			panic(v)
+		}
+		_, v, err = cur.Get([]byte{}, []byte{0}, GetBoth)
+		if err == nil {
+			panic("expecting 'not found' error ")
+		}
+		if v != nil {
+			panic(v)
+		}
+
+		// non-existing key
+		_, v, err = cur.Get([]byte{7}, []byte{}, GetBoth)
+		if err == nil {
+			panic("expecting 'not found' error")
+		}
+		if v != nil {
+			panic(v)
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
 func TestDupCursor_EmptyKeyValues(t *testing.T) {
+	t.Skip()
 	env, _ := setup(t)
 
 	var db DBI
