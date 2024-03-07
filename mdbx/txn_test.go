@@ -627,6 +627,7 @@ func TestTxn_Flags(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		defer cur.Close()
 		k, v, err := cur.Get(nil, nil, Next)
 		if err != nil {
 			return err
