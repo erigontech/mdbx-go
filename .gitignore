@@ -30,3 +30,4 @@ _testmain.go
 *.exe
 
 go.work
+mdbxdist/config.h
