@@ -730,7 +730,64 @@ func TestCursor_Del(t *testing.T) {
 	}
 }
 
+func TestDupCursor_EmptyKeyValues2(t *testing.T) {
+	env, err := NewEnv()
+	if err != nil {
+		t.Fatalf("env: %s", err)
+	}
+	path := t.TempDir()
+	err = env.SetOption(OptMaxDB, 1024)
+	if err != nil {
+		t.Fatalf("setmaxdbs: %v", err)
+	}
+	const pageSize = 4096
+	err = env.SetGeometry(-1, -1, 64*1024*pageSize, -1, -1, pageSize)
+	if err != nil {
+		t.Fatalf("setmaxdbs: %v", err)
+	}
+	err = env.Open(path, 0, 0664)
+	if err != nil {
+		t.Fatalf("open: %s", err)
+	}
+	t.Cleanup(func() {
+		env.Close()
+	})
+
+	err = env.Update(func(txn *Txn) (err error) {
+		db, err := txn.OpenDBI("testingdup", Create|DupSort, nil, nil)
+		if err != nil {
+			return err
+		}
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		// empty value - must function as valid dupsort value
+		if err = txn.Put(db, []byte{1}, []byte{}, 0); err != nil {
+			panic(err)
+		}
+		if err = txn.Put(db, []byte{1}, []byte{8}, 0); err != nil {
+			panic(err)
+		}
+
+		_, v, err := cur.Get([]byte{1}, []byte{}, GetBothRange)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(v, []byte{}) {
+			panic(v)
+		}
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+
 func TestDupCursor_EmptyKeyValues(t *testing.T) {
+	t.Skip()
 	env, _ := setup(t)
 
 	var db DBI
