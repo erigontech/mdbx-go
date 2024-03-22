@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY b82409303b7dc64ed5059ccf2efce36a56a43f8badd571c26eb54f961aafa677_v0_13_0_0_g5fc3965f
+#define MDBX_BUILD_SOURCERY 2e4e26763662d6891c375ac6dadd36fb7d58e160d646a1f757845fd7cfe36b08_v0_13_0_4_gabca22e3
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -20027,7 +20027,7 @@ __cold int mdbx_env_resurrect_after_fork(MDBX_env *env) {
   int rc = env_close(env, true);
   env->me_signature.weak = MDBX_ME_SIGNATURE;
   if (likely(rc == MDBX_SUCCESS)) {
-    rc = env_open(env, 0);
+    rc = (env->me_flags & MDBX_EXCLUSIVE) ? MDBX_BUSY : env_open(env, 0);
     if (unlikely(rc != MDBX_SUCCESS && env_close(env, false) != MDBX_SUCCESS)) {
       rc = MDBX_PANIC;
       env->me_flags |= MDBX_FATAL_ERROR;
@@ -36953,9 +36953,9 @@ __dll_export
         0,
         13,
         0,
-        0,
-        {"2024-03-21T01:54:20+03:00", "92a27e6f0ddf19b684b80e65a20193c6b2d67bf8", "5fc3965f5ba8dcfd1b7345161892dabb2454fd1e",
-         "v0.13.0-0-g5fc3965f"},
+        4,
+        {"2024-03-21T11:53:38+03:00", "e0b3e50b6ff7e39a1a9b3f429220d60896ed1cb1", "abca22e32d85c859438a89a2dec9d6790fe639c1",
+         "v0.13.0-4-gabca22e3"},
         sourcery};
 
 __dll_export
