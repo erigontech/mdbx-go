@@ -19725,6 +19725,8 @@ __cold static int env_open(MDBX_env *env, mdbx_mode_t mode) {
     }
   }
 
+  env->me_options.prefer_waf_insteadof_balance = true;
+
   rc = (env->me_flags & MDBX_RDONLY)
            ? MDBX_SUCCESS
            : osal_ioring_create(&env->me_ioring
