@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 2e4e26763662d6891c375ac6dadd36fb7d58e160d646a1f757845fd7cfe36b08_v0_13_0_4_gabca22e3
+#define MDBX_BUILD_SOURCERY 785d991c3c8ae0b5a237f00c3717140d2deecf9527340a5c0e2815c15599237d_v0_13_0_14_gdedcdd4c
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -12864,7 +12864,7 @@ static __inline int check_env(const MDBX_env *env, const bool wanna_active) {
 
   if (wanna_active) {
 #if MDBX_ENV_CHECKPID
-    if (unlikely(env->me_pid != osal_getpid())) {
+    if (unlikely(env->me_pid != osal_getpid()) && env->me_pid) {
       ((MDBX_env *)env)->me_flags |= MDBX_FATAL_ERROR;
       return MDBX_PANIC;
     }
@@ -19725,8 +19725,6 @@ __cold static int env_open(MDBX_env *env, mdbx_mode_t mode) {
     }
   }
 
-  env->me_options.prefer_waf_insteadof_balance = true;
-
   rc = (env->me_flags & MDBX_RDONLY)
            ? MDBX_SUCCESS
            : osal_ioring_create(&env->me_ioring
@@ -20015,6 +20013,9 @@ __cold int mdbx_env_resurrect_after_fork(MDBX_env *env) {
 
   if (unlikely(env->me_flags & MDBX_FATAL_ERROR))
     return MDBX_PANIC;
+
+  if (unlikely((env->me_flags & MDBX_ENV_ACTIVE) == 0))
+    return MDBX_SUCCESS;
 
   const uint32_t new_pid = osal_getpid();
   if (unlikely(env->me_pid == new_pid))
@@ -21821,18 +21822,15 @@ int mdbx_cursor_scan(MDBX_cursor *mc, MDBX_predicate_func *predicate,
   if (unlikely(turn_op > 30 || ((1 << turn_op) & valid_turn_mask) == 0))
     return MDBX_EINVAL;
 
-  MDBX_val key, data;
+  MDBX_val key = {nullptr, 0}, data = {nullptr, 0};
   int rc = mdbx_cursor_get(mc, &key, &data, start_op);
-  if (unlikely(rc != MDBX_SUCCESS))
-    return rc;
-  for (;;) {
+  while (likely(rc == MDBX_SUCCESS)) {
     rc = predicate(context, &key, &data, arg);
     if (rc != MDBX_RESULT_FALSE)
       return rc;
     rc = cursor_get(mc, &key, &data, turn_op);
-    if (rc != MDBX_SUCCESS)
-      return (rc == MDBX_NOTFOUND) ? MDBX_RESULT_FALSE : rc;
   }
+  return (rc == MDBX_NOTFOUND) ? MDBX_RESULT_FALSE : rc;
 }
 
 int mdbx_cursor_scan_from(MDBX_cursor *mc, MDBX_predicate_func *predicate,
@@ -23906,7 +23904,7 @@ int mdbx_cursor_renew(const MDBX_txn *txn, MDBX_cursor *mc) {
 }
 
 int mdbx_cursor_compare(const MDBX_cursor *l, const MDBX_cursor *r,
-                        bool ignore_nested) {
+                        bool ignore_multival) {
   const int incomparable = INT16_MAX + 1;
   if (unlikely(!l))
     return r ? -incomparable * 9 : 0;
@@ -23947,7 +23945,7 @@ int mdbx_cursor_compare(const MDBX_cursor *l, const MDBX_cursor *r,
   assert((l->mc_xcursor != nullptr) == (r->mc_xcursor != nullptr));
   if (unlikely((l->mc_xcursor != nullptr) != (r->mc_xcursor != nullptr)))
     return l->mc_xcursor ? incomparable * 2 : -incomparable * 2;
-  if (ignore_nested || !l->mc_xcursor)
+  if (ignore_multival || !l->mc_xcursor)
     return 0;
 
 #if MDBX_DEBUG
@@ -29218,7 +29216,7 @@ int mdbx_cursor_on_first_dup(const MDBX_cursor *mc) {
                                                      : MDBX_EBADSIGN;
 
   if (!(mc->mc_flags & C_INITIALIZED))
-    return mc->mc_db->md_entries ? MDBX_RESULT_FALSE : MDBX_RESULT_TRUE;
+    return MDBX_RESULT_TRUE;
 
   if (!mc->mc_xcursor)
     return MDBX_RESULT_TRUE;
@@ -29261,7 +29259,7 @@ int mdbx_cursor_on_last_dup(const MDBX_cursor *mc) {
                                                      : MDBX_EBADSIGN;
 
   if (!(mc->mc_flags & C_INITIALIZED))
-    return mc->mc_db->md_entries ? MDBX_RESULT_FALSE : MDBX_RESULT_TRUE;
+    return MDBX_RESULT_FALSE;
 
   if (!mc->mc_xcursor)
     return MDBX_RESULT_TRUE;
@@ -36955,9 +36953,9 @@ __dll_export
         0,
         13,
         0,
-        4,
-        {"2024-03-21T11:53:38+03:00", "e0b3e50b6ff7e39a1a9b3f429220d60896ed1cb1", "abca22e32d85c859438a89a2dec9d6790fe639c1",
-         "v0.13.0-4-gabca22e3"},
+        14,
+        {"2024-03-24T11:15:12+03:00", "c41cf734f042fc94b2a582b07fe3819c76157aaa", "dedcdd4c944e70017d2f449f75d4aaaea5c675bf",
+         "v0.13.0-14-gdedcdd4c"},
         sourcery};
 
 __dll_export
