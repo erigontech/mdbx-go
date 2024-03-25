@@ -419,9 +419,29 @@ func TestTxn_OpenDBI_emptyName(t *testing.T) {
 }
 
 func TestTxn_OpenDBI_zero(t *testing.T) {
-	env, _ := setup(t)
+	env, err := NewEnv()
+	if err != nil {
+		t.Fatalf("env: %s", err)
+	}
+	path := t.TempDir()
+	err = env.SetOption(OptMaxDB, 1024)
+	if err != nil {
+		t.Fatalf("setmaxdbs: %v", err)
+	}
+	const pageSize = 4096
+	err = env.SetGeometry(-1, -1, 64*1024*pageSize, -1, -1, pageSize)
+	if err != nil {
+		t.Fatalf("setmaxdbs: %v", err)
+	}
+	err = env.Open(path, 0, 0664)
+	if err != nil {
+		t.Fatalf("open: %s", err)
+	}
+	t.Cleanup(func() {
+		env.Close()
+	})
 
-	err := env.View(func(txn *Txn) (err error) {
+	err = env.View(func(txn *Txn) (err error) {
 		_, err = txn.OpenRoot(0)
 		if err != nil {
 			return err

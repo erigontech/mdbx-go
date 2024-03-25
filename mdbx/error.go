@@ -87,10 +87,10 @@ var CorruptErrorMessage = CorruptErrorHardwareRecommendations + " " + CorruptErr
 
 func (e Errno) Error() string {
 	if e == Corrupted {
-		return "MDBX_FATAL: " + CorruptErrorMessage
+		return fmt.Sprintf("MDBX_FATAL(%d): ", int(e)) + CorruptErrorMessage
 	}
 	if e == Panic {
-		return "MDBX_PANIC: " + CorruptErrorMessage
+		return fmt.Sprintf("MDBX_PANIC(%d): ", int(e)) + CorruptErrorMessage
 	}
 	return C.GoString(C.mdbx_strerror(C.int(e)))
 }
