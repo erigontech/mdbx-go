@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY a517457826994d95a9d89571d6a0769de109963459f8388ae82c267cd87521eb_v0_13_0_16_g16d8d7d1
+#define MDBX_BUILD_SOURCERY fb04e76f0b8f2220ecb0e562d3f3574ced4d3849ab7d699f2439040bafde56b4_v0_13_0_32_gcc02d98e
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -47,11 +47,13 @@
 #ifdef xMDBX_ALLOY
 /* Amalgamated build */
 #define MDBX_INTERNAL_FUNC static
-#define MDBX_INTERNAL_VAR static
+#define MDBX_INTERNAL_VAR_PROTO static
+#define MDBX_INTERNAL_VAR_INSTA static
 #else
 /* Non-amalgamated build */
 #define MDBX_INTERNAL_FUNC
-#define MDBX_INTERNAL_VAR extern
+#define MDBX_INTERNAL_VAR_PROTO extern
+#define MDBX_INTERNAL_VAR_INSTA
 #endif /* xMDBX_ALLOY */
 
 /*----------------------------------------------------------------------------*/
@@ -1224,8 +1226,8 @@ typedef pthread_mutex_t osal_fastmutex_t;
 /*----------------------------------------------------------------------------*/
 /* OS abstraction layer stuff */
 
-MDBX_INTERNAL_VAR unsigned sys_pagesize;
-MDBX_MAYBE_UNUSED MDBX_INTERNAL_VAR unsigned sys_pagesize_ln2,
+MDBX_INTERNAL_VAR_PROTO unsigned sys_pagesize;
+MDBX_MAYBE_UNUSED MDBX_INTERNAL_VAR_PROTO unsigned sys_pagesize_ln2,
     sys_allocation_granularity;
 
 /* Get the size of a memory page for the system.
@@ -1489,8 +1491,9 @@ MDBX_MAYBE_UNUSED static __inline void jitter4testing(bool tiny);
 #endif
 
 #if defined(__linux__) || defined(__gnu_linux__)
-MDBX_INTERNAL_VAR uint32_t linux_kernel_version;
-MDBX_INTERNAL_VAR bool mdbx_RunningOnWSL1 /* Windows Subsystem 1 for Linux */;
+MDBX_INTERNAL_VAR_PROTO uint32_t linux_kernel_version;
+MDBX_INTERNAL_VAR_PROTO bool
+    mdbx_RunningOnWSL1 /* Windows Subsystem 1 for Linux */;
 #endif /* Linux */
 
 #ifndef osal_strdup
@@ -1777,7 +1780,7 @@ MDBX_INTERNAL_FUNC int osal_rpid_check(MDBX_env *env, uint32_t pid);
 MDBX_INTERNAL_FUNC int osal_mb2w(const char *const src, wchar_t **const pdst);
 
 typedef void(WINAPI *osal_srwlock_t_function)(osal_srwlock_t *);
-MDBX_INTERNAL_VAR osal_srwlock_t_function osal_srwlock_Init,
+MDBX_INTERNAL_VAR_PROTO osal_srwlock_t_function osal_srwlock_Init,
     osal_srwlock_AcquireShared, osal_srwlock_ReleaseShared,
     osal_srwlock_AcquireExclusive, osal_srwlock_ReleaseExclusive;
 
@@ -1830,7 +1833,7 @@ typedef struct _FILE_REMOTE_PROTOCOL_INFO {
 typedef BOOL(WINAPI *MDBX_GetFileInformationByHandleEx)(
     _In_ HANDLE hFile, _In_ FILE_INFO_BY_HANDLE_CLASS FileInformationClass,
     _Out_ LPVOID lpFileInformation, _In_ DWORD dwBufferSize);
-MDBX_INTERNAL_VAR MDBX_GetFileInformationByHandleEx
+MDBX_INTERNAL_VAR_PROTO MDBX_GetFileInformationByHandleEx
     mdbx_GetFileInformationByHandleEx;
 
 typedef BOOL(WINAPI *MDBX_GetVolumeInformationByHandleW)(
@@ -1839,19 +1842,20 @@ typedef BOOL(WINAPI *MDBX_GetVolumeInformationByHandleW)(
     _Out_opt_ LPDWORD lpMaximumComponentLength,
     _Out_opt_ LPDWORD lpFileSystemFlags,
     _Out_opt_ LPWSTR lpFileSystemNameBuffer, _In_ DWORD nFileSystemNameSize);
-MDBX_INTERNAL_VAR MDBX_GetVolumeInformationByHandleW
+MDBX_INTERNAL_VAR_PROTO MDBX_GetVolumeInformationByHandleW
     mdbx_GetVolumeInformationByHandleW;
 
 typedef DWORD(WINAPI *MDBX_GetFinalPathNameByHandleW)(_In_ HANDLE hFile,
                                                       _Out_ LPWSTR lpszFilePath,
                                                       _In_ DWORD cchFilePath,
                                                       _In_ DWORD dwFlags);
-MDBX_INTERNAL_VAR MDBX_GetFinalPathNameByHandleW mdbx_GetFinalPathNameByHandleW;
+MDBX_INTERNAL_VAR_PROTO MDBX_GetFinalPathNameByHandleW
+    mdbx_GetFinalPathNameByHandleW;
 
 typedef BOOL(WINAPI *MDBX_SetFileInformationByHandle)(
     _In_ HANDLE hFile, _In_ FILE_INFO_BY_HANDLE_CLASS FileInformationClass,
     _Out_ LPVOID lpFileInformation, _In_ DWORD dwBufferSize);
-MDBX_INTERNAL_VAR MDBX_SetFileInformationByHandle
+MDBX_INTERNAL_VAR_PROTO MDBX_SetFileInformationByHandle
     mdbx_SetFileInformationByHandle;
 
 typedef NTSTATUS(NTAPI *MDBX_NtFsControlFile)(
@@ -1860,10 +1864,10 @@ typedef NTSTATUS(NTAPI *MDBX_NtFsControlFile)(
     OUT PIO_STATUS_BLOCK IoStatusBlock, IN ULONG FsControlCode,
     IN OUT PVOID InputBuffer, IN ULONG InputBufferLength,
     OUT OPTIONAL PVOID OutputBuffer, IN ULONG OutputBufferLength);
-MDBX_INTERNAL_VAR MDBX_NtFsControlFile mdbx_NtFsControlFile;
+MDBX_INTERNAL_VAR_PROTO MDBX_NtFsControlFile mdbx_NtFsControlFile;
 
 typedef uint64_t(WINAPI *MDBX_GetTickCount64)(void);
-MDBX_INTERNAL_VAR MDBX_GetTickCount64 mdbx_GetTickCount64;
+MDBX_INTERNAL_VAR_PROTO MDBX_GetTickCount64 mdbx_GetTickCount64;
 
 #if !defined(_WIN32_WINNT_WIN8) || _WIN32_WINNT < _WIN32_WINNT_WIN8
 typedef struct _WIN32_MEMORY_RANGE_ENTRY {
@@ -1875,13 +1879,13 @@ typedef struct _WIN32_MEMORY_RANGE_ENTRY {
 typedef BOOL(WINAPI *MDBX_PrefetchVirtualMemory)(
     HANDLE hProcess, ULONG_PTR NumberOfEntries,
     PWIN32_MEMORY_RANGE_ENTRY VirtualAddresses, ULONG Flags);
-MDBX_INTERNAL_VAR MDBX_PrefetchVirtualMemory mdbx_PrefetchVirtualMemory;
+MDBX_INTERNAL_VAR_PROTO MDBX_PrefetchVirtualMemory mdbx_PrefetchVirtualMemory;
 
 typedef enum _SECTION_INHERIT { ViewShare = 1, ViewUnmap = 2 } SECTION_INHERIT;
 
 typedef NTSTATUS(NTAPI *MDBX_NtExtendSection)(IN HANDLE SectionHandle,
                                               IN PLARGE_INTEGER NewSectionSize);
-MDBX_INTERNAL_VAR MDBX_NtExtendSection mdbx_NtExtendSection;
+MDBX_INTERNAL_VAR_PROTO MDBX_NtExtendSection mdbx_NtExtendSection;
 
 static __inline bool mdbx_RunningUnderWine(void) {
   return !mdbx_NtExtendSection;
@@ -1891,14 +1895,15 @@ typedef LSTATUS(WINAPI *MDBX_RegGetValueA)(HKEY hkey, LPCSTR lpSubKey,
                                            LPCSTR lpValue, DWORD dwFlags,
                                            LPDWORD pdwType, PVOID pvData,
                                            LPDWORD pcbData);
-MDBX_INTERNAL_VAR MDBX_RegGetValueA mdbx_RegGetValueA;
+MDBX_INTERNAL_VAR_PROTO MDBX_RegGetValueA mdbx_RegGetValueA;
 
 NTSYSAPI ULONG RtlRandomEx(PULONG Seed);
 
 typedef BOOL(WINAPI *MDBX_SetFileIoOverlappedRange)(HANDLE FileHandle,
                                                     PUCHAR OverlappedRangeStart,
                                                     ULONG Length);
-MDBX_INTERNAL_VAR MDBX_SetFileIoOverlappedRange mdbx_SetFileIoOverlappedRange;
+MDBX_INTERNAL_VAR_PROTO MDBX_SetFileIoOverlappedRange
+    mdbx_SetFileIoOverlappedRange;
 
 #endif /* Windows */
 
@@ -2530,13 +2535,23 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #define MDBX_RUNTIME_FLAGS_INIT                                                \
   ((MDBX_DEBUG) > 0) * MDBX_DBG_ASSERT + ((MDBX_DEBUG) > 1) * MDBX_DBG_AUDIT
 
-extern uint8_t runtime_flags;
-extern uint8_t loglevel;
-extern MDBX_debug_func *debug_logger;
+union logger_union {
+  void *ptr;
+  MDBX_debug_func *fmt;
+  MDBX_debug_func_nofmt *nofmt;
+};
+
+MDBX_INTERNAL_VAR_PROTO struct mdbx_static {
+  uint8_t flags;
+  uint8_t loglevel;
+  union logger_union logger;
+  size_t logger_buffer_size;
+  char *logger_buffer;
+} mdbx_static;
 
 MDBX_MAYBE_UNUSED static __inline void jitter4testing(bool tiny) {
 #if MDBX_DEBUG
-  if (MDBX_DBG_JITTER & runtime_flags)
+  if (MDBX_DBG_JITTER & mdbx_static.flags)
     osal_jitter(tiny);
 #else
   (void)tiny;
@@ -2550,17 +2565,17 @@ MDBX_INTERNAL_FUNC void debug_log_va(int level, const char *function, int line,
                                      const char *fmt, va_list args);
 
 #if MDBX_DEBUG
-#define LOG_ENABLED(msg) unlikely(msg <= loglevel)
-#define AUDIT_ENABLED() unlikely((runtime_flags & MDBX_DBG_AUDIT))
+#define LOG_ENABLED(msg) unlikely(msg <= mdbx_static.loglevel)
+#define AUDIT_ENABLED() unlikely((mdbx_static.flags & MDBX_DBG_AUDIT))
 #else /* MDBX_DEBUG */
-#define LOG_ENABLED(msg) (msg < MDBX_LOG_VERBOSE && msg <= loglevel)
+#define LOG_ENABLED(msg) (msg < MDBX_LOG_VERBOSE && msg <= mdbx_static.loglevel)
 #define AUDIT_ENABLED() (0)
 #endif /* MDBX_DEBUG */
 
 #if MDBX_FORCE_ASSERTIONS
 #define ASSERT_ENABLED() (1)
 #elif MDBX_DEBUG
-#define ASSERT_ENABLED() likely((runtime_flags & MDBX_DBG_ASSERT))
+#define ASSERT_ENABLED() likely((mdbx_static.flags & MDBX_DBG_ASSERT))
 #else
 #define ASSERT_ENABLED() (0)
 #endif /* assertions */
@@ -4392,7 +4407,7 @@ static FILE *MDBX_PRINTF_ARGS(2, 3)
 static void logger(MDBX_log_level_t level, const char *function, int line,
                    const char *fmt, va_list args) {
   if (level <= MDBX_LOG_ERROR)
-    mdbx_env_chk_problem(&chk);
+      mdbx_env_chk_encount_problem(&chk);
 
   const unsigned kind = (level > MDBX_LOG_NOTICE)
                             ? level - MDBX_LOG_NOTICE +
