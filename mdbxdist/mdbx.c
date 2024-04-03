@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY fb04e76f0b8f2220ecb0e562d3f3574ced4d3849ab7d699f2439040bafde56b4_v0_13_0_32_gcc02d98e
+#define MDBX_BUILD_SOURCERY 2049224a574d248ab32fac44d18851700b82387659fb8b0e01ebcc3c690205fc_v0_13_0_34_g0a4771aa
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -8046,8 +8046,10 @@ static __inline size_t dbi_bitmap_ctz(const MDBX_txn *txn, intptr_t bmi) {
               bitmap_item = TXN->mt_dbi_sparse[0] >> FROM, I = FROM;           \
        I < TXN->mt_numdbs; ++I)                                                \
     if (bitmap_item == 0) {                                                    \
-      I |= bitmap_chunk - 1;                                                   \
+      I = (I - 1) | (bitmap_chunk - 1);                                        \
       bitmap_item = TXN->mt_dbi_sparse[(1 + I) / bitmap_chunk];                \
+      if (!bitmap_item)                                                        \
+        I += bitmap_chunk;                                                     \
       continue;                                                                \
     } else if ((bitmap_item & 1) == 0) {                                       \
       size_t bitmap_skip = dbi_bitmap_ctz(txn, bitmap_item);                   \
@@ -19462,7 +19464,9 @@ __cold int mdbx_env_deleteW(const wchar_t *pathname,
     }
 
     if (err == MDBX_SUCCESS && !(dummy_env->me_flags & MDBX_NOSUBDIR) &&
-        strcmp(pathname, ".") && strcmp(pathname, "..")) {
+        (/* pathname != "." */ pathname[0] != '.' || pathname[1] != 0) &&
+        (/* pathname != ".." */ pathname[0] != '.' || pathname[1] != '.' ||
+         pathname[2] != 0)) {
       err = osal_removedirectory(pathname);
       if (err == MDBX_SUCCESS)
         rc = MDBX_SUCCESS;
@@ -37090,9 +37094,9 @@ __dll_export
         0,
         13,
         0,
-        32,
-        {"2024-04-01T14:35:45+03:00", "2191a21f4ef27166066bb16c2b5e2635050c8909", "cc02d98e2c6b2183ee79c7a9202864ec89609a0a",
-         "v0.13.0-32-gcc02d98e"},
+        34,
+        {"2024-04-03T13:02:48+03:00", "b2457b5ac435f70df145a1a21b8f5ad66c93475d", "0a4771aaec02165435ee4b5aa32a2a49b6baec13",
+         "v0.13.0-34-g0a4771aa"},
         sourcery};
 
 __dll_export

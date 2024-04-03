@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY fb04e76f0b8f2220ecb0e562d3f3574ced4d3849ab7d699f2439040bafde56b4_v0_13_0_32_gcc02d98e
+#define MDBX_BUILD_SOURCERY 2049224a574d248ab32fac44d18851700b82387659fb8b0e01ebcc3c690205fc_v0_13_0_34_g0a4771aa
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -4407,7 +4407,7 @@ static FILE *MDBX_PRINTF_ARGS(2, 3)
 static void logger(MDBX_log_level_t level, const char *function, int line,
                    const char *fmt, va_list args) {
   if (level <= MDBX_LOG_ERROR)
-      mdbx_env_chk_encount_problem(&chk);
+    mdbx_env_chk_encount_problem(&chk);
 
   const unsigned kind = (level > MDBX_LOG_NOTICE)
                             ? level - MDBX_LOG_NOTICE +
