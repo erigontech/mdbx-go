@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 2049224a574d248ab32fac44d18851700b82387659fb8b0e01ebcc3c690205fc_v0_13_0_34_g0a4771aa
+#define MDBX_BUILD_SOURCERY 7e1fc281eda601813f191bf4e230e0cd439df56e9fbe6b0cbfee716c27a838cf_v0_13_0_41_g0da3c87a
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2135,7 +2135,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #error MDBX_DPL_PREALLOC_FOR_RADIXSORT must be defined as 0 or 1
 #endif /* MDBX_DPL_PREALLOC_FOR_RADIXSORT */
 
-/** Controls dirty pages tracking, spilling and persisting in MDBX_WRITEMAP
+/** Controls dirty pages tracking, spilling and persisting in `MDBX_WRITEMAP`
  * mode. 0/OFF = Don't track dirty pages at all, don't spill ones, and use
  * msync() to persist data. This is by-default on Linux and other systems where
  * kernel provides properly LRU tracking and effective flushing on-demand. 1/ON
@@ -2152,14 +2152,16 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #error MDBX_AVOID_MSYNC must be defined as 0 or 1
 #endif /* MDBX_AVOID_MSYNC */
 
-/** FIXME */
+/** Управляет механизмом поддержки разреженных наборов DBI-хендлов для снижения
+ * накладных расходов при запуске и обработке транзакций. */
 #ifndef MDBX_ENABLE_DBI_SPARSE
 #define MDBX_ENABLE_DBI_SPARSE 1
 #elif !(MDBX_ENABLE_DBI_SPARSE == 0 || MDBX_ENABLE_DBI_SPARSE == 1)
 #error MDBX_ENABLE_DBI_SPARSE must be defined as 0 or 1
 #endif /* MDBX_ENABLE_DBI_SPARSE */
 
-/** FIXME */
+/** Управляет механизмом отложенного освобождения и поддержки пути быстрого
+ * открытия DBI-хендлов без захвата блокировок. */
 #ifndef MDBX_ENABLE_DBI_LOCKFREE
 #define MDBX_ENABLE_DBI_LOCKFREE 1
 #elif !(MDBX_ENABLE_DBI_LOCKFREE == 0 || MDBX_ENABLE_DBI_LOCKFREE == 1)
@@ -3141,8 +3143,9 @@ MDBX_INTERNAL_FUNC int osal_ipclock_destroy(osal_ipclock_t *ipc);
  * read transactions started by the same thread need no further locking to
  * proceed.
  *
- * If MDBX_NOTLS is set, the slot address is not saved in thread-specific data.
- * No reader table is used if the database is on a read-only filesystem.
+ * If MDBX_NOSTICKYTHREADS is set, the slot address is not saved in
+ * thread-specific data. No reader table is used if the database is on a
+ * read-only filesystem.
  *
  * Since the database uses multi-version concurrency control, readers don't
  * actually need any locking. This table is used to keep track of which
@@ -4082,11 +4085,11 @@ log2n_powerof2(size_t value_uintptr) {
  * environment and re-opening it with the new flags. */
 #define ENV_CHANGEABLE_FLAGS                                                   \
   (MDBX_SAFE_NOSYNC | MDBX_NOMETASYNC | MDBX_DEPRECATED_MAPASYNC |             \
-   MDBX_NOMEMINIT | MDBX_COALESCE | MDBX_PAGEPERTURB | MDBX_ACCEDE |           \
-   MDBX_VALIDATION)
+   MDBX_NOMEMINIT | MDBX_DEPRECATED_COALESCE | MDBX_PAGEPERTURB |              \
+   MDBX_ACCEDE | MDBX_VALIDATION)
 #define ENV_CHANGELESS_FLAGS                                                   \
-  (MDBX_NOSUBDIR | MDBX_RDONLY | MDBX_WRITEMAP | MDBX_NOTLS | MDBX_NORDAHEAD | \
-   MDBX_LIFORECLAIM | MDBX_EXCLUSIVE)
+  (MDBX_NOSUBDIR | MDBX_RDONLY | MDBX_WRITEMAP | MDBX_NOSTICKYTHREADS |        \
+   MDBX_NORDAHEAD | MDBX_LIFORECLAIM | MDBX_EXCLUSIVE)
 #define ENV_USABLE_FLAGS (ENV_CHANGEABLE_FLAGS | ENV_CHANGELESS_FLAGS)
 
 #if !defined(__cplusplus) || CONSTEXPR_ENUM_FLAGS_OPERATIONS

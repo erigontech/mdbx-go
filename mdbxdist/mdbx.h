@@ -343,13 +343,14 @@ typedef mode_t mdbx_mode_t;
 #ifdef __deprecated
 #define MDBX_DEPRECATED __deprecated
 #elif defined(DOXYGEN) ||                                                      \
-    (defined(__cplusplus) && __cplusplus >= 201603L &&                         \
-     __has_cpp_attribute(maybe_unused) &&                                      \
-     __has_cpp_attribute(maybe_unused) >= 201603L) ||                          \
+    (defined(__cplusplus) && __cplusplus >= 201403L &&                         \
+     __has_cpp_attribute(deprecated) &&                                        \
+     __has_cpp_attribute(deprecated) >= 201309L) ||                            \
     (!defined(__cplusplus) && defined(__STDC_VERSION__) &&                     \
-     __STDC_VERSION__ > 202005L)
+     __STDC_VERSION__ >= 202304L)
 #define MDBX_DEPRECATED [[deprecated]]
-#elif defined(__GNUC__) || __has_attribute(__deprecated__)
+#elif (defined(__GNUC__) && __GNUC__ > 5) ||                                   \
+    (__has_attribute(__deprecated__) && !defined(__GNUC__))
 #define MDBX_DEPRECATED __attribute__((__deprecated__))
 #elif defined(_MSC_VER)
 #define MDBX_DEPRECATED __declspec(deprecated)
@@ -1207,28 +1208,80 @@ enum MDBX_env_flags_t {
    */
   MDBX_WRITEMAP = UINT32_C(0x80000),
 
-  /** Tie reader locktable slots to read-only transactions
-   * instead of to threads.
+  /** Отвязывает транзакции от потоков/threads насколько это возможно.
    *
-   * Don't use Thread-Local Storage, instead tie reader locktable slots to
-   * \ref MDBX_txn objects instead of to threads. So, \ref mdbx_txn_reset()
-   * keeps the slot reserved for the \ref MDBX_txn object. A thread may use
-   * parallel read-only transactions. And a read-only transaction may span
-   * threads if you synchronizes its use.
+   * Эта опция предназначена для приложений, которые мультиплексируют множество
+   * пользовательских легковесных потоков выполнения по отдельным потокам
+   * операционной системы, например как это происходит в средах выполнения
+   * GoLang и Rust. Таким приложениям также рекомендуется сериализовать
+   * транзакции записи в одном потоке операционной системы, поскольку блокировка
+   * записи MDBX использует базовые системные примитивы синхронизации и ничего
+   * не знает о пользовательских потоках и/или легковесных потоков среды
+   * выполнения. Как минимум, обязательно требуется обеспечить завершение каждой
+   * пишущей транзакции строго в том же потоке операционной системы где она была
+   * запущена.
    *
-   * Applications that multiplex many user threads over individual OS threads
-   * need this option. Such an application must also serialize the write
-   * transactions in an OS thread, since MDBX's write locking is unaware of
-   * the user threads.
+   * \note Начиная с версии v0.13 опция `MDBX_NOSTICKYTHREADS` полностью
+   * заменяет опцию \ref MDBX_NOTLS.
    *
-   * \note Regardless to `MDBX_NOTLS` flag a write transaction entirely should
-   * always be used in one thread from start to finish. MDBX checks this in a
-   * reasonable manner and return the \ref MDBX_THREAD_MISMATCH error in rules
-   * violation.
+   * При использовании `MDBX_NOSTICKYTHREADS` транзакции становятся не
+   * ассоциированными с создавшими их потоками выполнения. Поэтому в функциях
+   * API не выполняется проверка соответствия транзакции и текущего потока
+   * выполнения. Большинство функций работающих с транзакциями и курсорами
+   * становится возможным вызывать из любых потоков выполнения. Однако, также
+   * становится невозможно обнаружить ошибки одновременного использования
+   * транзакций и/или курсоров в разных потоках.
    *
-   * This flag affects only at environment opening but can't be changed after.
+   * Использование `MDBX_NOSTICKYTHREADS` также сужает возможности по изменению
+   * размера БД, так как теряется возможность отслеживать работающие с БД потоки
+   * выполнения и приостанавливать их на время снятия отображения БД в ОЗУ. В
+   * частности, по этой причине на Windows уменьшение файла БД не возможно до
+   * закрытия БД последним работающим с ней процессом или до последующего
+   * открытия БД в режиме чтения-записи.
+   *
+   * \warning Вне зависимости от \ref MDBX_NOSTICKYTHREADS и \ref MDBX_NOTLS не
+   * допускается одновременно использование объектов API из разных потоков
+   * выполнения! Обеспечение всех мер для исключения одновременного
+   * использования объектов API из разных потоков выполнения целиком ложится на
+   * вас!
+   *
+   * \warning Транзакции записи могут быть завершены только в том же потоке
+   * выполнения где они были запущены. Это ограничение следует из требований
+   * большинства операционных систем о том, что захваченный примитив
+   * синхронизации (мьютекс, семафор, критическая секция) должен освобождаться
+   * только захватившим его потоком выполнения.
+   *
+   * \warning Создание курсора в контексте транзакции, привязка курсора к
+   * транзакции, отвязка курсора от транзакции и закрытие привязанного к
+   * транзакции курсора, являются операциями использующими как сам курсор так и
+   * соответствующую транзакцию. Аналогично, завершение или прерывание
+   * транзакции является операцией использующей как саму транзакцию, так и все
+   * привязанные к ней курсоры. Во избежание повреждения внутренних структур
+   * данных, непредсказуемого поведения, разрушение БД и потери данных следует
+   * не допускать возможности одновременного использования каких-либо курсора
+   * или транзакций из разных потоков выполнения.
+   *
+   * Читающие транзакции при использовании `MDBX_NOSTICKYTHREADS` перестают
+   * использовать TLS (Thread Local Storage), а слоты блокировок MVCC-снимков в
+   * таблице читателей привязываются только к транзакциям. Завершение каких-либо
+   * потоков не приводит к снятию блокировок MVCC-снимков до явного завершения
+   * транзакций, либо до завершения соответствующего процесса в целом.
+   *
+   * Для пишущих транзакций не выполняется проверка соответствия текущего потока
+   * выполнения и потока создавшего транзакцию. Однако, фиксация или прерывание
+   * пишущих транзакций должны выполняться строго в потоке запустившим
+   * транзакцию, так как эти операции связаны с захватом и освобождением
+   * примитивов синхронизации (мьютексов, критических секций), для которых
+   * большинство операционных систем требует освобождение только потоком
+   * захватившим ресурс.
+   *
+   * Этот флаг вступает в силу при открытии среды и не может быть изменен после.
    */
-  MDBX_NOTLS = UINT32_C(0x200000),
+  MDBX_NOSTICKYTHREADS = UINT32_C(0x200000),
+#ifndef _MSC_VER /* avoid madness MSVC */
+  /** \deprecated Please use \ref MDBX_NOSTICKYTHREADS instead. */
+  MDBX_NOTLS MDBX_DEPRECATED = MDBX_NOSTICKYTHREADS,
+#endif /* avoid madness MSVC */
 
   /** Don't do readahead.
    *
@@ -1274,8 +1327,9 @@ enum MDBX_env_flags_t {
    * This flag may be changed at any time using `mdbx_env_set_flags()`. */
   MDBX_NOMEMINIT = UINT32_C(0x1000000),
 
+#ifndef _MSC_VER /* avoid madness MSVC */
   /** Aims to coalesce a Garbage Collection items.
-   * \note Always enabled since v0.12
+   * \deprecated Always enabled since v0.12 and deprecated since v0.13.
    *
    * With `MDBX_COALESCE` flag MDBX will aims to coalesce items while recycling
    * a Garbage Collection. Technically, when possible short lists of pages
@@ -1285,7 +1339,8 @@ enum MDBX_env_flags_t {
    * Unallocated space and reducing the database file.
    *
    * This flag may be changed at any time using mdbx_env_set_flags(). */
-  MDBX_COALESCE = UINT32_C(0x2000000),
+  MDBX_COALESCE MDBX_DEPRECATED = UINT32_C(0x2000000),
+#endif /* avoid madness MSVC */
 
   /** LIFO policy for recycling a Garbage Collection items.
    *
@@ -2121,11 +2176,12 @@ enum MDBX_option_t {
    * track readers in the the environment. The default is about 100 for 4K
    * system page size. Starting a read-only transaction normally ties a lock
    * table slot to the current thread until the environment closes or the thread
-   * exits. If \ref MDBX_NOTLS is in use, \ref mdbx_txn_begin() instead ties the
-   * slot to the \ref MDBX_txn object until it or the \ref MDBX_env object is
-   * destroyed. This option may only set after \ref mdbx_env_create() and before
-   * \ref mdbx_env_open(), and has an effect only when the database is opened by
-   * the first process interacts with the database.
+   * exits. If \ref MDBX_NOSTICKYTHREADS is in use, \ref mdbx_txn_begin()
+   * instead ties the slot to the \ref MDBX_txn object until it or the \ref
+   * MDBX_env object is destroyed. This option may only set after \ref
+   * mdbx_env_create() and before \ref mdbx_env_open(), and has an effect only
+   * when the database is opened by the first process interacts with the
+   * database.
    *
    * \see mdbx_env_set_maxreaders() \see mdbx_env_get_maxreaders() */
   MDBX_opt_max_readers,
@@ -2264,14 +2320,14 @@ enum MDBX_option_t {
   MDBX_opt_spill_parent4child_denominator,
 
   /** \brief Controls the in-process threshold of semi-empty pages merge.
-   * \warning This is experimental option and subject for change or removal.
    * \details This option controls the in-process threshold of minimum page
    * fill, as used space of percentage of a page. Neighbour pages emptier than
    * this value are candidates for merging. The threshold value is specified
    * in 1/65536 of percent, which is equivalent to the 16-dot-16 fixed point
    * format. The specified value must be in the range from 12.5% (almost empty)
    * to 50% (half empty) which corresponds to the range from 8192 and to 32768
-   * in units respectively. */
+   * in units respectively.
+   * \see MDBX_opt_prefer_waf_insteadof_balance */
   MDBX_opt_merge_threshold_16dot16_percent,
 
   /** \brief Controls the choosing between use write-through disk writes and
@@ -2332,7 +2388,32 @@ enum MDBX_option_t {
    * С другой стороны, при минимальном значении (включая 0)
    * `MDBX_opt_rp_augment_limit` переработка GC будет ограничиваться
    * преимущественно затраченным временем. */
-  MDBX_opt_gc_time_limit
+  MDBX_opt_gc_time_limit,
+
+  /** \brief Управляет выбором между стремлением к равномерности наполнения
+   * страниц, либо уменьшением количества измененных и записанных страниц.
+   *
+   * \details После операций удаления страницы содержащие меньше минимума
+   * ключей, либо опустошенные до \ref MDBX_opt_merge_threshold_16dot16_percent
+   * подлежат слиянию с одной из соседних. Если страницы справа и слева от
+   * текущей обе «грязные» (были изменены в ходе транзакции и должны быть
+   * записаны на диск), либо обе «чисты» (не изменялись в текущей транзакции),
+   * то целью для слияния всегда выбирается менее заполненная страница.
+   * Когда же только одна из соседствующих является «грязной», а другая
+   * «чистой», то возможны две тактики выбора цели для слияния:
+   *
+   *  - Если `MDBX_opt_prefer_waf_insteadof_balance = True`, то будет выбрана
+   *    уже измененная страница, что НЕ УВЕЛИЧИТ количество измененных страниц
+   *    и объем записи на диск при фиксации текущей транзакции, но в среднем
+   *    будет УВЕЛИЧИВАТЬ неравномерность заполнения страниц.
+   *
+   *  - Если `MDBX_opt_prefer_waf_insteadof_balance = False`, то будет выбрана
+   *    менее заполненная страница, что УВЕЛИЧИТ количество измененных страниц
+   *    и объем записи на диск при фиксации текущей транзакции, но в среднем
+   *    будет УМЕНЬШАТЬ неравномерность заполнения страниц.
+   *
+   * \see MDBX_opt_merge_threshold_16dot16_percent */
+  MDBX_opt_prefer_waf_insteadof_balance
 };
 #ifndef __cplusplus
 /** \ingroup c_settings */
@@ -2389,7 +2470,7 @@ LIBMDBX_API int mdbx_env_get_option(const MDBX_env *env,
  *
  * Flags set by mdbx_env_set_flags() are also used:
  *  - \ref MDBX_ENV_DEFAULTS, \ref MDBX_NOSUBDIR, \ref MDBX_RDONLY,
- *    \ref MDBX_EXCLUSIVE, \ref MDBX_WRITEMAP, \ref MDBX_NOTLS,
+ *    \ref MDBX_EXCLUSIVE, \ref MDBX_WRITEMAP, \ref MDBX_NOSTICKYTHREADS,
  *    \ref MDBX_NORDAHEAD, \ref MDBX_NOMEMINIT, \ref MDBX_COALESCE,
  *    \ref MDBX_LIFORECLAIM. See \ref env_flags section.
  *
@@ -3385,7 +3466,7 @@ LIBMDBX_API int mdbx_env_get_fd(const MDBX_env *env, mdbx_filehandle_t *fd);
  *                        2) Temporary close memory mapped is required to change
  *                        geometry, but there read transaction(s) is running
  *                        and no corresponding thread(s) could be suspended
- *                        since the \ref MDBX_NOTLS mode is used.
+ *                        since the \ref MDBX_NOSTICKYTHREADS mode is used.
  * \retval MDBX_EACCESS   The environment opened in read-only.
  * \retval MDBX_MAP_FULL  Specified size smaller than the space already
  *                        consumed by the environment.
@@ -3504,11 +3585,11 @@ mdbx_limits_txnsize_max(intptr_t pagesize);
  * track readers in the the environment. The default is about 100 for 4K system
  * page size. Starting a read-only transaction normally ties a lock table slot
  * to the current thread until the environment closes or the thread exits. If
- * \ref MDBX_NOTLS is in use, \ref mdbx_txn_begin() instead ties the slot to the
- * \ref MDBX_txn object until it or the \ref MDBX_env object is destroyed.
- * This function may only be called after \ref mdbx_env_create() and before
- * \ref mdbx_env_open(), and has an effect only when the database is opened by
- * the first process interacts with the database.
+ * \ref MDBX_NOSTICKYTHREADS is in use, \ref mdbx_txn_begin() instead ties the
+ * slot to the \ref MDBX_txn object until it or the \ref MDBX_env object is
+ * destroyed. This function may only be called after \ref mdbx_env_create() and
+ * before \ref mdbx_env_open(), and has an effect only when the database is
+ * opened by the first process interacts with the database.
  * \see mdbx_env_get_maxreaders()
  *
  * \param [in] env       An environment handle returned
@@ -3702,8 +3783,8 @@ mdbx_env_get_userctx(const MDBX_env *env);
  * \see mdbx_txn_begin()
  *
  * \note A transaction and its cursors must only be used by a single thread,
- * and a thread may only have a single transaction at a time. If \ref MDBX_NOTLS
- * is in use, this does not apply to read-only transactions.
+ * and a thread may only have a single transaction at a time unless
+ * the \ref MDBX_NOSTICKYTHREADS is used.
  *
  * \note Cursors may not span transactions.
  *
@@ -3764,8 +3845,8 @@ LIBMDBX_API int mdbx_txn_begin_ex(MDBX_env *env, MDBX_txn *parent,
  * \see mdbx_txn_begin_ex()
  *
  * \note A transaction and its cursors must only be used by a single thread,
- * and a thread may only have a single transaction at a time. If \ref MDBX_NOTLS
- * is in use, this does not apply to read-only transactions.
+ * and a thread may only have a single transaction at a time unless
+ * the \ref MDBX_NOSTICKYTHREADS is used.
  *
  * \note Cursors may not span transactions.
  *
@@ -4146,10 +4227,11 @@ LIBMDBX_API int mdbx_txn_break(MDBX_txn *txn);
  * Abort the read-only transaction like \ref mdbx_txn_abort(), but keep the
  * transaction handle. Therefore \ref mdbx_txn_renew() may reuse the handle.
  * This saves allocation overhead if the process will start a new read-only
- * transaction soon, and also locking overhead if \ref MDBX_NOTLS is in use. The
- * reader table lock is released, but the table slot stays tied to its thread
- * or \ref MDBX_txn. Use \ref mdbx_txn_abort() to discard a reset handle, and to
- * free its lock table slot if \ref MDBX_NOTLS is in use.
+ * transaction soon, and also locking overhead if \ref MDBX_NOSTICKYTHREADS is
+ * in use. The reader table lock is released, but the table slot stays tied to
+ * its thread or \ref MDBX_txn. Use \ref mdbx_txn_abort() to discard a reset
+ * handle, and to free its lock table slot if \ref MDBX_NOSTICKYTHREADS is in
+ * use.
  *
  * Cursors opened within the transaction must not be used again after this
  * call, except with \ref mdbx_cursor_renew() and \ref mdbx_cursor_close().
@@ -6058,9 +6140,9 @@ LIBMDBX_API int mdbx_env_turn_for_recovery(MDBX_env *env, unsigned target_meta);
  *       работы с БД в процессе её открытия (при удержании блокировок).
  *
  * \param [in]  pathname  Путь к директории или файлу БД.
- * \param [out] into      Указатель на структуру \ref MDBX_envinfo
+ * \param [out] info      Указатель на структуру \ref MDBX_envinfo
  *                        для получения информации.
- * \param [int] bytes     Актуальный размер структуры \ref MDBX_envinfo, это
+ * \param [in] bytes      Актуальный размер структуры \ref MDBX_envinfo, это
  *                        значение используется для обеспечения совместимости
  *                        ABI.
  *
@@ -6324,7 +6406,7 @@ typedef struct MDBX_chk_callbacks {
  * библиотеку.
  *
  * Проверка выполняется в несколько стадий, начиная с инициализации и до
- * завершения, более подробно см \ref enum MDBX_chk_stage. О начале и завершении
+ * завершения, более подробно см \ref MDBX_chk_stage. О начале и завершении
  * каждой стадии код приложения уведомляется через соответствующие функции
  * обратного вызова, более подробно см \ref MDBX_chk_callbacks_t.
  *
