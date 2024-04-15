@@ -33,7 +33,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          choco upgrade mingw -y --no-progress --version 11.2.0.07112021
+          choco upgrade mingw -y --no-progress  --allow-downgrade --version 11.2.0.07112021 
           choco install cmake -y --no-progress --version 3.23.1
 
       - uses: actions/checkout@v3
