@@ -441,14 +441,17 @@ func TestTxn_OpenDBI_zero(t *testing.T) {
 		env.Close()
 	})
 
-	err = env.View(func(txn *Txn) (err error) {
-		_, err = txn.OpenRoot(0)
-		if err != nil {
-			return err
-		}
-		_, err = txn.Get(0, []byte("k"))
-		return err
-	})
+	txn, err := env.BeginTxn(nil, 0)
+	if err != nil {
+		panic(err)
+	}
+	defer txn.Abort()
+
+	dbi, err := txn.OpenRoot(0)
+	if err != nil {
+		panic(err)
+	}
+	_, err = txn.Get(dbi, []byte("k"))
 	if !IsErrno(err, BadDBI) {
 		t.Errorf("mdb_dbi_open: %v", err)
 	}
