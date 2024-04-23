@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 7e1fc281eda601813f191bf4e230e0cd439df56e9fbe6b0cbfee716c27a838cf_v0_13_0_41_g0da3c87a
+#define MDBX_BUILD_SOURCERY 91ff5b5423830ee44fca4b70dcb298f233338a17a3185c44df67ec16d3034af3_v0_13_0_38_gf1975363
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2053,7 +2053,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 /** Controls profiling of GC search and updates. */
 #ifndef MDBX_ENABLE_PROFGC
-#define MDBX_ENABLE_PROFGC 1
+#define MDBX_ENABLE_PROFGC 0
 #elif !(MDBX_ENABLE_PROFGC == 0 || MDBX_ENABLE_PROFGC == 1)
 #error MDBX_ENABLE_PROFGC must be defined as 0 or 1
 #endif /* MDBX_ENABLE_PROFGC */
@@ -3027,12 +3027,6 @@ typedef struct profgc_stat {
   uint32_t spe_counter;
   /* page faults (hard page faults) */
   uint32_t majflt;
-  /* Для разборок с pnl_merge() */
-  struct {
-    uint64_t time;
-    uint64_t volume;
-    uint32_t calls;
-  } pnl_merge;
 } profgc_stat_t;
 
 /* Statistics of page operations overall of all (running, completed and aborted)
@@ -10612,11 +10606,6 @@ static bool default_prefault_write(const MDBX_env *env) {
          (env->me_flags & (MDBX_WRITEMAP | MDBX_RDONLY)) == MDBX_WRITEMAP;
 }
 
-static bool default_prefer_waf_insteadof_balance(const MDBX_env *env) {
-  (void)env;
-  return false;
-}
-
 static void adjust_defaults(MDBX_env *env) {
   if (!env->me_options.flags.non_auto.rp_augment_limit)
     env->me_options.rp_augment_limit = default_rp_augment_limit(env);
@@ -12129,15 +12118,7 @@ next_gc:;
   }
 
   /* Merge in descending sorted order */
-#if MDBX_ENABLE_PROFGC
-  const uint64_t merge_begin = osal_monotime();
-#endif /* MDBX_ENABLE_PROFGC */
   pnl_merge(txn->tw.relist, gc_pnl);
-#if MDBX_ENABLE_PROFGC
-  prof->pnl_merge.calls += 1;
-  prof->pnl_merge.volume += MDBX_PNL_GETSIZE(txn->tw.relist);
-  prof->pnl_merge.time += osal_monotime() - merge_begin;
-#endif /* MDBX_ENABLE_PROFGC */
   flags |= MDBX_ALLOC_SHOULD_SCAN;
   if (AUDIT_ENABLED()) {
     if (unlikely(!pnl_check(txn->tw.relist, txn->mt_next_pgno))) {
@@ -12310,7 +12291,7 @@ depleted_gc:
 no_gc:
   eASSERT(env, pgno == 0);
 #ifndef MDBX_ENABLE_BACKLOG_DEPLETED
-#define MDBX_ENABLE_BACKLOG_DEPLETED 1
+#define MDBX_ENABLE_BACKLOG_DEPLETED 0
 #endif /* MDBX_ENABLE_BACKLOG_DEPLETED*/
   if (MDBX_ENABLE_BACKLOG_DEPLETED &&
       unlikely(!(txn->mt_flags & MDBX_TXN_DRAINED_GC))) {
@@ -16207,16 +16188,6 @@ static void take_gcprof(MDBX_txn *txn, MDBX_commit_latency *latency) {
     latency->gc_prof.wipes = ptr->gc_prof.wipes;
     latency->gc_prof.flushes = ptr->gc_prof.flushes;
     latency->gc_prof.kicks = ptr->gc_prof.kicks;
-
-    latency->gc_prof.pnl_merge_work.time =
-        osal_monotime_to_16dot16(ptr->gc_prof.work.pnl_merge.time);
-    latency->gc_prof.pnl_merge_work.calls = ptr->gc_prof.work.pnl_merge.calls;
-    latency->gc_prof.pnl_merge_work.volume = ptr->gc_prof.work.pnl_merge.volume;
-    latency->gc_prof.pnl_merge_self.time =
-        osal_monotime_to_16dot16(ptr->gc_prof.self.pnl_merge.time);
-    latency->gc_prof.pnl_merge_self.calls = ptr->gc_prof.self.pnl_merge.calls;
-    latency->gc_prof.pnl_merge_self.volume = ptr->gc_prof.self.pnl_merge.volume;
-
     if (txn == env->me_txn0)
       memset(&ptr->gc_prof, 0, sizeof(ptr->gc_prof));
   } else
@@ -17840,8 +17811,6 @@ __cold int mdbx_env_create(MDBX_env **penv) {
   env->me_options.spill_parent4child_denominator = 0;
   env->me_options.dp_loose_limit = 64;
   env->me_options.merge_threshold_16dot16_percent = 65536 / 4 /* 25% */;
-  if (default_prefer_waf_insteadof_balance(env))
-    env->me_options.prefer_waf_insteadof_balance = true;
 
 #if !(defined(_WIN32) || defined(_WIN64))
   env->me_options.writethrough_threshold =
@@ -30609,16 +30578,6 @@ __cold int mdbx_env_set_option(MDBX_env *env, const MDBX_option_t option,
     }
     break;
 
-  case MDBX_opt_prefer_waf_insteadof_balance:
-    if (value == /* default */ UINT64_MAX)
-      env->me_options.prefer_waf_insteadof_balance =
-          default_prefer_waf_insteadof_balance(env);
-    else if (value > 1)
-      err = MDBX_EINVAL;
-    else
-      env->me_options.prefer_waf_insteadof_balance = value != 0;
-    break;
-
   default:
     return MDBX_EINVAL;
   }
@@ -30706,10 +30665,6 @@ __cold int mdbx_env_get_option(const MDBX_env *env, const MDBX_option_t option,
 
   case MDBX_opt_prefault_write_enable:
     *pvalue = env->me_options.prefault_write;
-    break;
-
-  case MDBX_opt_prefer_waf_insteadof_balance:
-    *pvalue = env->me_options.prefer_waf_insteadof_balance;
     break;
 
   default:
@@ -37140,9 +37095,9 @@ __dll_export
         0,
         13,
         0,
-        41,
-        {"2024-04-05T00:30:46+03:00", "797cb93cde0a0dde4835bb2754a4c2fd7191863d", "0da3c87a8fd8b69ec85184f27ebef55030c0a3b2",
-         "v0.13.0-41-g0da3c87a"},
+        38,
+        {"2024-04-04T22:31:03+03:00", "a0fc2d938419aa82764beae00e1472f412d5a4d5", "f19753636d2364c43125f972b8d3f29dc9e244b4",
+         "v0.13.0-38-gf1975363"},
         sourcery};
 
 __dll_export
