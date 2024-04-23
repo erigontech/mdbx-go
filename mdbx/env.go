@@ -106,7 +106,7 @@ const (
 	OptSpillMinDenominator          = C.MDBX_opt_spill_min_denominator
 	OptSpillParent4ChildDenominator = C.MDBX_opt_spill_parent4child_denominator
 	OptMergeThreshold16dot16Percent = C.MDBX_opt_merge_threshold_16dot16_percent
-	OptPreferWafInsteadOfBalance    = C.MDBX_opt_prefer_waf_insteadof_balance
+	//OptPreferWafInsteadOfBalance    = C.MDBX_opt_prefer_waf_insteadof_balance
 )
 
 var (
