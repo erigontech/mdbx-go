@@ -4,6 +4,7 @@ package mdbx
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"runtime"
 	"syscall"
@@ -432,8 +433,8 @@ func TestTxn_OpenDBI_zero(t *testing.T) {
 		panic(err)
 	}
 	_, err = txn.Get(dbi, []byte("k"))
-	if !IsErrno(err, ErrNotFound) {
-		t.Errorf("mdb_dbi_open: %v", err)
+	if !errors.Is(err, ErrNotFound) {
+		panic(err)
 	}
 }
 
