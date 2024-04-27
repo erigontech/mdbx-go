@@ -372,7 +372,24 @@ func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
 	if ret != success {
 		return nil, operrno("mdbx_env_info", ret)
 	}
-	info := EnvInfo{
+	return castEnvInfo(_info), nil
+}
+
+func PreOpenSnapInfo(path string) (*EnvInfo, error) {
+	cpath := C.CString(path)
+	defer C.free(unsafe.Pointer(cpath))
+
+	var _info C.MDBX_envinfo
+	var bytes C.size_t = C.size_t(unsafe.Sizeof(_info))
+	ret := C.mdbx_preopen_snapinfo(cpath, &_info, bytes)
+	if ret != success {
+		return nil, operrno("mdbx_preopen_snapinfo", ret)
+	}
+	return castEnvInfo(_info), nil
+}
+
+func castEnvInfo(_info C.MDBX_envinfo) *EnvInfo {
+	return &EnvInfo{
 		MapSize: int64(_info.mi_mapsize),
 		Geo: EnvInfoGeo{
 			Lower:   uint64(_info.mi_geo.lower),
@@ -409,7 +426,6 @@ func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
 		SinceReaderCheck:  toDuration(_info.mi_since_reader_check_seconds16dot16),
 		Flags:             uint(_info.mi_mode),
 	}
-	return &info, nil
 }
 
 // Sync flushes buffers to disk.  If force is true a synchronous flush occurs
