@@ -432,7 +432,7 @@ func TestTxn_OpenDBI_zero(t *testing.T) {
 		panic(err)
 	}
 	_, err = txn.Get(dbi, []byte("k"))
-	if !IsErrno(err, NotFound) {
+	if !IsErrno(err, ErrNotFound) {
 		t.Errorf("mdb_dbi_open: %v", err)
 	}
 }
