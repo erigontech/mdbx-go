@@ -3,6 +3,7 @@ package mdbx
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -1263,8 +1264,9 @@ func TestCursor_Del_DupSort(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("kk: %s\n", kk)
-		fmt.Printf("vv: %s\n", vv)
+		_, _ = kk, vv //TODO: add assert
+		//fmt.Printf("kk: %s\n", kk)
+		//fmt.Printf("vv: %s\n", vv)
 
 		return nil
 	})
@@ -1562,4 +1564,45 @@ func BenchmarkCursor_Renew(b *testing.B) {
 		})
 		return nil
 	})
+}
+
+func BenchmarkCursor_SetRange(b *testing.B) {
+	env, _ := setup(b)
+
+	var db DBI
+	k := make([]byte, 8)
+	binary.BigEndian.PutUint64(k, uint64(1))
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		err = txn.Put(db, k, k, 0)
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("dbi: %v", err)
+		return
+	}
+
+	if err := env.View(func(txn *Txn) (err error) {
+		c, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _, err := c.Get(k, nil, SetRange)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("put: %v", err)
+	}
 }
