@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+
+	_ "github.com/erigontech/mdbx-go/dbg"
 )
 
 // success is a value returned from the MDBX API to indicate a successful call.
