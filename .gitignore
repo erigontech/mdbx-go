@@ -28,5 +28,6 @@ _cgo_export.*
 _testmain.go
 
 *.exe
+*.out
 
 go.work*

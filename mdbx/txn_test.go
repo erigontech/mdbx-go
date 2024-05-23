@@ -1267,6 +1267,42 @@ func openDBI(env *Env, key string, flags uint) (DBI, error) {
 	return db, nil
 }
 
+func BenchmarkTxn_Get(b *testing.B) {
+	env, _ := setup(b)
+
+	var db DBI
+	k := make([]byte, 8)
+	binary.BigEndian.PutUint64(k, uint64(1))
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		err = txn.Put(db, k, k, 0)
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("dbi: %v", err)
+		return
+	}
+
+	if err := env.View(func(txn *Txn) (err error) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := txn.Get(db, k)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("put: %v", err)
+	}
+}
+
 func TestTxnEnvWarmup(t *testing.T) {
 	env, _ := setup(t)
 
