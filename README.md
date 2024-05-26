@@ -1,6 +1,27 @@
+- [mdbx-go](#mdbx-go)
+  - [Min Requirements](#min-requirements)
+  - [Packages](#packages)
+      - [mdbx  ](#mdbx--)
+      - [exp/mdbxpool  ](#expmdbxpool--)
+  - [Key Features](#key-features)
+    - [Idiomatic API](#idiomatic-api)
+    - [High-Performance notices](#high-performance-notices)
+    - [Advantages of BoltDB](#advantages-of-boltdb)
+    - [Advantages of LMDB over BoltDB](#advantages-of-lmdb-over-boltdb)
+    - [Advantages of MDBX over LMDB](#advantages-of-mdbx-over-lmdb)
+  - [Build](#build)
+  - [Update C code](#update-c-code)
+  - [Build binaries](#build-binaries)
+  - [Documentation](#documentation)
+    - [Versioning and Stability](#versioning-and-stability)
+
 # mdbx-go
 
-Go bindings to the libmdbx: https://libmdbx.dqdkfa.ru
+Go bindings to the libmdbx: <https://libmdbx.dqdkfa.ru>
+
+**Notice**: page `./mdbx` contains only `mdbx.h` and `mdbx.c` - to minimize go build time/size.
+But full version of libmdbx (produced by it's `make dist` command) is in `./../mdbxdist/`.
+License is also there.
 
 Most of articles in internet about LMDB are applicable to MDBX. But mdbx has more features.
 
@@ -55,9 +76,9 @@ caveats that application developers must be aware of when relying on MDBX to sto
 to fully read the [documentation](https://libmdbx.dqdkfa.ru) so they are aware of these caveats. And even
 better if read through [mdbx.h](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h)
 
-### High Performance notices
+### High-Performance notices
 
-Applications with high performance requirements can opt-in to fast, zero-copy reads at the cost of runtime safety.
+Applications with high-performance requirements can opt-in to fast, zero-copy reads at the cost of runtime safety.
 Zero-copy behavior is specified at the transaction level to reduce instrumentation overhead.
 
 ```
@@ -122,9 +143,9 @@ On FreeBSD 10, you must explicitly set `CC` (otherwise it will fail with a crypt
 
     CC=clang go test -v ./...
 
-## Maintainance, update .c code
+## Update C code
 
-In MDBX repo: `make dist && cp -R ./dist/* ./../mdbx-go/mdbxdist/`. Then in mdbx-go repo: `make cp`
+In `libmdbx` repo: `make dist && cp -R ./dist/* ./../mdbx-go/mdbxdist/`. Then in mdbx-go repo: `make cp`
 
 ## Build binaries
 
@@ -132,7 +153,7 @@ In mdbx-go repo: `MDBX_BUILD_TIMESTAMP=unknown make tools`
 
 Or if use mdbx-go as a library:
 
-```
+```sh
 go mod vendor && cd vendor/github.com/torquem-ch/mdbx-go && make tools 
 rm -rf vendor
 ```
@@ -152,7 +173,7 @@ stable and adhere to the guidelines of [semantic versioning](http://semver.org/)
 
 Experimental packages (those packages in `exp/`) are not required to adhere to semantic versioning. However packages
 specifically declared to merely be
-"unstable" can be relied on more for long term use with less concern.
+"unstable" can be relied on more for long-term use with less concern.
 
 The API of an unstable package may change in subtle ways between minor release versions. But deprecations will be
 indicated at least one release in advance and all functionality will remain available through some method.
