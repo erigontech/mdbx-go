@@ -16,7 +16,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
 
-#define MDBX_BUILD_SOURCERY a3c3ff9811bdfa66149e4743b96026ea2be2385a83cec8ac40b176805bb61b13_v0_13_0_53_gb5088dd7_dirty
+#define MDBX_BUILD_SOURCERY 369567a398ebc8f4c89ab94ffb866d31f3277c4c206a5290aa0d9ae18ed390f7_v0_13_0_54_gdef33803
 
 
 #define LIBMDBX_INTERNALS
@@ -434,11 +434,13 @@ __extern_C key_t ftok(const char *, int);
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif /* WIN32_LEAN_AND_MEAN */
-#include <excpt.h>
-#include <tlhelp32.h>
 #include <windows.h>
 #include <winnt.h>
 #include <winternl.h>
+
+/* После подгрузки windows.h, чтобы избежать проблем со сборкой MINGW и т.п. */
+#include <excpt.h>
+#include <tlhelp32.h>
 
 #else /*----------------------------------------------------------------------*/
 
@@ -986,13 +988,6 @@ template <typename T, size_t N> char (&__ArraySizeHelper(T (&array)[N]))[N];
 #ifndef STATIC_ASSERT
 #define STATIC_ASSERT(expr) STATIC_ASSERT_MSG(expr, #expr)
 #endif
-
-#ifndef __Wpedantic_format_voidptr
-static inline const void *__Wpedantic_format_voidptr(const void *ptr) {
-  return ptr;
-}
-#define __Wpedantic_format_voidptr(ARG) __Wpedantic_format_voidptr(ARG)
-#endif /* __Wpedantic_format_voidptr */
 
 /*----------------------------------------------------------------------------*/
 
@@ -1641,10 +1636,7 @@ MDBX_INTERNAL void osal_ctor(void);
 MDBX_INTERNAL void osal_dtor(void);
 
 #if defined(_WIN32) || defined(_WIN64)
-
-
 MDBX_INTERNAL int osal_mb2w(const char *const src, wchar_t **const pdst);
-
 #endif /* Windows */
 
 /*----------------------------------------------------------------------------*/
@@ -2610,11 +2602,12 @@ typedef enum node_flags {
 
 #pragma pack(pop)
 
-MDBX_NOTHROW_PURE_FUNCTION static inline uint8_t page_type(const page_t *mp) {
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint8_t
+page_type(const page_t *mp) {
   return mp->flags;
 }
 
-MDBX_NOTHROW_PURE_FUNCTION static inline uint8_t
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint8_t
 page_type_compat(const page_t *mp) {
   /* Drop legacy P_DIRTY flag for sub-pages for compatilibity,
    * for assertions only. */
@@ -2622,23 +2615,28 @@ page_type_compat(const page_t *mp) {
                                       : mp->flags;
 }
 
-MDBX_NOTHROW_PURE_FUNCTION static inline bool is_leaf(const page_t *mp) {
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool
+is_leaf(const page_t *mp) {
   return (mp->flags & P_LEAF) != 0;
 }
 
-MDBX_NOTHROW_PURE_FUNCTION static inline bool is_dupfix_leaf(const page_t *mp) {
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool
+is_dupfix_leaf(const page_t *mp) {
   return (mp->flags & P_DUPFIX) != 0;
 }
 
-MDBX_NOTHROW_PURE_FUNCTION static inline bool is_branch(const page_t *mp) {
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool
+is_branch(const page_t *mp) {
   return (mp->flags & P_BRANCH) != 0;
 }
 
-MDBX_NOTHROW_PURE_FUNCTION static inline bool is_largepage(const page_t *mp) {
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool
+is_largepage(const page_t *mp) {
   return (mp->flags & P_LARGE) != 0;
 }
 
-MDBX_NOTHROW_PURE_FUNCTION static inline bool is_subpage(const page_t *mp) {
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool
+is_subpage(const page_t *mp) {
   return (mp->flags & P_SUBP) != 0;
 }
 
@@ -2978,6 +2976,14 @@ extern struct libmdbx_imports imports;
 
 
 
+#ifndef __Wpedantic_format_voidptr
+MDBX_MAYBE_UNUSED static inline const void *
+__Wpedantic_format_voidptr(const void *ptr) {
+  return ptr;
+}
+#define __Wpedantic_format_voidptr(ARG) __Wpedantic_format_voidptr(ARG)
+#endif /* __Wpedantic_format_voidptr */
+
 MDBX_INTERNAL void MDBX_PRINTF_ARGS(4, 5)
     debug_log(int level, const char *function, int line, const char *fmt, ...)
         MDBX_PRINTF_ARGS(4, 5);
@@ -3198,8 +3204,8 @@ struct monotime_cache {
   int expire_countdown;
 };
 
-static inline uint64_t monotime_since_cached(uint64_t begin_timestamp,
-                                             struct monotime_cache *cache) {
+MDBX_MAYBE_UNUSED static inline uint64_t
+monotime_since_cached(uint64_t begin_timestamp, struct monotime_cache *cache) {
   if (cache->expire_countdown)
     cache->expire_countdown -= 1;
   else {
@@ -3260,7 +3266,7 @@ typedef const pgno_t *const_pnl_t;
 #define MDBX_PNL_SIZEOF(pl) ((MDBX_PNL_GETSIZE(pl) + 1) * sizeof(pgno_t))
 #define MDBX_PNL_IS_EMPTY(pl) (MDBX_PNL_GETSIZE(pl) == 0)
 
-static inline size_t pnl_size2bytes(size_t size) {
+MDBX_MAYBE_UNUSED static inline size_t pnl_size2bytes(size_t size) {
   assert(size > 0 && size <= PAGELIST_LIMIT);
 #if MDBX_PNL_PREALLOC_FOR_RADIXSORT
 
@@ -3278,7 +3284,7 @@ static inline size_t pnl_size2bytes(size_t size) {
   return bytes;
 }
 
-static inline pgno_t pnl_bytes2size(const size_t bytes) {
+MDBX_MAYBE_UNUSED static inline pgno_t pnl_bytes2size(const size_t bytes) {
   size_t size = bytes / sizeof(pgno_t);
   assert(size > 3 && size <= PAGELIST_LIMIT + /* alignment gap */ 65536);
   size -= 3;
@@ -3295,7 +3301,7 @@ MDBX_INTERNAL void pnl_free(pnl_t pnl);
 MDBX_INTERNAL int pnl_reserve(pnl_t __restrict *__restrict ppnl,
                               const size_t wanna);
 
-static inline int __must_check_result
+MDBX_MAYBE_UNUSED static inline int __must_check_result
 pnl_need(pnl_t __restrict *__restrict ppnl, size_t num) {
   assert(MDBX_PNL_GETSIZE(*ppnl) <= PAGELIST_LIMIT &&
          MDBX_PNL_ALLOCLEN(*ppnl) >= MDBX_PNL_GETSIZE(*ppnl));
@@ -3305,7 +3311,8 @@ pnl_need(pnl_t __restrict *__restrict ppnl, size_t num) {
                                                    : pnl_reserve(ppnl, wanna);
 }
 
-static inline void pnl_append_prereserved(__restrict pnl_t pnl, pgno_t pgno) {
+MDBX_MAYBE_UNUSED static inline void
+pnl_append_prereserved(__restrict pnl_t pnl, pgno_t pgno) {
   assert(MDBX_PNL_GETSIZE(pnl) < MDBX_PNL_ALLOCLEN(pnl));
   if (AUDIT_ENABLED()) {
     for (size_t i = MDBX_PNL_GETSIZE(pnl); i > 0; --i)
@@ -3332,19 +3339,20 @@ MDBX_INTERNAL void pnl_sort_nochk(pnl_t pnl);
 
 MDBX_INTERNAL bool pnl_check(const const_pnl_t pnl, const size_t limit);
 
-static inline bool pnl_check_allocated(const const_pnl_t pnl,
-                                       const size_t limit) {
+MDBX_MAYBE_UNUSED static inline bool pnl_check_allocated(const const_pnl_t pnl,
+                                                         const size_t limit) {
   return pnl == nullptr || (MDBX_PNL_ALLOCLEN(pnl) >= MDBX_PNL_GETSIZE(pnl) &&
                             pnl_check(pnl, limit));
 }
 
-static inline void pnl_sort(pnl_t pnl, size_t limit4check) {
+MDBX_MAYBE_UNUSED static inline void pnl_sort(pnl_t pnl, size_t limit4check) {
   pnl_sort_nochk(pnl);
   assert(pnl_check(pnl, limit4check));
   (void)limit4check;
 }
 
-static inline size_t pnl_search(const pnl_t pnl, pgno_t pgno, size_t limit) {
+MDBX_MAYBE_UNUSED static inline size_t pnl_search(const pnl_t pnl, pgno_t pgno,
+                                                  size_t limit) {
   assert(pnl_check_allocated(pnl, limit));
   if (MDBX_HAVE_CMOV) {
     /* cmov-ускоренный бинарный поиск может читать (но не использовать) один
