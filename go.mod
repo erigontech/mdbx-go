@@ -1,6 +1,6 @@
 module github.com/erigontech/mdbx-go
 
-go 1.15
+go 1.22
 
 require (
 	github.com/benesch/cgosymbolizer v0.0.0-20190515212042-bec6fe6e597b

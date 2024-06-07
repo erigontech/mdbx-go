@@ -1,3 +1,10 @@
+#undef _GLIBCXX_DEBUG                // disable run-time bound checking, etc
+#pragma GCC optimize("Ofast,inline") // Ofast = O3,fast-math,allow-store-data-races,no-protect-parens
+
+#pragma GCC target("bmi,bmi2,lzcnt,popcnt")                      // bit manipulation
+#pragma GCC target("movbe")                                      // byte swap
+#pragma GCC target("aes,pclmul,rdrnd")                           // encryption
+#pragma GCC target("avx,avx2,f16c,fma,sse3,ssse3,sse4.1,sse4.2") // SIMD
 /* lmdbgo.c
  * Helper utilities for github.com/bmatsuo/lmdb-go/lmdb
  * */
@@ -35,7 +42,7 @@ int mdbxgo_del(MDBX_txn *txn, MDBX_dbi dbi, char *kdata, size_t kn, char *vdata,
     return mdbx_del(txn, dbi, &key, NULL);
 }
 
-int mdbxgo_get(MDBX_txn *txn, MDBX_dbi dbi, char *kdata, size_t kn, MDBX_val *val) {
+int mdbxgo_get(const MDBX_txn* restrict txn , MDBX_dbi dbi, char* restrict kdata, const size_t kn, MDBX_val* restrict val) MDBX_CXX17_NOEXCEPT {
     MDBX_val key;
     MDBXGO_SET_VAL(&key, kn, kdata);
     return mdbx_get(txn, dbi, &key, val);

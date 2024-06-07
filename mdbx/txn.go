@@ -600,6 +600,7 @@ func (txn *Txn) Get(dbi DBI, key []byte) ([]byte, error) {
 		*txn.val = C.MDBX_val{}
 		return nil, err
 	}
+
 	b := castToBytes(txn.val)
 	*txn.val = C.MDBX_val{}
 	return b, nil

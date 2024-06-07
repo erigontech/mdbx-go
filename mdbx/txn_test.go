@@ -1288,7 +1288,7 @@ func BenchmarkTxn_Get(b *testing.B) {
 	if err := env.View(func(txn *Txn) (err error) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, err := txn.Get(db, k)
+			_, err = txn.Get(db, k)
 			if err != nil {
 				return err
 			}

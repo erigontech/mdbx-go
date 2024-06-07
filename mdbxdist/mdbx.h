@@ -4426,7 +4426,7 @@ LIBMDBX_API int mdbx_drop(MDBX_txn *txn, MDBX_dbi dbi, bool del);
  * \retval MDBX_NOTFOUND  The key was not in the database.
  * \retval MDBX_EINVAL    An invalid parameter was specified. */
 LIBMDBX_API int mdbx_get(const MDBX_txn *txn, MDBX_dbi dbi, const MDBX_val *key,
-                         MDBX_val *data);
+                         MDBX_val *data) MDBX_CXX17_NOEXCEPT;
 
 /** \brief Get items from a database
  * and optionally number of data items for a given key.

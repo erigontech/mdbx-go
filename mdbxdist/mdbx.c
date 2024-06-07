@@ -20170,7 +20170,7 @@ static __always_inline int node_read(MDBX_cursor *mc, const MDBX_node *node,
 }
 
 int mdbx_get(const MDBX_txn *txn, MDBX_dbi dbi, const MDBX_val *key,
-             MDBX_val *data) {
+             MDBX_val *data) MDBX_CXX17_NOEXCEPT {
   DKBUF_DEBUG;
   DEBUG("===> get db %u key [%s]", dbi, DKEY_DEBUG(key));
 
@@ -20510,7 +20510,7 @@ static int cursor_prev(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
 
 /* Set the cursor on a specific data item. */
 __hot static struct cursor_set_result
-cursor_set(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data, MDBX_cursor_op op) {
+cursor_set(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data, MDBX_cursor_op op) MDBX_CXX17_NOEXCEPT {
   MDBX_page *mp;
   MDBX_node *node = NULL;
   DKBUF_DEBUG;
