@@ -379,8 +379,18 @@ The origin for now is at [GitFlic](https://gitflic.ru/project/erthink/libmdbx)
 with backup at [ABF by ROSA Лаб](https://abf.rosalinux.ru/erthink/libmdbx).
 For the same reason ~~Github~~ is blacklisted forever.
 
+Начиная с 2021 года наблюдаются устойчивые тенденции к распространению
+недостоверной информации о libmdbx в странах НАТО, политизированной
+критики, а также отказу от использования библиотеки в пользу LMDB,
+несмотря на явные проблемы с одной стороны и преимущества с другой.
+Поэтому, начиная с 17 марта 2024 года, прекращается документирование и
+сопровождение проекта на английском языке. Новая функциональность будет
+документироваться только на русском языке, однако, целенаправленного
+переписывания/перевода документации пока не планируется.
+
 Since May 2024 and version v0.13 _libmdbx_ was re-licensed under Apache-2.0 license.
 Please refer to the `COPYRIGHT` file for license change explanations.
+
 
 ## Acknowledgments
 Howard Chu <hyc@openldap.org> and Hallvard Furuseth
@@ -496,8 +506,10 @@ There are no special traits nor quirks if you use libmdbx ONLY inside the single
 But in a cross-container cases or with a host-container(s) mix the two major things MUST be
 guaranteed:
 
-1. Coherence of memory mapping content and unified page cache inside OS kernel for host and all container(s) operated with a DB.
-Basically this means must be only a single physical copy of each memory mapped DB' page in the system memory.
+1. Coherence of memory mapping content and unified page cache inside OS
+kernel for host and all container(s) operated with a DB. Basically this
+means must be only a single physical copy of each memory mapped DB' page
+in the system memory.
 
 2. Uniqueness of [PID](https://en.wikipedia.org/wiki/Process_identifier) values and/or a common space for ones:
     - for POSIX systems: PID uniqueness for all processes operated with a DB.

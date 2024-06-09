@@ -4961,6 +4961,7 @@ LIBMDBX_API int mdbx_cursor_bind(const MDBX_txn *txn, MDBX_cursor *cursor,
  * \see mdbx_cursor_renew()
  * \see mdbx_cursor_bind()
  * \see mdbx_cursor_close()
+ * \see mdbx_cursor_reset()
  *
  * \note In contrast to LMDB, the MDBX required that any opened cursors can be
  * reused and must be freed explicitly, regardless ones was opened in a
@@ -4972,6 +4973,20 @@ LIBMDBX_API int mdbx_cursor_bind(const MDBX_txn *txn, MDBX_cursor *cursor,
  *
  * \returns A non-zero error value on failure and 0 on success. */
 LIBMDBX_API int mdbx_cursor_unbind(MDBX_cursor *cursor);
+
+/** \brief Сбрасывает состояние курсора.
+ * \ingroup c_cursors
+ *
+ * В результате сброса курсор становится неустановленным и не позволяет
+ * выполнять операции относительного позиционирования, получения или изменения
+ * данных, до установки на позицию не зависящую от текущей. Что позволяет
+ * приложению пресекать дальнейшие операции без предварительного
+ * позиционирования курсора.
+ *
+ * \param [in] cursor   Указатель на курсор.
+ *
+ * \returns Результат операции сканирования, либо код ошибки. */
+LIBMDBX_API int mdbx_cursor_reset(MDBX_cursor *cursor);
 
 /** \brief Create a cursor handle for the specified transaction and DBI handle.
  * \ingroup c_cursors
@@ -5163,7 +5178,9 @@ LIBMDBX_API int mdbx_cursor_get(MDBX_cursor *cursor, MDBX_val *key,
  * Эта функция отключает контроль порядка следования ключей на страницах при
  * чтении страниц БД для этого курсора, и таким образом, позволяет прочитать
  * данные при отсутствии/недоступности использованных функций сравнения.
- * \see avoid_custom_comparators */
+ * \see avoid_custom_comparators
+ *
+ * \returns Результат операции сканирования, либо код ошибки. */
 LIBMDBX_API int mdbx_cursor_ignord(MDBX_cursor *cursor);
 
 /** \brief Тип предикативных функций обратного вызова используемых
@@ -5393,18 +5410,16 @@ LIBMDBX_API int mdbx_cursor_scan_from(MDBX_cursor *cursor,
  * \param [in] limit      The size of pairs buffer as the number of items,
  *                        but not a pairs.
  * \param [in] op         A cursor operation \ref MDBX_cursor_op (only
- *                        \ref MDBX_FIRST, \ref MDBX_NEXT, \ref MDBX_GET_CURRENT
- *                        are supported).
+ *                        \ref MDBX_FIRST and \ref MDBX_NEXT are supported).
  *
  * \returns A non-zero error value on failure and 0 on success,
  *          some possible errors are:
  * \retval MDBX_THREAD_MISMATCH  Given transaction is not owned
  *                               by current thread.
- * \retval MDBX_NOTFOUND         No more key-value pairs are available.
+ * \retval MDBX_NOTFOUND         No any key-value pairs are available.
  * \retval MDBX_ENODATA          The cursor is already at the end of data.
- * \retval MDBX_RESULT_TRUE      The specified limit is less than the available
- *                               key-value pairs on the current page/position
- *                               that the cursor points to.
+ * \retval MDBX_RESULT_TRUE      The returned chunk is the last one,
+ *                               and there are no pairs left.
  * \retval MDBX_EINVAL           An invalid parameter was specified. */
 LIBMDBX_API int mdbx_cursor_get_batch(MDBX_cursor *cursor, size_t *count,
                                       MDBX_val *pairs, size_t limit,
@@ -6183,11 +6198,11 @@ typedef enum MDBX_chk_stage {
   MDBX_chk_init,
   MDBX_chk_lock,
   MDBX_chk_meta,
-  MDBX_chk_traversal_tree,
-  MDBX_chk_traversal_freedb,
+  MDBX_chk_tree,
+  MDBX_chk_gc,
   MDBX_chk_space,
-  MDBX_chk_traversal_maindb,
-  MDBX_chk_traversal_subdbs,
+  MDBX_chk_maindb,
+  MDBX_chk_subdbs,
   MDBX_chk_conclude,
   MDBX_chk_unlock,
   MDBX_chk_finalize
