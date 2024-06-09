@@ -3,7 +3,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 467cfc7145a585a0fdad07561b12e55520533bd2653f3cc77d6253141d5005bc_v0_13_0_57_g2643c315
+#define MDBX_BUILD_SOURCERY 08b5dd3f564a2caa656c82b1cf8eb746fb028fddee5d6166ca6730d411efe18f_v0_13_0_60_g2843eb39
 
 
 #define LIBMDBX_INTERNALS
@@ -5724,17 +5724,22 @@ enum cursor_state {
      поэтому можно брать страницы из GC даже для FREE_DBI. */
   z_gcu_preparation = 0x02,
 
+  /* Курсор только-что создан, поэтому допускается авто-установка
+     в начало/конец, вместо возврата ошибки */
+  z_fresh = 0x04,
+
   /* Предыдущей операцией было удаление, поэтому курсор уже указывает
      на следующий элемент и соответствующая операция перемещения должна
      игнорироваться. */
-  z_after_delete = 0x04,
+  z_after_delete = 0x08,
 
   /* За курсором нет данных, нельзя делать CRUD операции в текущей позиции. */
-  z_hollow = 0x08,
+  z_hollow = 0x10,
 
   /* Маски для сброса/установки состояния. */
   z_clear_mask = z_inner | z_gcu_preparation,
-  z_poor_mark = -128 | z_hollow
+  z_poor_mark = -128 | z_hollow,
+  z_fresh_mark = z_poor_mark | z_fresh
 };
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool
@@ -14968,7 +14973,7 @@ static __always_inline int couple_init(cursor_couple_t *couple,
   couple->outer.tree = tree;
   couple->outer.clc = &kvx->clc;
   couple->outer.dbi_state = dbi_state;
-  couple->outer.top_and_flags = z_poor_mark;
+  couple->outer.top_and_flags = z_fresh_mark;
   STATIC_ASSERT((int)z_branch == P_BRANCH && (int)z_leaf == P_LEAF &&
                 (int)z_largepage == P_LARGE && (int)z_dupfix == P_DUPFIX);
   couple->outer.checking =
@@ -14987,7 +14992,7 @@ static __always_inline int couple_init(cursor_couple_t *couple,
     mx->cursor.clc = ptr_disp(couple->outer.clc, sizeof(clc_t));
     tASSERT(txn, &mx->cursor.clc->k == &kvx->clc.v);
     mx->cursor.dbi_state = dbi_state;
-    mx->cursor.top_and_flags = z_poor_mark | z_inner;
+    mx->cursor.top_and_flags = z_fresh_mark | z_inner;
     STATIC_ASSERT(MDBX_DUPFIXED * 2 == P_DUPFIX);
     mx->cursor.checking =
         couple->outer.checking + ((tree->flags & MDBX_DUPFIXED) << 1);
@@ -15049,7 +15054,7 @@ int cursor_dupsort_setup(MDBX_cursor *mc, const node_t *node,
             mx->nested_tree.mod_txnid, pp_txnid);
       goto bailout;
     }
-    mx->cursor.top_and_flags = z_poor_mark | z_inner;
+    mx->cursor.top_and_flags = z_fresh_mark | z_inner;
     break;
   case N_DUPDATA:
     if (!MDBX_DISABLE_VALIDATION && unlikely(node_ds(node) <= PAGEHDRSZ)) {
@@ -15320,8 +15325,19 @@ static __always_inline int cursor_step(const bool inner, const bool forward,
     cASSERT(mc, (mc->flags & z_inner) == 0);
   }
 
-  if (unlikely(!is_pointed(mc)))
-    return MDBX_NOTFOUND;
+  if (unlikely(is_poor(mc))) {
+    if (mc->flags & z_fresh) {
+      if (forward)
+        return inner ? inner_first(mc, key) : outer_first(mc, key, data);
+      else
+        return inner ? inner_last(mc, key) : outer_last(mc, key, data);
+    }
+    if (mc->flags & z_after_delete) {
+      mc->flags -= z_after_delete;
+      return MDBX_NOTFOUND;
+    }
+    return MDBX_ENODATA;
+  }
 
   const page_t *mp = mc->pg[mc->top];
   const intptr_t nkeys = page_numkeys(mp);
@@ -22200,7 +22216,7 @@ pgr_t gc_alloc_ex(const MDBX_cursor *const mc, const size_t num,
   eASSERT(env, mc != gc && gc->next == gc);
   gc->txn = txn;
   gc->dbi_state = txn->dbi_state;
-  gc->top_and_flags = z_poor_mark;
+  gc->top_and_flags = z_fresh_mark;
 
   env->prefault_write_activated = env->options.prefault_write;
   if (env->prefault_write_activated) {
@@ -22728,7 +22744,7 @@ static int clean_stored_retired(MDBX_txn *txn, gcu_t *ctx) {
     tASSERT(txn, txn == txn->env->basal_txn && gc->next == gc);
     gc->txn = txn;
     gc->dbi_state = txn->dbi_state;
-    gc->top_and_flags = z_poor_mark;
+    gc->top_and_flags = z_fresh_mark;
     gc->next = txn->cursors[FREE_DBI];
     txn->cursors[FREE_DBI] = gc;
     do {
@@ -39747,9 +39763,9 @@ __dll_export
         0,
         13,
         0,
-        57,
-        {"2024-06-09T00:00:31+03:00", "7eaeca74d825a3111ba11afbc5f50387d7781018", "2643c315137473e0df3c395e45eb47c4179bf87a",
-         "v0.13.0-57-g2643c315"},
+        60,
+        {"2024-06-09T14:59:43+03:00", "364e0a93a5cc632a649fac0b80d21ca60f867e6e", "2843eb394dea5352f515758eae31c7c9ea94e310",
+         "v0.13.0-60-g2843eb39"},
         sourcery};
 
 __dll_export

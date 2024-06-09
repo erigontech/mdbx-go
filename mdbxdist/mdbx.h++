@@ -4554,6 +4554,19 @@ public:
   inline value_result try_update_reserve(map_handle map, const slice &key,
                                          size_t value_length);
 
+  void put(map_handle map, const pair &kv, put_mode mode) {
+    return put(map, kv.key, kv.value, mode);
+  }
+  void insert(map_handle map, const pair &kv) {
+    return insert(map, kv.key, kv.value);
+  }
+  value_result try_insert(map_handle map, const pair &kv) {
+    return try_insert(map, kv.key, kv.value);
+  }
+  void upsert(map_handle map, const pair &kv) {
+    return upsert(map, kv.key, kv.value);
+  }
+
   /// \brief Removes all values for given key.
   inline bool erase(map_handle map, const slice &key);
 
