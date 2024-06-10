@@ -605,6 +605,40 @@ func (txn *Txn) Get(dbi DBI, key []byte) ([]byte, error) {
 	return b, nil
 }
 
+func TxnGetFast(txn uint64, val uint64, dbi DBI, key uint64, lenK int) error {
+	var k, v, tx C.uint64_t
+	if key > 0 {
+		k = C.uint64_t(key)
+	}
+
+	if val > 0 {
+		v = C.uint64_t(val)
+	}
+
+	if txn > 0 {
+		tx = C.uint64_t(key)
+	}
+
+	ret := C.mdbxgo_getfast(
+		tx, C.MDBX_dbi(dbi),
+		k, C.size_t(lenK),
+		v,
+	)
+	err := operrno("mdbx_getfast", ret)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func TxnGetFastWrap(txn *Txn, dbi DBI, k []byte) ([]byte, error) {
+	err := TxnGetFast(uint64(uintptr(unsafe.Pointer(txn._txn))), uint64(uintptr(unsafe.Pointer(txn.val))), dbi, uint64(uintptr(unsafe.Pointer(&k[0]))), len(k))
+	b := castToBytes(txn.val)
+	*txn.val = C.MDBX_val{}
+	return b, err
+}
+
 // Put stores an item in database dbi.
 //
 // See mdbx_put.

@@ -7,6 +7,8 @@
 #include "mdbxgo.h"
 #include "mdbx.h"
 
+#define MDBXGO_SET_VAL_UINTPTR(val, size, data) \
+    *(val) = (MDBX_val){ .iov_len = (size), .iov_base = ((char*)(uintptr_t)data) }
 #define MDBXGO_SET_VAL(val, size, data) \
     *(val) = (MDBX_val){ .iov_len = (size), .iov_base = (data) }
 
@@ -38,6 +40,14 @@ int mdbxgo_del(MDBX_txn *txn, MDBX_dbi dbi, char *kdata, size_t kn, char *vdata,
 int mdbxgo_get(MDBX_txn *txn, MDBX_dbi dbi, char *kdata, size_t kn, MDBX_val *val) {
     MDBX_val key;
     MDBXGO_SET_VAL(&key, kn, kdata);
+    return mdbx_get(txn, dbi, &key, val);
+}
+
+int mdbxgo_getfast(uint64_t txnUint, MDBX_dbi dbi, uint64_t kdataUint, size_t kn, uint64_t valUint) {
+    MDBX_val key;
+    MDBXGO_SET_VAL_UINTPTR(&key, kn, kdataUint);
+    MDBX_txn* txn = (MDBX_txn*)(uintptr_t)txnUint;
+    MDBX_val* val = (MDBX_val*)(uintptr_t)valUint;
     return mdbx_get(txn, dbi, &key, val);
 }
 
