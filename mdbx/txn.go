@@ -594,35 +594,15 @@ func (txn *Txn) Get(dbi DBI, key []byte) ([]byte, error) {
 	ret := C.mdbxgo_get(
 		txn._txn, C.MDBX_dbi(dbi),
 		k, C.size_t(len(key)),
-		txn.val,
-	)
-	err := operrno("mdbx_get", ret)
-	if err != nil {
-		*txn.val = C.MDBX_val{}
-		return nil, err
-	}
-	b := castToBytes(txn.val)
-	*txn.val = C.MDBX_val{}
-	return b, nil
-}
-
-func (txn *Txn) GetFast(dbi DBI, key []byte) ([]byte, error) {
-	var k *C.char
-	if len(key) > 0 {
-		k = (*C.char)(unsafe.Pointer(&key[0]))
-	}
-	ret := C.mdbxgo_get(
-		txn._txn, C.MDBX_dbi(dbi),
-		k, C.size_t(len(key)),
 		&txn.valNP,
 	)
 	err := operrno("mdbx_get", ret)
 	if err != nil {
-		txn.valNP = C.MDBX_val{}
+		txn.valNP.iov_base, txn.valNP.iov_len = nil, 0
 		return nil, err
 	}
 	b := castToBytes(&txn.valNP)
-	txn.valNP = C.MDBX_val{}
+	txn.valNP.iov_base, txn.valNP.iov_len = nil, 0
 	return b, nil
 }
 
