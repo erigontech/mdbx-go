@@ -57,11 +57,10 @@ const (
 //
 // See MDBX_txn.
 type Txn struct {
-	env   *Env
-	_txn  *C.MDBX_txn
-	key   *C.MDBX_val
-	valNP C.MDBX_val
-	val   *C.MDBX_val
+	env  *Env
+	_txn *C.MDBX_txn
+	key  *C.MDBX_val
+	val  C.MDBX_val
 
 	errLogf func(format string, v ...interface{})
 
@@ -94,14 +93,14 @@ func beginTxn(env *Env, parent *Txn, flags uint) (*Txn, error) {
 			// In a write Txn we can use the shared, C-allocated key and value
 			// allocated by env, and freed when it is closed.
 			txn.key = env.ckey
-			txn.val = env.cval
+			txn.val = *env.cval
 		} else {
 			// It is not easy to share C.MDBX_val values in this scenario unless
 			// there is a synchronized pool involved, which will increase
 			// overhead.  Further, allocating these values with C will add
 			// overhead both here and when the values are freed.
 			txn.key = new(C.MDBX_val)
-			txn.val = new(C.MDBX_val)
+			txn.val = C.MDBX_val{}
 		}
 	} else {
 		// Because parent Txn objects cannot be used while a sub-Txn is active
@@ -594,15 +593,15 @@ func (txn *Txn) Get(dbi DBI, key []byte) ([]byte, error) {
 	ret := C.mdbxgo_get(
 		txn._txn, C.MDBX_dbi(dbi),
 		k, C.size_t(len(key)),
-		&txn.valNP,
+		&txn.val,
 	)
 	err := operrno("mdbx_get", ret)
 	if err != nil {
-		txn.valNP.iov_base, txn.valNP.iov_len = nil, 0
+		txn.val = C.MDBX_val{}
 		return nil, err
 	}
-	b := castToBytes(&txn.valNP)
-	txn.valNP.iov_base, txn.valNP.iov_len = nil, 0
+	b := castToBytes(&txn.val)
+	txn.val = C.MDBX_val{}
 	return b, nil
 }
 
@@ -638,16 +637,16 @@ func (txn *Txn) PutReserve(dbi DBI, key []byte, n int, flags uint) ([]byte, erro
 	ret := C.mdbxgo_put1(
 		txn._txn, C.MDBX_dbi(dbi),
 		k, C.size_t(len(key)),
-		txn.val,
+		&txn.val,
 		C.MDBX_put_flags_t(flags|C.MDBX_RESERVE),
 	)
 	err := operrno("mdbx_put", ret)
 	if err != nil {
-		*txn.val = C.MDBX_val{}
+		txn.val = C.MDBX_val{}
 		return nil, err
 	}
-	b := castToBytes(txn.val)
-	*txn.val = C.MDBX_val{}
+	b := castToBytes(&txn.val)
+	txn.val = C.MDBX_val{}
 	return b, nil
 }
 
