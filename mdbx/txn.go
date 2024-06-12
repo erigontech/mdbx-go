@@ -57,10 +57,11 @@ const (
 //
 // See MDBX_txn.
 type Txn struct {
-	env  *Env
-	_txn *C.MDBX_txn
-	key  *C.MDBX_val
-	val  *C.MDBX_val
+	env   *Env
+	_txn  *C.MDBX_txn
+	key   *C.MDBX_val
+	valNP C.MDBX_val
+	val   *C.MDBX_val
 
 	errLogf func(format string, v ...interface{})
 
@@ -602,6 +603,26 @@ func (txn *Txn) Get(dbi DBI, key []byte) ([]byte, error) {
 	}
 	b := castToBytes(txn.val)
 	*txn.val = C.MDBX_val{}
+	return b, nil
+}
+
+func (txn *Txn) GetFast(dbi DBI, key []byte) ([]byte, error) {
+	var k *C.char
+	if len(key) > 0 {
+		k = (*C.char)(unsafe.Pointer(&key[0]))
+	}
+	ret := C.mdbxgo_get(
+		txn._txn, C.MDBX_dbi(dbi),
+		k, C.size_t(len(key)),
+		&txn.valNP,
+	)
+	err := operrno("mdbx_get", ret)
+	if err != nil {
+		txn.valNP = C.MDBX_val{}
+		return nil, err
+	}
+	b := castToBytes(&txn.valNP)
+	txn.valNP = C.MDBX_val{}
 	return b, nil
 }
 
