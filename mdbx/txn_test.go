@@ -1164,7 +1164,7 @@ func BenchmarkTxn_renew(b *testing.B) {
 
 func BenchmarkTxn_Put_append(b *testing.B) {
 	env, _ := setup(b)
-	err := env.SetGeometry(-1, -1, 128*1024*1024, -1, -1, 4096)
+	err := env.SetGeometry(-1, -1, 256*1024*1024, -1, -1, 4096)
 	if err != nil {
 		b.Error(err)
 		return
@@ -1204,7 +1204,7 @@ func BenchmarkTxn_Put_append(b *testing.B) {
 
 func BenchmarkTxn_Put_append_noflag(b *testing.B) {
 	env, _ := setup(b)
-	err := env.SetGeometry(-1, -1, 128*1024*1024, -1, -1, 4096)
+	err := env.SetGeometry(-1, -1, 256*1024*1024, -1, -1, 4096)
 	if err != nil {
 		b.Fatalf("Cannot set mapsize: %s", err)
 	}
