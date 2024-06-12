@@ -1263,19 +1263,33 @@ func openDBI(env *Env, key string, flags uint) (DBI, error) {
 	return db, nil
 }
 
+func PutUint64(b [128]byte, v uint64) {
+	_ = b[7] // early bounds check to guarantee safety of writes below
+	b[0] = byte(v >> 56)
+	b[1] = byte(v >> 48)
+	b[2] = byte(v >> 40)
+	b[3] = byte(v >> 32)
+	b[4] = byte(v >> 24)
+	b[5] = byte(v >> 16)
+	b[6] = byte(v >> 8)
+	b[7] = byte(v)
+}
+
 func BenchmarkTxn_Get(b *testing.B) {
 	env, _ := setup(b)
 
 	var db DBI
-	k := make([]byte, 8)
-	binary.BigEndian.PutUint64(k, uint64(1))
+	k := [128]byte{}
+	kSl := make([]byte, 8)
+	binary.BigEndian.PutUint64(kSl, uint64(1))
+	PutUint64(k, uint64(1))
 
 	if err := env.Update(func(txn *Txn) (err error) {
 		db, err = txn.OpenRoot(0)
 		if err != nil {
 			return err
 		}
-		err = txn.Put(db, k, k, 0)
+		err = txn.Put(db, kSl, kSl, 0)
 		if err != nil {
 			return err
 		}
@@ -1288,7 +1302,7 @@ func BenchmarkTxn_Get(b *testing.B) {
 	if err := env.View(func(txn *Txn) (err error) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, err := txn.Get(db, k)
+			_, err := txn.GetFast(db, k)
 			if err != nil {
 				return err
 			}

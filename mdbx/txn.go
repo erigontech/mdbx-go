@@ -597,6 +597,26 @@ func (txn *Txn) Get(dbi DBI, key []byte) ([]byte, error) {
 	)
 	err := operrno("mdbx_get", ret)
 	if err != nil {
+		//*txn.val = C.MDBX_val{}
+		return nil, err
+	}
+	b := castToBytes(txn.val)
+	//*txn.val = C.MDBX_val{}
+	return b, nil
+}
+
+func (txn *Txn) GetFast(dbi DBI, key [128]byte) ([]byte, error) {
+	var ckey [128]C.char
+	for i, v := range key {
+		ckey[i] = C.char(v)
+	}
+	ret := C.mdbxgo_getfast(
+		txn._txn, C.MDBX_dbi(dbi),
+		ckey,
+		txn.val,
+	)
+	err := operrno("mdbx_getfast", ret)
+	if err != nil {
 		*txn.val = C.MDBX_val{}
 		return nil, err
 	}
