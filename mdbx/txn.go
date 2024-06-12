@@ -59,7 +59,7 @@ const (
 type Txn struct {
 	env  *Env
 	_txn *C.MDBX_txn
-	key  *C.MDBX_val
+	key  C.MDBX_val
 	val  C.MDBX_val
 
 	errLogf func(format string, v ...interface{})
@@ -92,13 +92,13 @@ func beginTxn(env *Env, parent *Txn, flags uint) (*Txn, error) {
 		if flags&Readonly == 0 {
 			// In a write Txn we can use the shared, C-allocated key and value
 			// allocated by env, and freed when it is closed.
-			txn.key = env.ckey
+			//txn.key = env.ckey
 		} else {
 			// It is not easy to share C.MDBX_val values in this scenario unless
 			// there is a synchronized pool involved, which will increase
 			// overhead.  Further, allocating these values with C will add
 			// overhead both here and when the values are freed.
-			txn.key = new(C.MDBX_val)
+			//txn.key = new(C.MDBX_val)
 		}
 	} else {
 		// Because parent Txn objects cannot be used while a sub-Txn is active
