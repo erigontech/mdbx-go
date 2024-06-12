@@ -3,7 +3,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 08b5dd3f564a2caa656c82b1cf8eb746fb028fddee5d6166ca6730d411efe18f_v0_13_0_60_g2843eb39
+#define MDBX_BUILD_SOURCERY 4b578fcfa68b9dfc4d3949e6237aac19c317d83fd6549a3fe0bc632ace6a2ee4_v0_13_0_58_gb393b106
 
 
 #define LIBMDBX_INTERNALS
@@ -5706,9 +5706,6 @@ osal_flush_incoherent_mmap(const void *addr, size_t nbytes,
  *    что равносильно top = -1 вместе с flags |= z_poor_mark
  *  - При заполнении стека курсора сначала устанавливается top, а flags
  *    только в самом конце при отсутстви ошибок.
- *  - Повторное позиционирование first/last может начинаться
- *    с установки/обнуления только top без сброса flags, что позволяет работать
- *    быстрому пути внутри tree_search_finalize().
  *  - При выходе за конец набора данных и/или отсутствии соседних/sibling
  *    страниц взводится флажок z_hollow, чего (в текущем понимании) достаточно
  *    для контроля/обработки всех ситуаций. При этом наличие флажка z_hollow
@@ -5880,7 +5877,7 @@ MDBX_MAYBE_UNUSED static inline int cursor_dbi_dbg(const MDBX_cursor *mc) {
 }
 
 MDBX_MAYBE_UNUSED static inline int __must_check_result
-cursor_push(MDBX_cursor *mc, page_t *mp) {
+cursor_push(MDBX_cursor *mc, page_t *mp, indx_t ki) {
   TRACE("pushing page %" PRIaPGNO " on db %d cursor %p", mp->pgno,
         cursor_dbi_dbg(mc), __Wpedantic_format_voidptr(mc));
   if (unlikely(mc->top >= CURSOR_STACK_SIZE - 1)) {
@@ -5890,7 +5887,7 @@ cursor_push(MDBX_cursor *mc, page_t *mp) {
   }
   mc->top += 1;
   mc->pg[mc->top] = mp;
-  mc->ki[mc->top] = 0;
+  mc->ki[mc->top] = ki;
   return MDBX_SUCCESS;
 }
 
@@ -5954,30 +5951,6 @@ MDBX_INTERNAL int __must_check_result outer_first(MDBX_cursor *__restrict mc,
 MDBX_INTERNAL int __must_check_result outer_last(MDBX_cursor *__restrict mc,
                                                  MDBX_val *__restrict key,
                                                  MDBX_val *__restrict data);
-
-MDBX_MAYBE_UNUSED static inline int __must_check_result
-cursor_first(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data) {
-  if (mc->flags & z_inner) {
-    if (data) {
-      data->iov_base = nullptr;
-      data->iov_len = 0;
-    }
-    return inner_first(mc, key);
-  }
-  return outer_first(mc, key, data);
-}
-
-MDBX_MAYBE_UNUSED static inline int __must_check_result
-cursor_last(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data) {
-  if (mc->flags & z_inner) {
-    if (data) {
-      data->iov_base = nullptr;
-      data->iov_len = 0;
-    }
-    return inner_last(mc, key);
-  }
-  return outer_last(mc, key, data);
-}
 
 MDBX_INTERNAL int __must_check_result inner_next(MDBX_cursor *__restrict mc,
                                                  MDBX_val *__restrict data);
@@ -7479,8 +7452,7 @@ int mdbx_cursor_copy(const MDBX_cursor *src, MDBX_cursor *dest) {
 again:
   assert(dest->clc == src->clc);
   assert(dest->txn == src->txn);
-  dest->flags = src->flags;
-  dest->top = src->top;
+  dest->top_and_flags = src->top_and_flags;
   for (intptr_t i = 0; i <= src->top; ++i) {
     dest->ki[i] = src->ki[i];
     dest->pg[i] = src->pg[i];
@@ -15167,10 +15139,9 @@ static __always_inline int sibling(MDBX_cursor *mc, int dir) {
   const node_t *node = page_node(mp, mc->ki[mc->top]);
   err = page_get(mc, node_pgno(node), &mp, mp->txnid);
   if (likely(err == MDBX_SUCCESS)) {
-    err = cursor_push(mc, mp);
+    err = cursor_push(mc, mp,
+                      (dir == SIBLING_LEFT) ? (indx_t)page_numkeys(mp) - 1 : 0);
     if (likely(err == MDBX_SUCCESS)) {
-      mc->ki[mc->top] =
-          (dir == SIBLING_LEFT) ? (indx_t)page_numkeys(mp) - 1 : 0;
       mc->flags &= ~z_hollow;
       return MDBX_SUCCESS;
     }
@@ -15214,8 +15185,8 @@ static __always_inline int cursor_bring(const bool inner, const bool tend2first,
   const size_t ki = mc->ki[mc->top];
   cASSERT(mc, nkeys > ki);
 
-  be_filled(mc);
   if (inner && is_dupfix_leaf(mp)) {
+    be_filled(mc);
     if (likely(key))
       *key = page_dupfix_key(mp, ki, mc->tree->dupfix_size);
     return MDBX_SUCCESS;
@@ -15255,6 +15226,7 @@ static __always_inline int cursor_bring(const bool inner, const bool tend2first,
     }
   }
 
+  be_filled(mc);
   get_key_optional(node, key);
   return MDBX_SUCCESS;
 }
@@ -15268,16 +15240,10 @@ static __always_inline int cursor_brim(const bool inner, const bool tend2first,
     int err = tree_search(mc, nullptr, tend2first ? Z_FIRST : Z_LAST);
     if (unlikely(err != MDBX_SUCCESS))
       return err;
-    cASSERT(mc, mc->top >= 0);
-    if (tend2first) {
-      cASSERT(mc, page_numkeys(mc->pg[mc->top]) > 0);
-      goto bring;
-    }
   }
   const size_t nkeys = page_numkeys(mc->pg[mc->top]);
   cASSERT(mc, nkeys > 0);
   mc->ki[mc->top] = tend2first ? 0 : nkeys - 1;
-bring:
   return cursor_bring(inner, tend2first, mc, key, data);
 }
 
@@ -15379,7 +15345,6 @@ static __always_inline int cursor_step(const bool inner, const bool forward,
         return MDBX_NOTFOUND;
       ki = nkeys;
     }
-    mc->flags -= state;
     if (forward && (state & z_after_delete)) {
       cASSERT(mc, ki >= 0 && nkeys > ki);
       goto bring;
@@ -15390,10 +15355,10 @@ static __always_inline int cursor_step(const bool inner, const bool forward,
         forward ? "next" : "prev", mp->pgno, __Wpedantic_format_voidptr(mc), ki,
         nkeys);
   if (forward) {
-    mc->ki[mc->top] = (indx_t)++ki;
-    if (unlikely(ki >= nkeys)) {
+    if (likely(++ki < nkeys))
+      mc->ki[mc->top] = (indx_t)ki;
+    else {
       DEBUG("%s", "=====> move to next sibling page");
-      mc->ki[mc->top] = (indx_t)(nkeys - 1);
       int err = cursor_sibling_right(mc);
       if (unlikely(err != MDBX_SUCCESS))
         return err;
@@ -15402,12 +15367,12 @@ static __always_inline int cursor_step(const bool inner, const bool forward,
             mc->ki[mc->top]);
     }
   } else {
-    mc->ki[mc->top] = (indx_t)--ki;
-    if (unlikely(ki < 0)) {
-      mc->ki[mc->top] = 0;
+    if (likely(--ki >= 0))
+      mc->ki[mc->top] = (indx_t)ki;
+    else {
       DEBUG("%s", "=====> move to prev sibling page");
       int err = cursor_sibling_left(mc);
-      if (err != MDBX_SUCCESS)
+      if (unlikely(err != MDBX_SUCCESS))
         return err;
       mp = mc->pg[mc->top];
       DEBUG("prev page is %" PRIaPGNO ", key index %u", mp->pgno,
@@ -15502,15 +15467,18 @@ __hot int cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
   }
 
   int rc = MDBX_SUCCESS;
-  if (mc->tree->root == P_INVALID) {
+  if (mc->tree->height == 0) {
     /* new database, cursor has nothing to point to */
-    be_poor(mc);
+    cASSERT(mc, is_poor(mc));
     rc = MDBX_NO_ROOT;
   } else if ((flags & MDBX_CURRENT) == 0) {
     bool exact = false;
     MDBX_val last_key, old_data;
     if ((flags & MDBX_APPEND) && mc->tree->items > 0) {
-      rc = cursor_last(mc, &last_key, &old_data);
+      old_data.iov_base = nullptr;
+      old_data.iov_len = 0;
+      rc = (mc->flags & z_inner) ? inner_last(mc, &last_key)
+                                 : outer_last(mc, &last_key, &old_data);
       if (likely(rc == MDBX_SUCCESS)) {
         const int cmp = mc->clc->k.cmp(key, &last_key);
         if (likely(cmp > 0)) {
@@ -15596,7 +15564,7 @@ __hot int cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
     pgr_t npr = page_new(mc, P_LEAF);
     if (unlikely(npr.err != MDBX_SUCCESS))
       return npr.err;
-    npr.err = cursor_push(mc, npr.page);
+    npr.err = cursor_push(mc, npr.page, 0);
     if (unlikely(npr.err != MDBX_SUCCESS))
       return npr.err;
     mc->tree->root = npr.page->pgno;
@@ -22975,7 +22943,7 @@ static int gcu_retired(MDBX_txn *txn, gcu_t *ctx) {
   int err;
   if (unlikely(!ctx->retired_stored)) {
     /* Make sure last page of GC is touched and on retired-list */
-    err = cursor_last(&ctx->cursor, nullptr, nullptr);
+    err = outer_last(&ctx->cursor, nullptr, nullptr);
     if (likely(err == MDBX_SUCCESS))
       err = touch_gc(ctx);
     if (unlikely(err != MDBX_SUCCESS) && err != MDBX_NOTFOUND)
@@ -23193,7 +23161,7 @@ static rid_t get_rid_for_reclaimed(MDBX_txn *txn, gcu_t *ctx,
         if (unlikely(r.err == MDBX_SUCCESS)) {
           DEBUG("%s: GC's id %" PRIaTXN " is present, going to first",
                 dbg_prefix(ctx), ctx->rid);
-          r.err = cursor_first(&ctx->cursor, &key, nullptr);
+          r.err = outer_first(&ctx->cursor, &key, nullptr);
           if (unlikely(r.err != MDBX_SUCCESS ||
                        key.iov_len != sizeof(txnid_t))) {
             ERROR("%s/%d: %s %u", "MDBX_CORRUPTED", MDBX_CORRUPTED,
@@ -23250,7 +23218,7 @@ static rid_t get_rid_for_reclaimed(MDBX_txn *txn, gcu_t *ctx,
     if (unlikely(ctx->rid == 0)) {
       ctx->rid = txn_snapshot_oldest(txn);
       MDBX_val key;
-      r.err = cursor_first(&ctx->cursor, &key, nullptr);
+      r.err = outer_first(&ctx->cursor, &key, nullptr);
       if (likely(r.err == MDBX_SUCCESS)) {
         if (unlikely(key.iov_len != sizeof(txnid_t))) {
           ERROR("%s/%d: %s %u", "MDBX_CORRUPTED", MDBX_CORRUPTED,
@@ -23397,7 +23365,7 @@ retry:
       /* Удаляем оставшиеся вынутые из GC записи. */
       while (txn->tw.gc.last_reclaimed &&
              ctx->cleaned_id <= txn->tw.gc.last_reclaimed) {
-        rc = cursor_first(&ctx->cursor, &key, nullptr);
+        rc = outer_first(&ctx->cursor, &key, nullptr);
         if (rc == MDBX_NOTFOUND)
           break;
         if (unlikely(rc != MDBX_SUCCESS))
@@ -23651,7 +23619,7 @@ retry:
     size_t left = ctx->amount, excess = 0;
     if (txn->tw.gc.reclaimed == nullptr) {
       tASSERT(txn, is_lifo(txn) == 0);
-      rc = cursor_first(&ctx->cursor, &key, &data);
+      rc = outer_first(&ctx->cursor, &key, &data);
       if (unlikely(rc != MDBX_SUCCESS))
         goto bailout;
     } else {
@@ -33324,6 +33292,7 @@ size_t page_subleaf2_reserve(const MDBX_env *env, size_t host_page_room,
  * are all in situations where the current page is known to
  * be underfilled. */
 __hot int tree_search_lowest(MDBX_cursor *mc) {
+  cASSERT(mc, mc->top >= 0);
   page_t *mp = mc->pg[mc->top];
   cASSERT(mc, is_branch(mp));
 
@@ -33333,7 +33302,7 @@ __hot int tree_search_lowest(MDBX_cursor *mc) {
     return err;
 
   mc->ki[mc->top] = 0;
-  err = cursor_push(mc, mp);
+  err = cursor_push(mc, mp, 0);
   if (unlikely(err != MDBX_SUCCESS))
     return err;
   return tree_search_finalize(mc, nullptr, Z_FIRST);
@@ -33344,7 +33313,9 @@ __hot int tree_search(MDBX_cursor *mc, const MDBX_val *key, int flags) {
   if (unlikely(mc->txn->flags & MDBX_TXN_BLOCKED)) {
     DEBUG("%s", "transaction has failed, must abort");
     err = MDBX_BAD_TXN;
-    goto bailout;
+  bailout:
+    be_poor(mc);
+    return err;
   }
 
   const size_t dbi = cursor_dbi(mc);
@@ -33357,7 +33328,7 @@ __hot int tree_search(MDBX_cursor *mc, const MDBX_val *key, int flags) {
   const pgno_t root = mc->tree->root;
   if (unlikely(root == P_INVALID)) {
     DEBUG("%s", "tree is empty");
-    be_poor(mc);
+    cASSERT(mc, is_poor(mc));
     return MDBX_NOTFOUND;
   }
 
@@ -33384,7 +33355,7 @@ __hot int tree_search(MDBX_cursor *mc, const MDBX_val *key, int flags) {
   }
 
   mc->top = 0;
-  mc->ki[0] = 0;
+  mc->ki[0] = (flags & Z_LAST) ? page_numkeys(mc->pg[0]) - 1 : 0;
   DEBUG("db %d root page %" PRIaPGNO " has flags 0x%X", cursor_dbi_dbg(mc),
         root, mc->pg[0]->flags);
 
@@ -33398,46 +33369,25 @@ __hot int tree_search(MDBX_cursor *mc, const MDBX_val *key, int flags) {
     return MDBX_SUCCESS;
 
   return tree_search_finalize(mc, key, flags);
-
-bailout:
-  be_poor(mc);
-  return err;
 }
 
-/* Finish tree_search() / tree_search_lowest().
- * The cursor is at the root page, set up the rest of it. */
 __hot __noinline int tree_search_finalize(MDBX_cursor *mc, const MDBX_val *key,
                                           int flags) {
   cASSERT(mc, !is_poor(mc));
   DKBUF_DEBUG;
   int err;
   page_t *mp = mc->pg[mc->top];
+  intptr_t ki = (flags & Z_FIRST) ? 0 : page_numkeys(mp) - 1;
   while (is_branch(mp)) {
     DEBUG("branch page %" PRIaPGNO " has %zu keys", mp->pgno, page_numkeys(mp));
     cASSERT(mc, page_numkeys(mp) > 1);
     DEBUG("found index 0 to page %" PRIaPGNO, node_pgno(page_node(mp, 0)));
 
-    intptr_t ki;
     if ((flags & (Z_FIRST | Z_LAST)) == 0) {
       const struct node_search_result nsr = node_search(mc, key);
-      ki = page_numkeys(mp) - 1;
       if (likely(nsr.node))
         ki = mc->ki[mc->top] + (intptr_t)nsr.exact - 1;
       DEBUG("following index %zu for key [%s]", ki, DKEY_DEBUG(key));
-    } else {
-      ki = (flags & Z_LAST) ? page_numkeys(mp) - 1 : 0;
-      /* Пропускаем получение страницы,
-       * если курсор уже был ранее установлен и позиция совпадает. */
-      if ((flags & Z_LAST) && mc->flags >= 0 && mc->ki[mc->top] == ki) {
-        if (ASSERT_ENABLED()) {
-          const pgr_t pgr =
-              page_get_three(mc, node_pgno(page_node(mp, ki)), mp->txnid);
-          cASSERT(mc,
-                  pgr.err == MDBX_SUCCESS && pgr.page == mc->pg[mc->top + 1]);
-        }
-        mp = mc->pg[mc->top += 1];
-        goto avoid_getpage;
-      }
     }
 
     err = page_get(mc, node_pgno(page_node(mp, ki)), &mp, mp->txnid);
@@ -33445,11 +33395,11 @@ __hot __noinline int tree_search_finalize(MDBX_cursor *mc, const MDBX_val *key,
       goto bailout;
 
     mc->ki[mc->top] = (indx_t)ki;
-    err = cursor_push(mc, mp);
+    ki = (flags & Z_FIRST) ? 0 : page_numkeys(mp) - 1;
+    err = cursor_push(mc, mp, ki);
     if (unlikely(err != MDBX_SUCCESS))
       goto bailout;
 
-  avoid_getpage:
     if (flags & Z_MODIFY) {
       err = page_touch(mc);
       if (unlikely(err != MDBX_SUCCESS))
@@ -33462,17 +33412,15 @@ __hot __noinline int tree_search_finalize(MDBX_cursor *mc, const MDBX_val *key,
     ERROR("unexpected leaf-page #%" PRIaPGNO " type 0x%x seen by cursor",
           mp->pgno, mp->flags);
     err = MDBX_CORRUPTED;
-    goto bailout;
+  bailout:
+    be_poor(mc);
+    return err;
   }
 
   DEBUG("found leaf page %" PRIaPGNO " for key [%s]", mp->pgno,
         DKEY_DEBUG(key));
   be_filled(mc);
   return MDBX_SUCCESS;
-
-bailout:
-  be_poor(mc);
-  return err;
 }
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
@@ -33937,22 +33885,27 @@ __hot int mdbx_estimate_move(const MDBX_cursor *cursor, MDBX_val *key,
     cursor_cpstk(&mx->cursor, &next.inner.cursor);
   }
 
-  MDBX_val stub = {0, 0};
+  MDBX_val stub_data;
   if (data == nullptr) {
     const unsigned mask =
         1 << MDBX_GET_BOTH | 1 << MDBX_GET_BOTH_RANGE | 1 << MDBX_SET_KEY;
     if (unlikely(mask & (1 << move_op)))
       return MDBX_EINVAL;
-    data = &stub;
+    stub_data.iov_base = nullptr;
+    stub_data.iov_len = 0;
+    data = &stub_data;
   }
 
+  MDBX_val stub_key;
   if (key == nullptr) {
     const unsigned mask = 1 << MDBX_GET_BOTH | 1 << MDBX_GET_BOTH_RANGE |
                           1 << MDBX_SET_KEY | 1 << MDBX_SET |
                           1 << MDBX_SET_RANGE;
     if (unlikely(mask & (1 << move_op)))
       return MDBX_EINVAL;
-    key = &stub;
+    stub_key.iov_base = nullptr;
+    stub_key.iov_len = 0;
+    key = &stub_key;
   }
 
   next.outer.signature = cur_signature_live;
@@ -33997,14 +33950,13 @@ __hot int mdbx_estimate_range(const MDBX_txn *txn, MDBX_dbi dbi,
     return MDBX_SUCCESS;
   }
 
-  MDBX_val stub;
   if (!begin_key) {
     if (unlikely(!end_key)) {
       /* LY: FIRST..LAST case */
       *size_items = (ptrdiff_t)begin.outer.tree->items;
       return MDBX_SUCCESS;
     }
-    rc = outer_first(&begin.outer, &stub, nullptr);
+    rc = outer_first(&begin.outer, nullptr, nullptr);
     if (unlikely(end_key == MDBX_EPSILON)) {
       /* LY: FIRST..+epsilon case */
       return (rc == MDBX_SUCCESS)
@@ -34015,7 +33967,7 @@ __hot int mdbx_estimate_range(const MDBX_txn *txn, MDBX_dbi dbi,
     if (unlikely(begin_key == MDBX_EPSILON)) {
       if (end_key == nullptr) {
         /* LY: -epsilon..LAST case */
-        rc = outer_last(&begin.outer, &stub, nullptr);
+        rc = outer_last(&begin.outer, nullptr, nullptr);
         return (rc == MDBX_SUCCESS)
                    ? mdbx_cursor_count(&begin.outer, (size_t *)size_items)
                    : rc;
@@ -34055,12 +34007,12 @@ __hot int mdbx_estimate_range(const MDBX_txn *txn, MDBX_dbi dbi,
       }
       return MDBX_SUCCESS;
     } else if (begin_data) {
-      stub = *begin_data;
+      MDBX_val stub = *begin_data;
       rc = cursor_seek(&begin.outer, (MDBX_val *)begin_key, &stub,
                        MDBX_GET_BOTH_RANGE)
                .err;
     } else {
-      stub = *begin_key;
+      MDBX_val stub = *begin_key;
       rc = cursor_seek(&begin.outer, &stub, nullptr, MDBX_SET_RANGE).err;
     }
   }
@@ -34075,14 +34027,14 @@ __hot int mdbx_estimate_range(const MDBX_txn *txn, MDBX_dbi dbi,
   if (unlikely(rc != MDBX_SUCCESS))
     return rc;
   if (!end_key)
-    rc = cursor_last(&end.outer, &stub, &stub);
+    rc = outer_last(&end.outer, nullptr, nullptr);
   else if (end_data) {
-    stub = *end_data;
+    MDBX_val stub = *end_data;
     rc =
         cursor_seek(&end.outer, (MDBX_val *)end_key, &stub, MDBX_GET_BOTH_RANGE)
             .err;
   } else {
-    stub = *end_key;
+    MDBX_val stub = *end_key;
     rc = cursor_seek(&end.outer, &stub, nullptr, MDBX_SET_RANGE).err;
   }
   if (unlikely(rc != MDBX_SUCCESS)) {
@@ -39763,9 +39715,9 @@ __dll_export
         0,
         13,
         0,
-        60,
-        {"2024-06-09T14:59:43+03:00", "364e0a93a5cc632a649fac0b80d21ca60f867e6e", "2843eb394dea5352f515758eae31c7c9ea94e310",
-         "v0.13.0-60-g2843eb39"},
+        58,
+        {"2024-06-10T16:13:22+03:00", "e543bc2a1cea058ce4d2f3fc2fb85bb0088eb72a", "b393b106cee776a1e57018b5e2cbd94d8522c47b",
+         "v0.13.0-58-gb393b106"},
         sourcery};
 
 __dll_export
