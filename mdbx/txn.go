@@ -93,19 +93,11 @@ func beginTxn(env *Env, parent *Txn, flags uint) (*Txn, error) {
 			// In a write Txn we can use the shared, C-allocated key and value
 			// allocated by env, and freed when it is closed.
 			txn.key = *env.ckey
-		} else {
-			// It is not easy to share C.MDBX_val values in this scenario unless
-			// there is a synchronized pool involved, which will increase
-			// overhead.  Further, allocating these values with C will add
-			// overhead both here and when the values are freed.
-			txn.key = C.MDBX_val{}
 		}
 	} else {
 		// Because parent Txn objects cannot be used while a sub-Txn is active
 		// it is OK for them to share their C.MDBX_val objects.
 		ptxn = parent._txn
-		txn.key = parent.key
-		txn.val = parent.val
 	}
 	ret := C.mdbx_txn_begin(env._env, ptxn, C.MDBX_txn_flags_t(flags), &txn._txn)
 	if ret != success {
