@@ -88,13 +88,7 @@ func beginTxn(env *Env, parent *Txn, flags uint) (*Txn, error) {
 	}
 
 	var ptxn *C.MDBX_txn
-	if parent == nil {
-		if flags&Readonly == 0 {
-			// In a write Txn we can use the shared, C-allocated key and value
-			// allocated by env, and freed when it is closed.
-			txn.key = *env.ckey
-		}
-	} else {
+	if parent != nil {
 		// Because parent Txn objects cannot be used while a sub-Txn is active
 		// it is OK for them to share their C.MDBX_val objects.
 		ptxn = parent._txn
