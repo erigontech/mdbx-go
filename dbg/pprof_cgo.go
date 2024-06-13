@@ -4,5 +4,5 @@
 package dbg
 
 import (
-	_ "github.com/benesch/cgosymbolizer"
+	_ "github.com/ianlancetaylor/cgosymbolizer"
 )
