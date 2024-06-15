@@ -1,8 +1,8 @@
-﻿/// \copyright SPDX-License-Identifier: Apache-2.0
-/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2020-2024
-///
-/// \file mdbx.h++
+﻿/// \file mdbx.h++
 /// \brief The libmdbx C++ API header file.
+///
+/// \author Copyright (c) 2020-2024, Leonid Yuriev <leo@yuriev.ru>.
+/// \copyright SPDX-License-Identifier: Apache-2.0
 ///
 /// Tested with:
 ///  - Elbrus LCC >= 1.23 (http://www.mcst.ru/lcc);
@@ -1734,13 +1734,24 @@ private:
         return capacity_bytes < sizeof(bin);
       }
 
-      enum : byte { lastbyte_inplace_signature = byte(~0u) };
-      enum : size_t {
-        inplace_signature_limit =
-            size_t(lastbyte_inplace_signature)
-            << (sizeof(size_t /* allocated::capacity_bytes_ */) - 1) * CHAR_BIT
+      enum : byte {
+        /* Little Endian:
+         *   last byte is the most significant byte of u_.allocated.cap,
+         *   so use higher bit of capacity as the inplace-flag */
+        le_lastbyte_mask = 0x80,
+        /* Big Endian:
+         *   last byte is the least significant byte of u_.allocated.cap,
+         *   so use lower bit of capacity as the inplace-flag. */
+        be_lastbyte_mask = 0x01
       };
 
+      static constexpr byte inplace_lastbyte_mask() noexcept {
+        static_assert(
+            endian::native == endian::little || endian::native == endian::big,
+            "Only the little-endian or big-endian bytes order are supported");
+        return (endian::native == endian::little) ? le_lastbyte_mask
+                                                  : be_lastbyte_mask;
+      }
       constexpr byte lastbyte() const noexcept {
         return inplace_[sizeof(bin) - 1];
       }
@@ -1749,14 +1760,7 @@ private:
       }
 
       constexpr bool is_inplace() const noexcept {
-        static_assert(size_t(inplace_signature_limit) > size_t(max_capacity),
-                      "WTF?");
-        static_assert(
-            std::numeric_limits<size_t>::max() -
-                    (std::numeric_limits<size_t>::max() >> CHAR_BIT) ==
-                inplace_signature_limit,
-            "WTF?");
-        return lastbyte() == lastbyte_inplace_signature;
+        return (lastbyte() & inplace_lastbyte_mask()) != 0;
       }
       constexpr bool is_allocated() const noexcept { return !is_inplace(); }
 
@@ -1769,8 +1773,8 @@ private:
         }
         if (::std::is_trivial<allocator_pointer>::value)
           /* workaround for "uninitialized" warning from some compilers */
-          memset(&allocated_.ptr_, 0, sizeof(allocated_.ptr_));
-        lastbyte() = lastbyte_inplace_signature;
+          ::std::memset(&allocated_.ptr_, 0, sizeof(allocated_.ptr_));
+        lastbyte() = inplace_lastbyte_mask();
         MDBX_CONSTEXPR_ASSERT(is_inplace() && address() == inplace_ &&
                               is_suitable_for_inplace(capacity()));
         return address();
@@ -1779,7 +1783,11 @@ private:
       template <bool construct_ptr>
       MDBX_CXX17_CONSTEXPR byte *
       make_allocated(allocator_pointer ptr, size_t capacity_bytes) noexcept {
-        MDBX_CONSTEXPR_ASSERT(inplace_signature_limit > capacity_bytes);
+        MDBX_CONSTEXPR_ASSERT(
+            (capacity_bytes & be_lastbyte_mask) == 0 &&
+            ((capacity_bytes >>
+              (sizeof(allocated_.capacity_bytes_) - 1) * CHAR_BIT) &
+             le_lastbyte_mask) == 0);
         if (construct_ptr)
           /* properly construct allocator::pointer */
           new (&allocated_) allocated(ptr, capacity_bytes);
@@ -2329,16 +2337,14 @@ public:
 
   buffer(const char *c_str, bool make_reference,
          const allocator_type &allocator = allocator_type())
-      : buffer(::mdbx::slice(c_str), make_reference, allocator){}
+      : buffer(::mdbx::slice(c_str), make_reference, allocator) {}
 
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L)
-        template <class CHAR, class T>
-        buffer(const ::std::basic_string_view<CHAR, T> &view,
-               bool make_reference,
-               const allocator_type &allocator = allocator_type())
-      : buffer(::mdbx::slice(view), make_reference, allocator) {
-  }
+  template <class CHAR, class T>
+  buffer(const ::std::basic_string_view<CHAR, T> &view, bool make_reference,
+         const allocator_type &allocator = allocator_type())
+      : buffer(::mdbx::slice(view), make_reference, allocator) {}
 #endif /* __cpp_lib_string_view >= 201606L */
 
   MDBX_CXX20_CONSTEXPR
@@ -2364,16 +2370,15 @@ public:
 
   MDBX_CXX20_CONSTEXPR
   buffer(const char *c_str, const allocator_type &allocator = allocator_type())
-      : buffer(::mdbx::slice(c_str), allocator){}
+      : buffer(::mdbx::slice(c_str), allocator) {}
 
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L)
-        template <class CHAR, class T>
-        MDBX_CXX20_CONSTEXPR
-        buffer(const ::std::basic_string_view<CHAR, T> &view,
-               const allocator_type &allocator = allocator_type())
-      : buffer(::mdbx::slice(view), allocator) {
-  }
+  template <class CHAR, class T>
+  MDBX_CXX20_CONSTEXPR
+  buffer(const ::std::basic_string_view<CHAR, T> &view,
+         const allocator_type &allocator = allocator_type())
+      : buffer(::mdbx::slice(view), allocator) {}
 #endif /* __cpp_lib_string_view >= 201606L */
 
   buffer(size_t head_room, size_t tail_room,
@@ -2895,7 +2900,7 @@ public:
   buffer &append(const void *src, size_t bytes) {
     if (MDBX_UNLIKELY(tailroom() < check_length(bytes)))
       MDBX_CXX20_UNLIKELY reserve_tailroom(bytes);
-    memcpy(end_byte_ptr(), src, bytes);
+    memcpy(slice_.byte_ptr() + size(), src, bytes);
     slice_.iov_len += bytes;
     return *this;
   }
@@ -2964,7 +2969,7 @@ public:
   buffer &append_u8(uint_fast8_t u8) {
     if (MDBX_UNLIKELY(tailroom() < 1))
       MDBX_CXX20_UNLIKELY reserve_tailroom(1);
-    *slice_.end_byte_ptr() = uint8_t(u8);
+    *slice_.byte_ptr() = u8;
     slice_.iov_len += 1;
     return *this;
   }
@@ -2974,7 +2979,7 @@ public:
   buffer &append_u16(uint_fast16_t u16) {
     if (MDBX_UNLIKELY(tailroom() < 2))
       MDBX_CXX20_UNLIKELY reserve_tailroom(2);
-    const auto ptr = slice_.end_byte_ptr();
+    const auto ptr = slice_.byte_ptr();
     ptr[0] = uint8_t(u16);
     ptr[1] = uint8_t(u16 >> 8);
     slice_.iov_len += 2;
@@ -2984,7 +2989,7 @@ public:
   buffer &append_u24(uint_fast32_t u24) {
     if (MDBX_UNLIKELY(tailroom() < 3))
       MDBX_CXX20_UNLIKELY reserve_tailroom(3);
-    const auto ptr = slice_.end_byte_ptr();
+    const auto ptr = slice_.byte_ptr();
     ptr[0] = uint8_t(u24);
     ptr[1] = uint8_t(u24 >> 8);
     ptr[2] = uint8_t(u24 >> 16);
@@ -2995,7 +3000,7 @@ public:
   buffer &append_u32(uint_fast32_t u32) {
     if (MDBX_UNLIKELY(tailroom() < 4))
       MDBX_CXX20_UNLIKELY reserve_tailroom(4);
-    const auto ptr = slice_.end_byte_ptr();
+    const auto ptr = slice_.byte_ptr();
     ptr[0] = uint8_t(u32);
     ptr[1] = uint8_t(u32 >> 8);
     ptr[2] = uint8_t(u32 >> 16);
@@ -3007,7 +3012,7 @@ public:
   buffer &append_u48(uint_fast64_t u48) {
     if (MDBX_UNLIKELY(tailroom() < 6))
       MDBX_CXX20_UNLIKELY reserve_tailroom(6);
-    const auto ptr = slice_.end_byte_ptr();
+    const auto ptr = slice_.byte_ptr();
     ptr[0] = uint8_t(u48);
     ptr[1] = uint8_t(u48 >> 8);
     ptr[2] = uint8_t(u48 >> 16);
@@ -3021,7 +3026,7 @@ public:
   buffer &append_u64(uint_fast64_t u64) {
     if (MDBX_UNLIKELY(tailroom() < 8))
       MDBX_CXX20_UNLIKELY reserve_tailroom(8);
-    const auto ptr = slice_.end_byte_ptr();
+    const auto ptr = slice_.byte_ptr();
     ptr[0] = uint8_t(u64);
     ptr[1] = uint8_t(u64 >> 8);
     ptr[2] = uint8_t(u64 >> 16);
@@ -3685,8 +3690,6 @@ public:
     bool disable_readahead{false};
     /// \copydoc MDBX_NOMEMINIT
     bool disable_clear_memory{false};
-    /// \copydoc MDBX_VALIDATION
-    bool enable_validation{false};
     MDBX_CXX11_CONSTEXPR operate_options() noexcept {}
     MDBX_CXX11_CONSTEXPR
     operate_options(const operate_options &) noexcept = default;
@@ -3824,17 +3827,17 @@ public:
     static inline size_t pairsize4page_max(const env &, value_mode);
 
     /// \brief Returns maximal data size in bytes to fit in a leaf-page or
-    /// single large/overflow-page for specified size and database flags.
+    /// single overflow/large-page for specified size and database flags.
     static inline size_t valsize4page_max(intptr_t pagesize,
                                           MDBX_db_flags_t flags);
     /// \brief Returns maximal data size in bytes to fit in a leaf-page or
-    /// single large/overflow-page for specified page size and values mode.
+    /// single overflow/large-page for specified page size and values mode.
     static inline size_t valsize4page_max(intptr_t pagesize, value_mode);
     /// \brief Returns maximal data size in bytes to fit in a leaf-page or
-    /// single large/overflow-page for given environment and database flags.
+    /// single overflow/large-page for given environment and database flags.
     static inline size_t valsize4page_max(const env &, MDBX_db_flags_t flags);
     /// \brief Returns maximal data size in bytes to fit in a leaf-page or
-    /// single large/overflow-page for specified page size and values mode.
+    /// single overflow/large-page for specified page size and values mode.
     static inline size_t valsize4page_max(const env &, value_mode);
 
     /// \brief Returns the maximal write transaction size (i.e. limit for
@@ -4553,19 +4556,6 @@ public:
                               size_t value_length);
   inline value_result try_update_reserve(map_handle map, const slice &key,
                                          size_t value_length);
-
-  void put(map_handle map, const pair &kv, put_mode mode) {
-    return put(map, kv.key, kv.value, mode);
-  }
-  void insert(map_handle map, const pair &kv) {
-    return insert(map, kv.key, kv.value);
-  }
-  value_result try_insert(map_handle map, const pair &kv) {
-    return try_insert(map, kv.key, kv.value);
-  }
-  void upsert(map_handle map, const pair &kv) {
-    return upsert(map, kv.key, kv.value);
-  }
 
   /// \brief Removes all values for given key.
   inline bool erase(map_handle map, const slice &key);
