@@ -123,8 +123,6 @@ type DBI C.MDBX_dbi
 // See MDBX_env.
 type Env struct {
 	_env *C.MDBX_env
-	ckey *C.MDBX_val
-	cval *C.MDBX_val
 
 	// closeLock is used to allow the Txn finalizer to check if the Env has
 	// been closed, so that it may know if it must abort.
@@ -140,8 +138,6 @@ func NewEnv() (*Env, error) {
 	if ret != success {
 		return nil, operrno("mdbx_env_create", ret)
 	}
-	env.ckey = (*C.MDBX_val)(C.malloc(C.size_t(unsafe.Sizeof(C.MDBX_val{}))))
-	env.cval = (*C.MDBX_val)(C.malloc(C.size_t(unsafe.Sizeof(C.MDBX_val{}))))
 	return env, nil
 }
 
@@ -234,11 +230,6 @@ func (env *Env) Close() {
 	C.mdbx_env_close(env._env)
 	env._env = nil
 	env.closeLock.Unlock()
-
-	C.free(unsafe.Pointer(env.ckey))
-	C.free(unsafe.Pointer(env.cval))
-	env.ckey = nil
-	env.cval = nil
 }
 
 // CopyFD copies env to the the file descriptor fd.
@@ -522,21 +513,6 @@ func (env *Env) BeginTxn(parent *Txn, flags uint) (*Txn, error) {
 	return beginTxn(env, parent, flags)
 }
 
-// RunTxn creates a new Txn and calls fn with it as an argument.  Run commits
-// the transaction if fn returns nil otherwise the transaction is aborted.
-// Because RunTxn terminates the transaction goroutines should not retain
-// references to it or its data after fn returns.
-//
-// RunTxn does not call runtime.LockOSThread.  Unless the Readonly flag is
-// passed the calling goroutine should ensure it is locked to its thread and
-// any goroutines started by fn must not call methods on the Txn object it is
-// passed.
-//
-// See mdbx_txn_begin.
-func (env *Env) RunTxn(flags uint, fn TxnOp) error {
-	return env.run(false, flags, fn)
-}
-
 // View creates a readonly transaction with a consistent view of the
 // environment and passes it to fn.  View terminates its transaction after fn
 // returns.  Any error encountered by View is returned.
@@ -548,7 +524,7 @@ func (env *Env) RunTxn(flags uint, fn TxnOp) error {
 // Any call to Commit, Abort, Reset or Renew on a Txn created by View will
 // panic.
 func (env *Env) View(fn TxnOp) error {
-	return env.run(false, Readonly, fn)
+	return env.run(Readonly, fn)
 }
 
 // Update calls fn with a writable transaction.  Update commits the transaction
@@ -575,7 +551,9 @@ func (env *Env) View(fn TxnOp) error {
 // Any call to Commit, Abort, Reset or Renew on a Txn created by Update will
 // panic.
 func (env *Env) Update(fn TxnOp) error {
-	return env.run(true, 0, fn)
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return env.run(0, fn)
 }
 
 // UpdateLocked behaves like Update but does not lock the calling goroutine to
@@ -596,14 +574,10 @@ func (env *Env) Update(fn TxnOp) error {
 // Any call to Commit, Abort, Reset or Renew on a Txn created by UpdateLocked
 // will panic.
 func (env *Env) UpdateLocked(fn TxnOp) error {
-	return env.run(false, 0, fn)
+	return env.run(0, fn)
 }
 
-func (env *Env) run(lock bool, flags uint, fn TxnOp) error {
-	if lock {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-	}
+func (env *Env) run(flags uint, fn TxnOp) error {
 	txn, err := beginTxn(env, nil, flags)
 	if err != nil {
 		return err

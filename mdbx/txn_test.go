@@ -799,40 +799,6 @@ func TestTxn_UpdateLocked(t *testing.T) {
 	}
 }
 
-func TestTxn_RunTxn(t *testing.T) {
-	env, _ := setup(t)
-
-	var dbi DBI
-	err := env.RunTxn(0, func(txn *Txn) (err error) {
-		dbi, err = txn.OpenRoot(0)
-		if err != nil {
-			return err
-		}
-		return txn.Put(dbi, []byte("k0"), []byte("v0"), 0)
-	})
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = env.RunTxn(Readonly, func(txn *Txn) (err error) {
-		v, err := txn.Get(dbi, []byte("k0"))
-		if err != nil {
-			return err
-		}
-		if string(v) != "v0" {
-			return fmt.Errorf("unexpected value: %q (!= %q)", v, "v0")
-		}
-		err = txn.Put(dbi, []byte("k1"), []byte("v1"), 0)
-		if err == nil {
-			return fmt.Errorf("allowed to Put in a readonly Txn")
-		}
-		return nil
-	})
-	if err != nil {
-		t.Error(err)
-	}
-}
-
 func TestTxn_Stat(t *testing.T) {
 	env, _ := setup(t)
 
