@@ -1221,8 +1221,8 @@ func BenchmarkTxn_Put_append_noflag(b *testing.B) {
 	}
 
 	err = env.Update(func(txn *Txn) (err error) {
+		var k [8]byte
 		for i := 0; i < b.N; i++ {
-			var k [8]byte
 			binary.BigEndian.PutUint64(k[:], uint64(i))
 			err = txn.Put(db, k[:], k[:], 0)
 			if err != nil {
