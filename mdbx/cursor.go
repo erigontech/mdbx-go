@@ -148,9 +148,9 @@ func (c *Cursor) DBI() DBI {
 // See mdb_cursor_get.
 func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error) {
 	if len(setkey) != 0 || len(setval) != 0 {
-		err = c.getVal2(setkey, setval, op)
+		err = c.getVal(setkey, setval, op)
 	} else {
-		err = c.getVal0(op)
+		err = c.getValEmpty(op)
 	}
 	if err != nil {
 		c.txn.key = C.MDBX_val{}
@@ -179,11 +179,11 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 	return key, val, nil
 }
 
-// getVal0 retrieves items from the database without using given key or value
+// getValEmpty retrieves items from the database without using given key or value
 // data for reference (Next, First, Last, etc).
 //
 // See mdb_cursor_get.
-func (c *Cursor) getVal0(op uint) error {
+func (c *Cursor) getValEmpty(op uint) error {
 	ret := C.mdbx_cursor_get(c._c, &c.txn.key, &c.txn.val, C.MDBX_cursor_op(op))
 	return operrno("mdbx_cursor_get", ret)
 }
@@ -221,11 +221,11 @@ func (c *Cursor) getVal01(setval []byte, op uint) error {
 	return operrno("mdbx_cursor_get", ret)
 }
 
-// getVal2 retrieves items from the database using key and value data for
+// getVal retrieves items from the database using key and value data for
 // reference (GetBoth, GetBothRange, etc).
 //
 // See mdb_cursor_get.
-func (c *Cursor) getVal2(setkey, setval []byte, op uint) error {
+func (c *Cursor) getVal(setkey, setval []byte, op uint) error {
 	var k, v *C.char
 	if len(setkey) > 0 {
 		k = (*C.char)(unsafe.Pointer(&setkey[0]))
