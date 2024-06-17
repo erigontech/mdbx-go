@@ -188,39 +188,6 @@ func (c *Cursor) getValEmpty(op uint) error {
 	return operrno("mdbx_cursor_get", ret)
 }
 
-// getVal1 retrieves items from the database using key data for reference
-// (Set, SetRange, etc).
-//
-// See mdb_cursor_get.
-func (c *Cursor) getVal1(setkey []byte, op uint) error {
-	var k *C.char
-	if len(setkey) > 0 {
-		k = (*C.char)(unsafe.Pointer(&setkey[0]))
-	}
-	ret := C.mdbxgo_cursor_get1(
-		c._c,
-		k, C.size_t(len(setkey)),
-		&c.txn.key,
-		&c.txn.val,
-		C.MDBX_cursor_op(op),
-	)
-	return operrno("mdbx_cursor_get", ret)
-}
-func (c *Cursor) getVal01(setval []byte, op uint) error {
-	var v *C.char
-	if len(setval) > 0 {
-		v = (*C.char)(unsafe.Pointer(&setval[0]))
-	}
-	ret := C.mdbxgo_cursor_get01(
-		c._c,
-		v, C.size_t(len(setval)),
-		&c.txn.key,
-		&c.txn.val,
-		C.MDBX_cursor_op(op),
-	)
-	return operrno("mdbx_cursor_get", ret)
-}
-
 // getVal retrieves items from the database using key and value data for
 // reference (GetBoth, GetBothRange, etc).
 //
