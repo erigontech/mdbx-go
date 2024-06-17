@@ -109,7 +109,7 @@ they fail get garbage collected.
 
 Write transactions (those created without the Readonly flag) must be created in
 a goroutine that has been locked to its thread by calling the function
-runtime.LockOSThread.  Futhermore, all methods on such transactions must be
+runtime.LockOSThread. Furthermore, all methods on such transactions must be
 called from the goroutine which created them.  This is a fundamental limitation
 of LMDB even when using the NoTLS flag (which the package always uses).  The
 Env.Update method assists the programmer by calling runtime.LockOSThread

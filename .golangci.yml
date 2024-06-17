@@ -27,6 +27,8 @@ linters:
     - depguard
     - typecheck
     - misspell
+    - bodyclose
+    - noctx
 
 linters-settings:
   gofmt:
