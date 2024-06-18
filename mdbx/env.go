@@ -513,6 +513,21 @@ func (env *Env) BeginTxn(parent *Txn, flags uint) (*Txn, error) {
 	return beginTxn(env, parent, flags)
 }
 
+// RunTxn creates a new Txn and calls fn with it as an argument.  Run commits
+// the transaction if fn returns nil otherwise the transaction is aborted.
+// Because RunTxn terminates the transaction goroutines should not retain
+// references to it or its data after fn returns.
+//
+// RunTxn does not call runtime.LockOSThread.  Unless the Readonly flag is
+// passed the calling goroutine should ensure it is locked to its thread and
+// any goroutines started by fn must not call methods on the Txn object it is
+// passed.
+//
+// See mdbx_txn_begin.
+func (env *Env) RunTxn(flags uint, fn TxnOp) error {
+	return env.run(flags, fn)
+}
+
 // View creates a readonly transaction with a consistent view of the
 // environment and passes it to fn.  View terminates its transaction after fn
 // returns.  Any error encountered by View is returned.
