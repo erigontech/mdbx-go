@@ -40,7 +40,7 @@ func (err *OpError) Error() string {
 //	lmdb.IsErrnoFn(err, os.IsPermission)
 type Errno C.int
 
-// The most common error codes do not need to be handled explicity.  Errors can
+// The most common error codes do not need to be handled explicitly.  Errors can
 // be checked through helper functions IsNotFound, IsMapFull, etc, Otherwise
 // they should be checked using the IsErrno function instead of direct
 // comparison because they will typically be wrapped with an OpError.

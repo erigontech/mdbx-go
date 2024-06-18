@@ -288,7 +288,7 @@ type Stat struct {
 	LeafPages     uint64 // Number of leaf pages
 	OverflowPages uint64 // Number of overflow pages
 	Entries       uint64 // Number of data items
-	LastTxId      uint64 // Transaction ID of commited last modification
+	LastTxId      uint64 // Transaction ID of committed last modification
 }
 
 // Stat returns statistics about the environment.

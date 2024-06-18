@@ -790,7 +790,7 @@ func TestDupCursor_EmptyKeyValues1(t *testing.T) {
 		if !bytes.Equal(v, []byte{}) {
 			panic(fmt.Sprintf("%x", v))
 		}
-		k, v, err = cur.Get([]byte{}, nil, Set)
+		k, _, err = cur.Get([]byte{}, nil, Set)
 		if err == nil {
 			panic("expected 'not found' error")
 		}
@@ -865,7 +865,7 @@ func TestDupCursor_EmptyKeyValues2(t *testing.T) {
 		if !bytes.Equal(v, []byte{}) {
 			panic(fmt.Sprintf("%x", v))
 		}
-		k, v, err = cur.Get([]byte{}, nil, Set)
+		k, _, err = cur.Get([]byte{}, nil, Set)
 		if err == nil {
 			panic("expected 'not found' error")
 		}
@@ -969,7 +969,7 @@ func TestDupCursor_EmptyKeyValues3(t *testing.T) {
 		if !bytes.Equal(v, []byte{}) {
 			panic(fmt.Sprintf("%x", v))
 		}
-		k, v, err = cur.Get([]byte{}, nil, Set)
+		k, _, err = cur.Get([]byte{}, nil, Set)
 		if err == nil {
 			panic("expected 'not found' error")
 		}
@@ -1082,7 +1082,7 @@ func TestDupCursor_EmptyKeyValues(t *testing.T) {
 		if !bytes.Equal(v, []byte{}) {
 			panic(fmt.Sprintf("%x", v))
 		}
-		k, v, err = cur.Get([]byte{}, nil, Set)
+		k, _, err = cur.Get([]byte{}, nil, Set)
 		if err == nil {
 			panic("expected 'not found' error")
 		}
