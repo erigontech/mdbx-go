@@ -3,7 +3,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 8085906fc8a5c6fa4bb6dedd8b442229a8049b16efd634c70a16e27bdb70bde4_v0_13_0_61_g45b204f5
+#define MDBX_BUILD_SOURCERY b0a7750d102beb387b1fb66dfacb41e386a76f961fc03c363fe27eb5bb1187f4_v0_13_0_61_g9670cf57
 
 
 #define LIBMDBX_INTERNALS
@@ -5663,11 +5663,10 @@ osal_flush_incoherent_mmap(const void *addr, size_t nbytes,
 
 /* Состояние курсора.
  *
- * 1. Неустановлен/poor:
+ * плохой/poor:
+ *  - неустановленный курсор с незаполненым стеком;
  *  - следует пропускать во всех циклах отслеживания/корректировки
  *    позиций курсоров;
- *  - нельзя использовать для относительных перемещений;
- *  - нельзя использовать для CRUD;
  *  - допускаются только операции предполагающие установку абсолютной позиции;
  *  - в остальных случаях возвращается ENODATA.
  *
@@ -5675,43 +5674,72 @@ osal_flush_incoherent_mmap(const void *addr, size_t nbytes,
  *    пропускать такие курсоры в циклах отслеживания/корректировки по условию
  *    probe_cursor->top < this_cursor->top.
  *
- * 2. Скользкий/slippy:
- *  - частично инициализированный курсор, но без заполненного стека;
- *  - в отличии от неустановленного/poor допускаются только операции связанные
- *    с заполнением стека;
- *  - при любой проблеме или попытке неуместного использования курсор
- *    сбрасывается в состояние неустановленного/poor;
- *  - становится установленным/ready только при успешном завершении операций
- *    позиционирования или поиска.
+ * пустой/hollow:
+ *  - частично инициализированный курсор, но без доступной пользователю позиции,
+ *    поэтому нельзя выполнить какую-либо операцию без абсолютного (не
+ *    относительного) позиционирования;
+ *  - ki[top] может быть некорректным, в том числе >= page_numkeys(pg[top]).
  *
- *    У таких курсоров top >= 0, но flags < 0.
+ *    У таких курсоров top >= 0, но flags < 0 (есть флажок z_hollow).
  *
- * 3. Установленный/pointed:
- *  - допускаются операции относительного позиционирования;
- *  - может иметь флажки z_after_delete, z_hollow и z_pending_oef,
- *    при наличии которых пользователю возвращается NOTFOUND при попытке
- *    получить текущие данные, либо продолжить перемещение в недоступную
- *    сторону.
+ * установленный/pointed:
+ *  - полностью инициализированный курсор с конкретной позицией с данными;
+ *  - можно прочитать текущую строку, удалить её, либо выполнить
+ *    относительное перемещение;
+ *  - может иметь флажки z_after_delete, z_eof_hard и z_eof_soft;
+ *  - наличие z_eof_soft означает что курсор перемещен за пределы данных,
+ *    поэтому нелья прочитать текущие данные, либо удалить их.
  *
- * 4. Наполненный данными/filled:
- *  - это установленный/pointed курсор без флагов z_after_delete,
- *    z_hollow и z_pending_oef.
+ *    У таких курсоров top >= 0 и flags >= 0 (нет флажка z_hollow).
+ *
+ * наполненный данными/filled:
+ *  - это установленный/pointed курсор без флагов z_eof_soft;
  *  - за курсором есть даные, возможны CRUD операции в текущей позиции.
  *
- *    У таких курсоров top >= 0 и (unsigned)flags < z_hollow.
+ *    У таких курсоров top >= 0 и (unsigned)flags < z_eof_soft.
  *
- * 5. Изменения состояния.
+ * Изменения состояния.
  *
  *  - Сбрасывается состояние курсора посредством top_and_flags |= z_poor_mark,
- *    что равносильно top = -1 вместе с flags |= z_poor_mark
- *  - При заполнении стека курсора сначала устанавливается top, а flags
+ *    что равносильно top = -1 вместе с flags |= z_poor_mark;
+ *  - При позиционировании курсора сначала устанавливается top, а flags
  *    только в самом конце при отсутстви ошибок.
- *  - При выходе за конец набора данных и/или отсутствии соседних/sibling
- *    страниц взводится флажок z_hollow, чего (в текущем понимании) достаточно
- *    для контроля/обработки всех ситуаций. При этом наличие флажка z_hollow
- *    не означает что ki[top] >= page_numkeys(pg[top]), так как после
- *    позиционирования курсора за последний элемент (и установке z_hollow) может
- *    быть произведена append-вставка в эту позицию через другой курсор. */
+ *  - Повторное позиционирование first/last может начинаться
+ *    с установки/обнуления только top без сброса flags, что позволяет работать
+ *    быстрому пути внутри tree_search_finalize().
+ *
+ *  - Заморочки с концом данных:
+ *     - mdbx_cursor_get(NEXT) выполняет две операции (перемещение и чтение),
+ *       поэтому перемещение на последнюю строку строку всегда успешно,
+ *       а ошибка возвращается только при последующем next().
+ *       Однако, из-за этой двойственности семантика ситуации возврата ошибки
+ *       из mdbx_cursor_get(NEXT) допускает разночтение/неопределенность, ибо
+ *       не понятно к чему относится ошибка:
+ *        - Если к чтению данных, то курсор перемещен и стоит после последней
+ *          строки. Соответственно, чтение в текущей позиции запрещено,
+ *          а при выполнении prev() курсор вернется на последнюю строку;
+ *        - Если же ошибка относится к перемещению, то курсор не перемещен и
+ *          остается на последней строке. Соответственно, чтение в текущей
+ *          позиции допустимо, а при выполнении prev() курсор встанет
+ *          на пред-последнюю строку.
+ *        - Пикантность в том, что пользователи (так или иначе) полагаются
+ *          на оба варианта поведения, при этом конечно ожидают что после
+ *          ошибки MDBX_NEXT функция mdbx_cursor_eof() будет возвращать true.
+ *     - далее добавляется схожая ситуация с MDBX_GET_RANGE, MDBX_LOWERBOUND,
+ *       MDBX_GET_BOTH_RANGE и MDBX_UPPERBOUND. Тут при неуспехе поиска курсор
+ *       может/должен стоять после последней строки.
+ *     - далее добавляется MDBX_LAST. Тут курсор должен стоять на последней
+ *       строке и допускать чтение в текузщей позиции,
+ *       но mdbx_cursor_eof() должен возвращать true.
+ *
+ *    Решение = делаем два флажка z_eof_soft и z_eof_hard:
+ *     - Когда установлен только z_eof_soft,
+ *       функция mdbx_cursor_eof() возвращает true, но допускается
+ *       чтение данных в текущей позиции, а prev() передвигает курсор
+ *       на пред-последнюю строку.
+ *     - Когда установлен z_eof_hard, чтение данных в текущей позиции
+ *       не допускается, и mdbx_cursor_eof() также возвращает true,
+ *       а prev() устанавливает курсора на последюю строку. */
 enum cursor_state {
   /* Это вложенный курсор для вложенного дерева/страницы и является
      inner-элементом struct cursor_couple. */
@@ -5722,28 +5750,34 @@ enum cursor_state {
   z_gcu_preparation = 0x02,
 
   /* Курсор только-что создан, поэтому допускается авто-установка
-     в начало/конец, вместо возврата ошибки */
+     в начало/конец, вместо возврата ошибки. */
   z_fresh = 0x04,
 
-  /* Предыдущей операцией было удаление, поэтому курсор уже указывает
+  /* Предыдущей операцией было удаление, поэтому курсор уже физически указывает
      на следующий элемент и соответствующая операция перемещения должна
      игнорироваться. */
   z_after_delete = 0x08,
 
+  /* */
   z_disable_tree_search_fastpath = 0x10,
 
-  /* Курсор логически стоит на конце данных,
-   * но физически на последней строке и ki[top] == page_numkeys(pg[top]) - 1. */
-  z_eof = 0x20,
+  /* Курсор логически в конце данных, но физически на последней строке,
+   * ki[top] == page_numkeys(pg[top]) - 1 и читать данные в текущей позиции. */
+  z_eof_soft = 0x20,
 
-  /* За курсором нет данных, нельзя делать CRUD операции в текущей позиции.
-     Как правило, это означает что курсор стоит за последней строкой данных
-     и ki[top] == page_numkeys(pg[top]). */
-  z_hollow = 0x40,
+  /* Курсор логически за концом данных, поэтому следующий переход "назад"
+     должен игнорироваться и/или приводить к установке на последнюю строку.
+     В текущем же состоянии нельзя делать CRUD операции. */
+  z_eof_hard = 0x40,
+
+  /* За курсором нет данных, логически его позиция не определена,
+     нельзя делать CRUD операции в текущей позиции.
+     Относительное перемещение запрещено. */
+  z_hollow = -128 /* 0x80 */,
 
   /* Маски для сброса/установки состояния. */
   z_clear_mask = z_inner | z_gcu_preparation,
-  z_poor_mark = -128 | z_eof | z_hollow | z_disable_tree_search_fastpath,
+  z_poor_mark = z_eof_hard | z_hollow | z_disable_tree_search_fastpath,
   z_fresh_mark = z_poor_mark | z_fresh
 };
 
@@ -5772,24 +5806,26 @@ is_pointed(const MDBX_cursor *mc) {
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool
 is_hollow(const MDBX_cursor *mc) {
-  const bool r = (z_hollow - 1) < (uint8_t)mc->flags;
-  if (!r)
-    cASSERT(mc,
-            mc->top >= 0 && mc->ki[mc->top] < page_numkeys(mc->pg[mc->top]));
-  else if (mc->subcur)
+  const bool r = mc->flags < 0;
+  if (!r) {
+    cASSERT(mc, mc->top >= 0);
+    cASSERT(mc, (mc->flags & z_eof_hard) ||
+                    mc->ki[mc->top] < page_numkeys(mc->pg[mc->top]));
+  } else if (mc->subcur)
     cASSERT(mc, is_poor(&mc->subcur->cursor));
   return r;
 }
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool
 is_eof(const MDBX_cursor *mc) {
-  const bool r = (z_eof - 1) < (uint8_t)mc->flags;
+  const bool r = z_eof_soft <= (uint8_t)mc->flags;
   return r;
 }
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool
 is_filled(const MDBX_cursor *mc) {
-  return !is_hollow(mc);
+  const bool r = z_eof_hard > (uint8_t)mc->flags;
+  return r;
 }
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool
@@ -5800,6 +5836,11 @@ inner_filled(const MDBX_cursor *mc) {
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool
 inner_pointed(const MDBX_cursor *mc) {
   return mc->subcur && is_pointed(&mc->subcur->cursor);
+}
+
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool
+inner_hollow(const MDBX_cursor *mc) {
+  return !mc->subcur || is_hollow(&mc->subcur->cursor);
 }
 
 MDBX_MAYBE_UNUSED static inline void inner_gone(MDBX_cursor *mc) {
@@ -5824,12 +5865,9 @@ MDBX_MAYBE_UNUSED static inline void be_poor(MDBX_cursor *mc) {
   cASSERT(mc, inner == is_inner(mc));
 }
 
-MDBX_MAYBE_UNUSED static inline void be_hollow(MDBX_cursor *mc) {
-  mc->flags |= z_eof | z_hollow;
-  inner_gone(mc);
-}
-
 MDBX_MAYBE_UNUSED static inline void be_filled(MDBX_cursor *mc) {
+  cASSERT(mc, mc->top >= 0);
+  cASSERT(mc, mc->ki[mc->top] < page_numkeys(mc->pg[mc->top]));
   const bool inner = is_inner(mc);
   mc->flags &= z_clear_mask;
   cASSERT(mc, is_filled(mc));
@@ -7588,7 +7626,7 @@ int mdbx_cursor_compare(const MDBX_cursor *l, const MDBX_cursor *r,
   if (unlikely(l->top != r->top))
     return (l->top > r->top) ? incomparable : -incomparable;
 
-  return (l->flags & (z_eof | z_hollow)) - (r->flags & (z_eof | z_hollow));
+  return (l->flags & z_eof_hard) - (r->flags & z_eof_hard);
 }
 
 /* Return the count of duplicate data items for the current key */
@@ -7608,7 +7646,7 @@ int mdbx_cursor_count(const MDBX_cursor *mc, size_t *countp) {
     return MDBX_EINVAL;
 
   if ((*countp = is_filled(mc)) > 0) {
-    if (inner_filled(mc)) {
+    if (!inner_hollow(mc)) {
       const page_t *mp = mc->pg[mc->top];
       const node_t *node = page_node(mp, mc->ki[mc->top]);
       cASSERT(mc, node_flags(node) & N_DUPDATA);
@@ -7895,10 +7933,8 @@ int mdbx_cursor_get_batch(MDBX_cursor *mc, size_t *count, MDBX_val *pairs,
   size_t n = 0;
   while (n + 2 <= limit) {
     cASSERT(mc, ki < nkeys);
-    if (unlikely(ki >= nkeys)) {
-      be_hollow(mc);
-      return MDBX_NOTFOUND;
-    }
+    if (unlikely(ki >= nkeys))
+      goto sibling;
 
     const node_t *leaf = page_node(mp, ki);
     pairs[n] = get_key(leaf);
@@ -7908,6 +7944,7 @@ int mdbx_cursor_get_batch(MDBX_cursor *mc, size_t *count, MDBX_val *pairs,
 
     n += 2;
     if (++ki == nkeys) {
+    sibling:
       rc = cursor_sibling_right(mc);
       if (rc != MDBX_SUCCESS) {
         if (rc == MDBX_NOTFOUND)
@@ -14694,11 +14731,7 @@ __cold int cursor_check(const MDBX_cursor *mc) {
   if (is_pointed(mc) && (mc->checking & z_updating) == 0) {
     const page_t *mp = mc->pg[mc->top];
     const size_t nkeys = page_numkeys(mp);
-    if (mc->flags & z_hollow) {
-      cASSERT(mc, mc->ki[mc->top] <= nkeys);
-      if (mc->ki[mc->top] > nkeys)
-        return MDBX_CURSOR_FULL;
-    } else {
+    if (!is_hollow(mc)) {
       cASSERT(mc, mc->ki[mc->top] < nkeys);
       if (mc->ki[mc->top] >= nkeys)
         return MDBX_CURSOR_FULL;
@@ -15061,7 +15094,6 @@ int cursor_dupsort_setup(MDBX_cursor *mc, const node_t *node,
     mx->nested_tree.root = 0;
     mx->nested_tree.mod_txnid = mp->txnid;
     mx->cursor.top_and_flags = z_inner;
-    /* mc->flags &= ~z_hollow; */
     mx->cursor.pg[0] = sp;
     mx->cursor.ki[0] = 0;
     mx->nested_tree.flags = flags_db2sub(mc->tree->flags);
@@ -15118,10 +15150,7 @@ MDBX_cursor *cursor_cpstk(const MDBX_cursor *csrc, MDBX_cursor *cdst) {
   return cdst;
 }
 
-#define SIBLING_LEFT 0
-#define SIBLING_RIGHT 2
-static __always_inline int sibling(MDBX_cursor *mc, int dir) {
-  assert(dir == SIBLING_LEFT || dir == SIBLING_RIGHT);
+static __always_inline int sibling(MDBX_cursor *mc, bool right) {
   if (mc->top < 1) {
     /* root has no siblings */
     return MDBX_NOTFOUND;
@@ -15132,13 +15161,11 @@ static __always_inline int sibling(MDBX_cursor *mc, int dir) {
         mc->ki[mc->top]);
 
   int err;
-  if ((dir == SIBLING_RIGHT)
-          ? (mc->ki[mc->top] + (size_t)1 >= page_numkeys(mc->pg[mc->top]))
-          : (mc->ki[mc->top] == 0)) {
+  if (right ? (mc->ki[mc->top] + (size_t)1 >= page_numkeys(mc->pg[mc->top]))
+            : (mc->ki[mc->top] == 0)) {
     DEBUG("no more keys aside, moving to next %s sibling",
-          dir ? "right" : "left");
-    err = (dir == SIBLING_LEFT) ? cursor_sibling_left(mc)
-                                : cursor_sibling_right(mc);
+          right ? "right" : "left");
+    err = right ? cursor_sibling_right(mc) : cursor_sibling_left(mc);
     if (err != MDBX_SUCCESS) {
       if (likely(err == MDBX_NOTFOUND))
         /* undo cursor_pop before returning */
@@ -15146,10 +15173,9 @@ static __always_inline int sibling(MDBX_cursor *mc, int dir) {
       return err;
     }
   } else {
-    assert((dir - 1) == -1 || (dir - 1) == 1);
-    mc->ki[mc->top] += (indx_t)(dir - 1);
-    DEBUG("just moving to %s index key %u",
-          (dir == SIBLING_RIGHT) ? "right" : "left", mc->ki[mc->top]);
+    mc->ki[mc->top] += right ? 1 : -1;
+    DEBUG("just moving to %s index key %u", right ? "right" : "left",
+          mc->ki[mc->top]);
   }
   cASSERT(mc, is_branch(mc->pg[mc->top]));
 
@@ -15157,8 +15183,7 @@ static __always_inline int sibling(MDBX_cursor *mc, int dir) {
   const node_t *node = page_node(mp, mc->ki[mc->top]);
   err = page_get(mc, node_pgno(node), &mp, mp->txnid);
   if (likely(err == MDBX_SUCCESS)) {
-    err = cursor_push(mc, mp,
-                      (dir == SIBLING_LEFT) ? (indx_t)page_numkeys(mp) - 1 : 0);
+    err = cursor_push(mc, mp, right ? 0 : (indx_t)page_numkeys(mp) - 1);
     if (likely(err == MDBX_SUCCESS))
       return err;
   }
@@ -15168,7 +15193,7 @@ static __always_inline int sibling(MDBX_cursor *mc, int dir) {
 }
 
 __hot int cursor_sibling_left(MDBX_cursor *mc) {
-  int err = sibling(mc, SIBLING_LEFT);
+  int err = sibling(mc, false);
   if (likely(err != MDBX_NOTFOUND))
     return err;
 
@@ -15180,7 +15205,7 @@ __hot int cursor_sibling_left(MDBX_cursor *mc) {
 }
 
 __hot int cursor_sibling_right(MDBX_cursor *mc) {
-  int err = sibling(mc, SIBLING_RIGHT);
+  int err = sibling(mc, true);
   if (likely(err != MDBX_NOTFOUND))
     return err;
 
@@ -15188,7 +15213,8 @@ __hot int cursor_sibling_right(MDBX_cursor *mc) {
   size_t nkeys = page_numkeys(mc->pg[mc->top]);
   cASSERT(mc, nkeys > 0);
   mc->ki[mc->top] = (indx_t)nkeys - 1;
-  be_hollow(mc);
+  mc->flags = z_eof_soft | z_eof_hard | (mc->flags & z_clear_mask);
+  inner_gone(mc);
   return MDBX_NOTFOUND;
 }
 
@@ -15199,7 +15225,7 @@ __hot int cursor_sibling_right(MDBX_cursor *mc) {
 static __always_inline int cursor_bring(const bool inner, const bool tend2first,
                                         MDBX_cursor *__restrict mc,
                                         MDBX_val *__restrict key,
-                                        MDBX_val *__restrict data) {
+                                        MDBX_val *__restrict data, bool eof) {
   if (inner) {
     cASSERT(mc, !data && !mc->subcur && (mc->flags & z_inner) != 0);
   } else {
@@ -15217,9 +15243,12 @@ static __always_inline int cursor_bring(const bool inner, const bool tend2first,
   cASSERT(mc, nkeys > 0);
   const size_t ki = mc->ki[mc->top];
   cASSERT(mc, nkeys > ki);
+  cASSERT(mc, !eof || ki == nkeys - 1);
 
   if (inner && is_dupfix_leaf(mp)) {
     be_filled(mc);
+    if (eof)
+      mc->flags |= z_eof_soft;
     if (likely(key))
       *key = page_dupfix_key(mp, ki, mc->tree->dupfix_size);
     return MDBX_SUCCESS;
@@ -15237,8 +15266,10 @@ static __always_inline int cursor_bring(const bool inner, const bool tend2first,
       if (unlikely(err != MDBX_SUCCESS))
         return err;
     } else {
-      if (!tend2first)
+      if (!tend2first) {
         mc->subcur->cursor.ki[0] = (indx_t)mc->subcur->nested_tree.items - 1;
+        mc->subcur->cursor.flags |= z_eof_soft;
+      }
       if (data) {
         const page_t *inner_mp = mc->subcur->cursor.pg[0];
         cASSERT(mc, is_subpage(inner_mp) && is_leaf(inner_mp));
@@ -15249,6 +15280,7 @@ static __always_inline int cursor_bring(const bool inner, const bool tend2first,
           *data = get_key(page_node(inner_mp, inner_ki));
       }
     }
+    be_filled(mc);
   } else {
     if (!inner)
       inner_gone(mc);
@@ -15257,9 +15289,11 @@ static __always_inline int cursor_bring(const bool inner, const bool tend2first,
       if (unlikely(err != MDBX_SUCCESS))
         return err;
     }
+    be_filled(mc);
+    if (eof)
+      mc->flags |= z_eof_soft;
   }
 
-  be_filled(mc);
   get_key_optional(node, key);
   return MDBX_SUCCESS;
 }
@@ -15277,7 +15311,7 @@ static __always_inline int cursor_brim(const bool inner, const bool tend2first,
   const size_t nkeys = page_numkeys(mc->pg[mc->top]);
   cASSERT(mc, nkeys > 0);
   mc->ki[mc->top] = tend2first ? 0 : nkeys - 1;
-  return cursor_bring(inner, tend2first, mc, key, data);
+  return cursor_bring(inner, tend2first, mc, key, data, !tend2first);
 }
 
 __hot int inner_first(MDBX_cursor *mc, MDBX_val *data) {
@@ -15325,17 +15359,15 @@ static __always_inline int cursor_step(const bool inner, const bool forward,
   }
 
   if (unlikely(is_poor(mc))) {
-    if (mc->flags & z_fresh) {
+    int state = mc->flags;
+    if (state & z_fresh) {
       if (forward)
         return inner ? inner_first(mc, key) : outer_first(mc, key, data);
       else
         return inner ? inner_last(mc, key) : outer_last(mc, key, data);
     }
-    if (mc->flags & z_after_delete) {
-      mc->flags -= z_after_delete;
-      return MDBX_NOTFOUND;
-    }
-    return MDBX_ENODATA;
+    mc->flags = inner ? z_inner | z_poor_mark : z_poor_mark;
+    return (state & z_after_delete) ? MDBX_NOTFOUND : MDBX_ENODATA;
   }
 
   const page_t *mp = mc->pg[mc->top];
@@ -15343,7 +15375,8 @@ static __always_inline int cursor_step(const bool inner, const bool forward,
   cASSERT(mc, nkeys > 0);
 
   intptr_t ki = mc->ki[mc->top];
-  const uint8_t state = mc->flags & (z_after_delete | z_hollow);
+  const uint8_t state =
+      mc->flags & (z_after_delete | z_hollow | z_eof_hard | z_eof_soft);
   if (likely(state == 0)) {
     cASSERT(mc, ki < nkeys);
     if (!inner && op != (forward ? MDBX_NEXT_NODUP : MDBX_PREV_NODUP)) {
@@ -15353,14 +15386,13 @@ static __always_inline int cursor_step(const bool inner, const bool forward,
                       : inner_prev(&mc->subcur->cursor, data);
         if (likely(err == MDBX_SUCCESS)) {
           get_key_optional(page_node(mp, ki), key);
-          mc->flags &= z_clear_mask;
           return MDBX_SUCCESS;
         }
-        if (unlikely(err != MDBX_NOTFOUND)) {
+        if (unlikely(err != MDBX_NOTFOUND && err != MDBX_ENODATA)) {
           cASSERT(mc, !inner_pointed(mc));
           return err;
         }
-        cASSERT(mc, !forward || (mc->subcur->cursor.flags & z_eof));
+        cASSERT(mc, !forward || (mc->subcur->cursor.flags & z_eof_soft));
       }
       if (op == (forward ? MDBX_NEXT_DUP : MDBX_PREV_DUP))
         return err;
@@ -15368,21 +15400,25 @@ static __always_inline int cursor_step(const bool inner, const bool forward,
     if (!inner)
       inner_gone(mc);
   } else {
-    if (mc->flags & z_hollow)
+    if (mc->flags & z_hollow) {
       cASSERT(mc, !inner_pointed(mc));
+      return MDBX_ENODATA;
+    }
 
     if (!inner && op == (forward ? MDBX_NEXT_DUP : MDBX_PREV_DUP))
       return MDBX_NOTFOUND;
 
-    if (state & z_hollow) {
-      if (forward)
+    if (forward) {
+      if (state & z_after_delete) {
+        if (ki < nkeys)
+          goto bring;
+      } else {
+        cASSERT(mc, state & (z_eof_soft | z_eof_hard));
         return MDBX_NOTFOUND;
-      ki = nkeys - forward;
-    } else if (ki < nkeys) {
-      if (forward && (state & z_after_delete))
-        goto bring;
-    } else {
-      ki = nkeys - forward;
+      }
+    } else if (state & z_eof_hard) {
+      mc->ki[mc->top] = (indx_t)nkeys - 1;
+      goto bring;
     }
   }
 
@@ -15418,7 +15454,7 @@ static __always_inline int cursor_step(const bool inner, const bool forward,
         mp->pgno, page_numkeys(mp), mc->ki[mc->top]);
 
 bring:
-  return cursor_bring(inner, forward, mc, key, data);
+  return cursor_bring(inner, forward, mc, key, data, false);
 }
 
 __hot int inner_next(MDBX_cursor *mc, MDBX_val *data) {
@@ -16313,7 +16349,9 @@ __hot int cursor_del(MDBX_cursor *mc, unsigned flags) {
               continue;
             const node_t *inner = node;
             if (unlikely(m2->ki[mc->top] >= page_numkeys(mp))) {
-              be_hollow(m2);
+              m2->flags = z_poor_mark;
+              m2->subcur->nested_tree.root = 0;
+              m2->subcur->cursor.top_and_flags = z_inner | z_poor_mark;
               continue;
             }
             if (m2->ki[mc->top] != mc->ki[mc->top]) {
@@ -16514,12 +16552,10 @@ __hot csr_t cursor_seek(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
                       mc->tree->leaf_pages == 1 && mc->ki[0] == 0);
       /* Логически верно, но нет смысла, ибо это мимолетная/временная
        * ситуация до добавления элемента выше по стеку вызовов:
-         mc->flags |= z_eof | z_hollow; */
+         mc->flags |= z_eof_soft | z_hollow; */
       ret.err = MDBX_NOTFOUND;
       return ret;
     }
-
-    mc->flags &= ~z_after_delete;
 
     MDBX_val nodekey;
     if (is_dupfix_leaf(mp))
@@ -16597,12 +16633,13 @@ __hot csr_t cursor_seek(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
          * Поэтому переводим курсор в неустановленное состояние, но без сброса
          * top, что позволяет работать fastpath при последующем поиске по дереву
          * страниц. */
-        be_hollow(mc);
+        mc->flags = z_hollow | (mc->flags & z_clear_mask);
+        inner_gone(mc);
         ret.err = MDBX_NOTFOUND;
         return ret;
       }
       cASSERT(mc, op == MDBX_SET_RANGE);
-      mc->flags |= z_eof | z_hollow;
+      mc->flags = z_eof_soft | z_eof_hard | (mc->flags & z_clear_mask);
       ret.err = MDBX_NOTFOUND;
       return ret;
     }
@@ -16769,9 +16806,13 @@ __hot int cursor_ops(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
   switch (op) {
   case MDBX_GET_CURRENT:
     cASSERT(mc, (mc->flags & z_inner) == 0);
-    if (unlikely(is_hollow(mc)))
-      return MDBX_ENODATA;
-    else if (mc->flags & z_after_delete)
+    if (unlikely(!is_filled(mc))) {
+      if (is_hollow(mc))
+        return MDBX_ENODATA;
+      if (mc->ki[mc->top] >= page_numkeys(mc->pg[mc->top]))
+        return MDBX_NOTFOUND;
+    }
+    if (mc->flags & z_after_delete)
       return outer_next(mc, key, data, MDBX_NEXT_NODUP);
     else if (inner_pointed(mc) && (mc->subcur->cursor.flags & z_after_delete))
       return outer_next(mc, key, data, MDBX_NEXT_DUP);
@@ -16785,8 +16826,12 @@ __hot int cursor_ops(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
         if (!MDBX_DISABLE_VALIDATION && unlikely(!mc->subcur))
           return unexpected_dupsort(mc);
         mc = &mc->subcur->cursor;
-        if (unlikely(is_hollow(mc)))
-          return MDBX_ENODATA;
+        if (unlikely(!is_filled(mc))) {
+          if (is_hollow(mc))
+            return MDBX_ENODATA;
+          if (mc->ki[mc->top] >= page_numkeys(mc->pg[mc->top]))
+            return MDBX_NOTFOUND;
+        }
         mp = mc->pg[mc->top];
         if (is_dupfix_leaf(mp))
           *data = page_dupfix_key(mp, mc->ki[mc->top], mc->tree->dupfix_size);
@@ -16818,17 +16863,8 @@ __hot int cursor_ops(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
     else if (rc == MDBX_NOTFOUND && mc->tree->items) {
       cASSERT(mc, is_pointed(mc));
       cASSERT(mc, op == MDBX_SET_RANGE || op == MDBX_GET_BOTH_RANGE ||
-                      !is_filled(mc));
-      cASSERT(mc, op == MDBX_GET_BOTH_RANGE || !inner_filled(mc));
-      if (op == MDBX_SET_RANGE) {
-        mc->ki[mc->top] = page_numkeys(mc->pg[mc->top]) - 1;
-        mc->flags &= ~z_hollow;
-      }
-      if (op == MDBX_GET_BOTH_RANGE && mc->subcur->cursor.top >= 0) {
-        MDBX_cursor *mx = &mc->subcur->cursor;
-        mx->ki[mx->top] = page_numkeys(mx->pg[mx->top]) - 1;
-        mx->flags &= ~z_hollow;
-      }
+                      is_hollow(mc));
+      cASSERT(mc, op == MDBX_GET_BOTH_RANGE || inner_hollow(mc));
     } else
       cASSERT(mc, is_poor(mc) && !is_filled(mc));
     return rc;
@@ -16841,6 +16877,8 @@ __hot int cursor_ops(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
     if (unlikely(!is_pointed(mc))) {
       if (unlikely(!key))
         return MDBX_EINVAL;
+      if (unlikely((mc->flags & z_fresh) == 0))
+        return MDBX_ENODATA;
       rc = cursor_seek(mc, key, data, MDBX_SET).err;
       if (unlikely(rc != MDBX_SUCCESS))
         return rc;
@@ -16873,13 +16911,15 @@ __hot int cursor_ops(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
     if (unlikely(mc->subcur == nullptr))
       return MDBX_INCOMPATIBLE;
     if (unlikely(!is_pointed(mc))) {
+      if (unlikely((mc->flags & z_fresh) == 0))
+        return MDBX_ENODATA;
       rc = outer_last(mc, key, data);
       if (unlikely(rc != MDBX_SUCCESS))
         return rc;
       mc->subcur->cursor.ki[mc->subcur->cursor.top] = 0;
       goto fetch_multiple;
     }
-    if (unlikely(is_eof(mc) || !inner_filled(mc)))
+    if (unlikely(!is_filled(mc) || !inner_filled(mc)))
       return MDBX_ENODATA;
     rc = cursor_sibling_left(&mc->subcur->cursor);
     if (likely(rc == MDBX_SUCCESS))
@@ -16890,20 +16930,8 @@ __hot int cursor_ops(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
   case MDBX_NEXT:
   case MDBX_NEXT_NODUP:
     rc = outer_next(mc, key, data, op);
-    if (rc == MDBX_NOTFOUND) {
-      cASSERT(mc, is_pointed(mc) || mc->tree->items == 0);
-      if (is_pointed(mc)) {
-        if (unlikely(mc->ki[mc->top] >= page_numkeys(mc->pg[mc->top])))
-          return MDBX_ENODATA;
-        if (inner_pointed(mc)) {
-          MDBX_cursor *const mx = &mc->subcur->cursor;
-          if (unlikely(mx->ki[mx->top] >= page_numkeys(mx->pg[mx->top])))
-            return MDBX_ENODATA;
-          mc->subcur->cursor.flags &= ~z_hollow;
-        }
-        mc->flags &= ~z_hollow;
-      }
-    }
+    mc->flags &= ~z_eof_hard;
+    ((cursor_couple_t *)mc)->inner.cursor.flags &= ~z_eof_hard;
     return rc;
 
   case MDBX_PREV_DUP:
@@ -16966,11 +16994,6 @@ __hot int cursor_ops(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
       }
       if (rc == MDBX_SUCCESS && !csr.exact)
         rc = MDBX_RESULT_TRUE;
-      else if (rc == MDBX_NOTFOUND) {
-        cASSERT(mc, F_ISSET(mc->flags, z_eof | z_hollow));
-        cASSERT(mc, !inner_pointed(mc) ||
-                        F_ISSET(mc->subcur->cursor.flags, z_eof | z_hollow));
-      }
       if (unlikely(op == MDBX_SET_UPPERBOUND)) {
         /* minor fixups for MDBX_SET_UPPERBOUND */
         if (rc == MDBX_RESULT_TRUE)
@@ -33523,7 +33546,11 @@ __hot __noinline int tree_search_finalize(MDBX_cursor *mc, const MDBX_val *key,
 
   DEBUG("found leaf page %" PRIaPGNO " for key [%s]", mp->pgno,
         DKEY_DEBUG(key));
-  be_filled(mc);
+  /* Логически верно, но (в текущем понимании) нет необходимости.
+     Однако, стоит ещё по-проверять/по-тестировать.
+     Возможно есть сценарий, в котором очистка флагов всё-таки требуется.
+
+     be_filled(mc); */
   return MDBX_SUCCESS;
 }
 /// \copyright SPDX-License-Identifier: Apache-2.0
@@ -33831,8 +33858,7 @@ __hot static int cursor_diff(const MDBX_cursor *const __restrict x,
       break;
     r->level += 1;
     if (r->level > depth) {
-      r->diff =
-          CMP2INT(x->flags & (z_eof | z_hollow), y->flags & (z_eof | z_hollow));
+      r->diff = CMP2INT(x->flags & z_eof_hard, y->flags & z_eof_hard);
       return MDBX_SUCCESS;
     }
     nkeys = page_numkeys(x->pg[r->level]);
@@ -34017,8 +34043,8 @@ __hot int mdbx_estimate_move(const MDBX_cursor *cursor, MDBX_val *key,
     return rc;
 
   if (move_op == MDBX_LAST) {
-    next.outer.flags |= z_eof;
-    next.inner.cursor.flags |= z_eof;
+    next.outer.flags |= z_eof_hard;
+    next.inner.cursor.flags |= z_eof_hard;
   }
   return mdbx_estimate_distance(cursor, &next.outer, distance_items);
 }
@@ -34127,8 +34153,8 @@ __hot int mdbx_estimate_range(const MDBX_txn *txn, MDBX_dbi dbi,
     return rc;
   if (!end_key) {
     rc = outer_last(&end.outer, nullptr, nullptr);
-    end.outer.flags |= z_eof | z_hollow;
-    end.inner.cursor.flags |= z_eof | z_hollow;
+    end.outer.flags |= z_eof_hard;
+    end.inner.cursor.flags |= z_eof_hard;
   } else {
     MDBX_val proxy_key = *end_key;
     MDBX_val proxy_data = {nullptr, 0};
@@ -39819,8 +39845,8 @@ __dll_export
         13,
         0,
         61,
-        {"2024-06-15T20:28:34+03:00", "54f4583bbd35cf3647dc4065446a781cabedcabd", "45b204f5daeff2e4db336b99db2af50e8e5c7c8e",
-         "v0.13.0-61-g45b204f5"},
+        {"2024-06-19T14:18:18+03:00", "9553d6b783c9f6418f09659082c0bf2d6a235ddb", "9670cf57092e939db852ee364cb8d6b5ed341ead",
+         "v0.13.0-61-g9670cf57"},
         sourcery};
 
 __dll_export

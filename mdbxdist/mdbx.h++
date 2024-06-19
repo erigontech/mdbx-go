@@ -4615,6 +4615,10 @@ public:
   /// to pages of nested b+tree of multimap's values.
   inline void append(map_handle map, const slice &key, const slice &value,
                      bool multivalue_order_preserved = true);
+  inline void append(map_handle map, const pair &kv,
+                     bool multivalue_order_preserved = true) {
+    return append(map, kv.key, kv.value, multivalue_order_preserved);
+  }
 
   size_t put_multiple(map_handle map, const slice &key,
                       const size_t value_length, const void *values_array,
