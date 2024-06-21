@@ -559,7 +559,7 @@ func TestEnv_CloseDBI(t *testing.T) {
 		return
 	}
 
-	//nolint:goerr113
+	//nolint:err113
 	if stat.Entries != numdb {
 		t.Errorf("unexpected entries: %d (not %d)", stat.Entries, numdb)
 	}
