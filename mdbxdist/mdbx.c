@@ -3,7 +3,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY b0a7750d102beb387b1fb66dfacb41e386a76f961fc03c363fe27eb5bb1187f4_v0_13_0_61_g9670cf57
+#define MDBX_BUILD_SOURCERY 5b147e93c8b50e339aade87e0d3fd1893e5007a1bc832e28f1175dcca64c52bf_v0_13_0_62_gbdd0b487
 
 
 #define LIBMDBX_INTERNALS
@@ -39844,9 +39844,9 @@ __dll_export
         0,
         13,
         0,
-        61,
-        {"2024-06-19T14:18:18+03:00", "9553d6b783c9f6418f09659082c0bf2d6a235ddb", "9670cf57092e939db852ee364cb8d6b5ed341ead",
-         "v0.13.0-61-g9670cf57"},
+        62,
+        {"2024-06-20T13:53:23+03:00", "17aa4027a27431157c4d8888f0a62be4dcd28532", "bdd0b487ae08cada8dce088e12d0861575a8f628",
+         "v0.13.0-62-gbdd0b487"},
         sourcery};
 
 __dll_export
