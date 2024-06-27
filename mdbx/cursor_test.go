@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math/rand"
 	"os"
 	"reflect"
 	"runtime"
@@ -1566,7 +1567,7 @@ func BenchmarkCursor_Renew(b *testing.B) {
 	})
 }
 
-func BenchmarkCursor_SetRange(b *testing.B) {
+func BenchmarkCursor_SetRange_OneKey(b *testing.B) {
 	env, _ := setup(b)
 
 	var db DBI
@@ -1597,6 +1598,97 @@ func BenchmarkCursor_SetRange(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_, _, err := c.Get(k, nil, SetRange)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("put: %v", err)
+	}
+}
+
+func BenchmarkCursor_SetRange_Sequence(b *testing.B) {
+	env, _ := setup(b)
+
+	var db DBI
+	keys := make([][]byte, b.N, b.N)
+	for i := range keys {
+		keys[i] = make([]byte, 8)
+		binary.BigEndian.PutUint64(keys[i], uint64(i))
+	}
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for _, k := range keys {
+			err = txn.Put(db, k, k, 0)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("dbi: %v", err)
+		return
+	}
+
+	if err := env.View(func(txn *Txn) (err error) {
+		c, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _, err = c.Get(keys[i], nil, SetRange)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("put: %v", err)
+	}
+}
+
+func BenchmarkCursor_SetRange_Random(b *testing.B) {
+	env, _ := setup(b)
+
+	var db DBI
+	keys := make([][]byte, b.N, b.N)
+	for i := range keys {
+		keys[i] = make([]byte, 8)
+		binary.BigEndian.PutUint64(keys[i], uint64(rand.Intn(100*b.N)))
+	}
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for _, k := range keys {
+			err = txn.Put(db, k, k, 0)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("dbi: %v", err)
+		return
+	}
+
+	if err := env.View(func(txn *Txn) (err error) {
+		b.ResetTimer()
+		c, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _, err = c.Get(keys[i], nil, SetRange)
 			if err != nil {
 				return err
 			}
