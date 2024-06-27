@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math/rand"
 	"runtime"
 	"syscall"
 	"testing"
@@ -1263,7 +1264,7 @@ func openDBI(env *Env, key string, flags uint) (DBI, error) {
 	return db, nil
 }
 
-func BenchmarkTxn_Get(b *testing.B) {
+func BenchmarkTxn_Get_OneKey(b *testing.B) {
 	env, _ := setup(b)
 
 	var db DBI
@@ -1289,6 +1290,88 @@ func BenchmarkTxn_Get(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_, err := txn.Get(db, k)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("put: %v", err)
+	}
+}
+
+func BenchmarkTxn_Get_Sequence(b *testing.B) {
+	env, _ := setup(b)
+
+	var db DBI
+	keys := make([][]byte, b.N, b.N)
+	for i := range keys {
+		keys[i] = make([]byte, 8)
+		binary.BigEndian.PutUint64(keys[i], uint64(i))
+	}
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for _, k := range keys {
+			err = txn.Put(db, k, k, 0)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("dbi: %v", err)
+		return
+	}
+
+	if err := env.View(func(txn *Txn) (err error) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := txn.Get(db, keys[i])
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("put: %v", err)
+	}
+}
+
+func BenchmarkTxn_Get_Random(b *testing.B) {
+	env, _ := setup(b)
+
+	var db DBI
+	keys := make([][]byte, b.N, b.N)
+	for i := range keys {
+		keys[i] = make([]byte, 8)
+		binary.BigEndian.PutUint64(keys[i], uint64(rand.Intn(100*b.N)))
+	}
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for _, k := range keys {
+			err = txn.Put(db, k, k, 0)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("dbi: %v", err)
+		return
+	}
+
+	if err := env.View(func(txn *Txn) (err error) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := txn.Get(db, keys[i])
 			if err != nil {
 				return err
 			}
