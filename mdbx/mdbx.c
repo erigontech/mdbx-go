@@ -3,7 +3,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 5b147e93c8b50e339aade87e0d3fd1893e5007a1bc832e28f1175dcca64c52bf_v0_13_0_62_gbdd0b487
+#define MDBX_BUILD_SOURCERY 84c5b5a6ebb00909e8a4d9736c054aac2e2abf8eca1b0620485c462bbed23474_v0_13_0_64_g7abeac76
 
 
 #define LIBMDBX_INTERNALS
@@ -15482,9 +15482,11 @@ __hot int cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
   int err;
   DKBUF_DEBUG;
   MDBX_env *const env = mc->txn->env;
+  if (LOG_ENABLED(MDBX_LOG_DEBUG) && (flags & MDBX_RESERVE))
+    data->iov_base = nullptr;
   DEBUG("==> put db %d key [%s], size %" PRIuPTR ", data [%s] size %" PRIuPTR,
-        cursor_dbi_dbg(mc), DKEY_DEBUG(key), key->iov_len,
-        DVAL_DEBUG((flags & MDBX_RESERVE) ? nullptr : data), data->iov_len);
+        cursor_dbi_dbg(mc), DKEY_DEBUG(key), key->iov_len, DVAL_DEBUG(data),
+        data->iov_len);
 
   if ((flags & MDBX_CURRENT) != 0 && (mc->flags & z_inner) == 0) {
     if (unlikely(flags & (MDBX_APPEND | MDBX_NOOVERWRITE)))
@@ -39844,9 +39846,9 @@ __dll_export
         0,
         13,
         0,
-        62,
-        {"2024-06-20T13:53:23+03:00", "17aa4027a27431157c4d8888f0a62be4dcd28532", "bdd0b487ae08cada8dce088e12d0861575a8f628",
-         "v0.13.0-62-gbdd0b487"},
+        64,
+        {"2024-06-26T09:44:42+03:00", "57d014f58b79279af6fbad3a3ffd19cdc5a174f2", "7abeac762f36276ad035546b7caa015838784f40",
+         "v0.13.0-64-g7abeac76"},
         sourcery};
 
 __dll_export
