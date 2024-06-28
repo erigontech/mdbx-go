@@ -1567,7 +1567,7 @@ func BenchmarkCursor_Renew(b *testing.B) {
 	})
 }
 
-func BenchmarkCursor_SetRange_OneKey(b *testing.B) {
+func BenchmarkCursor_Set_OneKey(b *testing.B) {
 	env, _ := setup(b)
 
 	var db DBI
@@ -1597,7 +1597,7 @@ func BenchmarkCursor_SetRange_OneKey(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _, err := c.Get(k, nil, SetRange)
+			_, _, err := c.Get(k, nil, Set)
 			if err != nil {
 				return err
 			}
@@ -1608,7 +1608,7 @@ func BenchmarkCursor_SetRange_OneKey(b *testing.B) {
 	}
 }
 
-func BenchmarkCursor_SetRange_Sequence(b *testing.B) {
+func BenchmarkCursor_Set_Sequence(b *testing.B) {
 	env, _ := setup(b)
 
 	var db DBI
@@ -1642,7 +1642,7 @@ func BenchmarkCursor_SetRange_Sequence(b *testing.B) {
 		}
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _, err = c.Get(keys[i], nil, SetRange)
+			_, _, err = c.Get(keys[i], nil, Set)
 			if err != nil {
 				return err
 			}
@@ -1653,7 +1653,7 @@ func BenchmarkCursor_SetRange_Sequence(b *testing.B) {
 	}
 }
 
-func BenchmarkCursor_SetRange_Random(b *testing.B) {
+func BenchmarkCursor_Set_Random(b *testing.B) {
 	env, _ := setup(b)
 
 	var db DBI
@@ -1688,7 +1688,7 @@ func BenchmarkCursor_SetRange_Random(b *testing.B) {
 		}
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _, err = c.Get(keys[i], nil, SetRange)
+			_, _, err = c.Get(keys[i], nil, Set)
 			if err != nil {
 				return err
 			}
