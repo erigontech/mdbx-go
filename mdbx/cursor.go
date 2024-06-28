@@ -155,8 +155,7 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 		err = c.getValEmpty(op)
 	}
 	if err != nil {
-		c.txn.key = C.MDBX_val{}
-		c.txn.val = C.MDBX_val{}
+		c.txn.key, c.txn.val = C.MDBX_val{}, C.MDBX_val{}
 		return nil, nil, err
 	}
 
@@ -175,8 +174,7 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 
 	// Clear transaction storage record storage area for future use and to
 	// prevent dangling references.
-	c.txn.key = C.MDBX_val{}
-	c.txn.val = C.MDBX_val{}
+	c.txn.key, c.txn.val = C.MDBX_val{}, C.MDBX_val{}
 
 	return key, val, nil
 }
