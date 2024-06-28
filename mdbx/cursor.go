@@ -36,6 +36,8 @@ const (
 	Set          = C.MDBX_SET            // The specified key.
 	SetKey       = C.MDBX_SET_KEY        // Get key and data at the specified key.
 	SetRange     = C.MDBX_SET_RANGE      // The first key no less than the specified key.
+
+	LesserThan = C.MDBX_TO_KEY_LESSER_THAN
 )
 
 // The MDB_MULTIPLE and MDB_RESERVE flags are special and do not fit the

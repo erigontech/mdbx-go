@@ -74,6 +74,31 @@ func TestEnv_Open(t *testing.T) {
 	}
 }
 
+func TestEnv_PreOpen(t *testing.T) {
+	env, err1 := NewEnv()
+	if err1 != nil {
+		t.Error(err1)
+		return
+	}
+	defer env.Close()
+
+	// open an environment at a temporary path.
+	path := t.TempDir()
+	err := env.Open(path, 0, 0664)
+	if err != nil {
+		t.Errorf("open: %s", err)
+	}
+	env.Close()
+
+	_info, err := PreOpenSnapInfo(path)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("%#v\n", _info)
+
+}
+
 /*
 func TestEnv_FD(t *testing.T) {
 	if runtime.GOOS == "windows" {

@@ -32,16 +32,17 @@ const (
 	EnvDefaults = C.MDBX_ENV_DEFAULTS
 	LifoReclaim = C.MDBX_LIFORECLAIM
 	//FixedMap    = C.MDBX_FIXEDMAP   // Danger zone. Map memory at a fixed address.
-	NoSubdir      = C.MDBX_NOSUBDIR // Argument to Open is a file, not a directory.
-	Accede        = C.MDBX_ACCEDE
-	Coalesce      = C.MDBX_COALESCE
-	Readonly      = C.MDBX_RDONLY     // Used in several functions to denote an object as readonly.
-	WriteMap      = C.MDBX_WRITEMAP   // Use a writable memory map.
-	NoMetaSync    = C.MDBX_NOMETASYNC // Don't fsync metapage after commit.
-	UtterlyNoSync = C.MDBX_UTTERLY_NOSYNC
-	SafeNoSync    = C.MDBX_SAFE_NOSYNC
-	Durable       = C.MDBX_SYNC_DURABLE
-	NoTLS         = C.MDBX_NOTLS // Danger zone. When unset reader locktable slots are tied to their thread.
+	NoSubdir        = C.MDBX_NOSUBDIR // Argument to Open is a file, not a directory.
+	Accede          = C.MDBX_ACCEDE
+	Coalesce        = C.MDBX_COALESCE
+	Readonly        = C.MDBX_RDONLY     // Used in several functions to denote an object as readonly.
+	WriteMap        = C.MDBX_WRITEMAP   // Use a writable memory map.
+	NoMetaSync      = C.MDBX_NOMETASYNC // Don't fsync metapage after commit.
+	UtterlyNoSync   = C.MDBX_UTTERLY_NOSYNC
+	SafeNoSync      = C.MDBX_SAFE_NOSYNC
+	Durable         = C.MDBX_SYNC_DURABLE
+	NoTLS           = C.MDBX_NOTLS           // Danger zone. When unset reader locktable slots are tied to their thread.
+	NoStickyThreads = C.MDBX_NOSTICKYTHREADS // Danger zone. Like MDBX_NOTLS. But also allow move RwTx between threads. Still require to call Begin/Rollback in stame thread.
 	//NoLock      = C.MDBX_NOLOCK     // Danger zone. MDBX does not use any locks.
 	NoReadahead = C.MDBX_NORDAHEAD // Disable readahead. Requires OS support.
 	NoMemInit   = C.MDBX_NOMEMINIT // Disable MDBX memory initialization.
@@ -365,7 +366,24 @@ func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
 	if ret != success {
 		return nil, operrno("mdbx_env_info", ret)
 	}
-	info := EnvInfo{
+	return castEnvInfo(_info), nil
+}
+
+func PreOpenSnapInfo(path string) (*EnvInfo, error) {
+	cpath := C.CString(path)
+	defer C.free(unsafe.Pointer(cpath))
+
+	var _info C.MDBX_envinfo
+	var bytes C.size_t = C.size_t(unsafe.Sizeof(_info))
+	ret := C.mdbx_preopen_snapinfo(cpath, &_info, bytes)
+	if ret != success {
+		return nil, operrno("mdbx_preopen_snapinfo", ret)
+	}
+	return castEnvInfo(_info), nil
+}
+
+func castEnvInfo(_info C.MDBX_envinfo) *EnvInfo {
+	return &EnvInfo{
 		MapSize: int64(_info.mi_mapsize),
 		Geo: EnvInfoGeo{
 			Lower:   uint64(_info.mi_geo.lower),
@@ -402,7 +420,6 @@ func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
 		SinceReaderCheck:  toDuration(_info.mi_since_reader_check_seconds16dot16),
 		Flags:             uint(_info.mi_mode),
 	}
-	return &info, nil
 }
 
 // Sync flushes buffers to disk.  If force is true a synchronous flush occurs
