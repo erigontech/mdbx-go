@@ -2,7 +2,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
 
-#define MDBX_BUILD_SOURCERY 9bf76fce8e3f74f34d482d7b2e9a6cc1bcabd797a6a4b4491ce5f6cd0ef29120_v0_13_0_70_g3798d47a
+#define MDBX_BUILD_SOURCERY d79e72327b34c872db0c1e8bde5a171c679a0abe4bf48a8fafb5c6e131edfef6_v0_13_0_76_g32df0ad1
 
 
 #define LIBMDBX_INTERNALS
@@ -1625,6 +1625,17 @@ MDBX_INTERNAL void osal_dtor(void);
 MDBX_INTERNAL int osal_mb2w(const char *const src, wchar_t **const pdst);
 #endif /* Windows */
 
+typedef union bin128 {
+  __anonymous_struct_extension__ struct {
+    uint64_t x, y;
+  };
+  __anonymous_struct_extension__ struct {
+    uint32_t a, b, c, d;
+  };
+} bin128_t;
+
+MDBX_INTERNAL bin128_t osal_guid(const MDBX_env *);
+
 /*----------------------------------------------------------------------------*/
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint64_t
@@ -2412,15 +2423,6 @@ typedef struct geo {
   };
 } geo_t;
 
-typedef union bin128 {
-  __anonymous_struct_extension__ struct {
-    uint64_t x, y;
-  };
-  __anonymous_struct_extension__ struct {
-    uint32_t a, b, c, d;
-  };
-} bin128_t;
-
 /* Meta page content.
  * A meta page is the start point for accessing a database snapshot.
  * Pages 0-2 are meta pages. */
@@ -2479,6 +2481,9 @@ typedef struct meta {
    * steady sync point. Zeros mean that no relevant information is available
    * from the system. */
   bin128_t bootid;
+
+  /* GUID базы данных, начиная с v0.13.1 */
+  bin128_t dxbid;
 } meta_t;
 
 #pragma pack(1)
@@ -2629,7 +2634,7 @@ is_subpage(const page_t *mp) {
 
 
 /* The version number for a database's lockfile format. */
-#define MDBX_LOCK_VERSION 5
+#define MDBX_LOCK_VERSION 6
 
 #if MDBX_LOCKING == MDBX_LOCKING_WIN32FILES
 
@@ -2779,6 +2784,12 @@ typedef struct reader_slot {
    * NOTE: We currently don't check for stale records.
    * We simply re-init the table when we know that we're the only process
    * opening the lock file. */
+
+  /* Псевдо thread_id для пометки вытесненных читающих транзакций. */
+#define MDBX_TID_TXN_OUSTED (UINT64_MAX - 1)
+
+  /* Псевдо thread_id для пометки припаркованных читающих транзакций. */
+#define MDBX_TID_TXN_PARKED UINT64_MAX
 
   /* The thread ID of the thread owning this txn. */
   mdbx_atomic_uint64_t tid;

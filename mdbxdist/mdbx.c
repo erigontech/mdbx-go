@@ -3,7 +3,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 9bf76fce8e3f74f34d482d7b2e9a6cc1bcabd797a6a4b4491ce5f6cd0ef29120_v0_13_0_70_g3798d47a
+#define MDBX_BUILD_SOURCERY d79e72327b34c872db0c1e8bde5a171c679a0abe4bf48a8fafb5c6e131edfef6_v0_13_0_76_g32df0ad1
 
 
 #define LIBMDBX_INTERNALS
@@ -1626,6 +1626,17 @@ MDBX_INTERNAL void osal_dtor(void);
 MDBX_INTERNAL int osal_mb2w(const char *const src, wchar_t **const pdst);
 #endif /* Windows */
 
+typedef union bin128 {
+  __anonymous_struct_extension__ struct {
+    uint64_t x, y;
+  };
+  __anonymous_struct_extension__ struct {
+    uint32_t a, b, c, d;
+  };
+} bin128_t;
+
+MDBX_INTERNAL bin128_t osal_guid(const MDBX_env *);
+
 /*----------------------------------------------------------------------------*/
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint64_t
@@ -2413,15 +2424,6 @@ typedef struct geo {
   };
 } geo_t;
 
-typedef union bin128 {
-  __anonymous_struct_extension__ struct {
-    uint64_t x, y;
-  };
-  __anonymous_struct_extension__ struct {
-    uint32_t a, b, c, d;
-  };
-} bin128_t;
-
 /* Meta page content.
  * A meta page is the start point for accessing a database snapshot.
  * Pages 0-2 are meta pages. */
@@ -2480,6 +2482,9 @@ typedef struct meta {
    * steady sync point. Zeros mean that no relevant information is available
    * from the system. */
   bin128_t bootid;
+
+  /* GUID базы данных, начиная с v0.13.1 */
+  bin128_t dxbid;
 } meta_t;
 
 #pragma pack(1)
@@ -2630,7 +2635,7 @@ is_subpage(const page_t *mp) {
 
 
 /* The version number for a database's lockfile format. */
-#define MDBX_LOCK_VERSION 5
+#define MDBX_LOCK_VERSION 6
 
 #if MDBX_LOCKING == MDBX_LOCKING_WIN32FILES
 
@@ -2780,6 +2785,12 @@ typedef struct reader_slot {
    * NOTE: We currently don't check for stale records.
    * We simply re-init the table when we know that we're the only process
    * opening the lock file. */
+
+  /* Псевдо thread_id для пометки вытесненных читающих транзакций. */
+#define MDBX_TID_TXN_OUSTED (UINT64_MAX - 1)
+
+  /* Псевдо thread_id для пометки припаркованных читающих транзакций. */
+#define MDBX_TID_TXN_PARKED UINT64_MAX
 
   /* The thread ID of the thread owning this txn. */
   mdbx_atomic_uint64_t tid;
@@ -3827,7 +3838,7 @@ MDBX_INTERNAL int audit_ex(MDBX_txn *txn, size_t retired_stored,
                            bool dont_filter_gc);
 
 /* mvcc-readers.c */
-MDBX_INTERNAL bsr_t mvcc_bind_slot(MDBX_env *env, const uintptr_t tid);
+MDBX_INTERNAL bsr_t mvcc_bind_slot(MDBX_env *env);
 MDBX_MAYBE_UNUSED MDBX_INTERNAL pgno_t mvcc_largest_this(MDBX_env *env,
                                                          pgno_t largest);
 MDBX_INTERNAL txnid_t mvcc_shapshot_oldest(MDBX_env *const env,
@@ -3871,10 +3882,13 @@ MDBX_INTERNAL bool txn_refund(MDBX_txn *txn);
 MDBX_INTERNAL txnid_t txn_snapshot_oldest(const MDBX_txn *const txn);
 MDBX_INTERNAL int txn_abort(MDBX_txn *txn);
 MDBX_INTERNAL int txn_renew(MDBX_txn *txn, unsigned flags);
+MDBX_INTERNAL int txn_park(MDBX_txn *txn, bool autounpark);
+MDBX_INTERNAL int txn_unpark(MDBX_txn *txn);
+MDBX_INTERNAL int txn_check_badbits_parked(const MDBX_txn *txn, int bad_bits);
 
 #define TXN_END_NAMES                                                          \
-  {"committed", "empty-commit", "abort",          "reset",                     \
-   "reset-tmp", "fail-begin",   "fail-beginchild"}
+  {"committed", "empty-commit", "abort",           "reset",                    \
+   "reset-tmp", "fail-begin",   "fail-beginchild", "ousted"}
 enum {
   /* txn_end operation number, for logging */
   TXN_END_COMMITTED,
@@ -3884,6 +3898,7 @@ enum {
   TXN_END_RESET_TMP,
   TXN_END_FAIL_BEGIN,
   TXN_END_FAIL_BEGINCHILD,
+  TXN_END_OUSTED,
 
   TXN_END_OPMASK = 0x0F /* mask for txn_end() operation number */,
   TXN_END_UPDATE = 0x10 /* update env state (DBIs) */,
@@ -3891,7 +3906,7 @@ enum {
   TXN_END_EOTDONE = 0x40 /* txn's cursors already closed */,
   TXN_END_SLOT = 0x80 /* release any reader slot if NOSTICKYTHREADS */
 };
-MDBX_INTERNAL int txn_end(MDBX_txn *txn, const unsigned mode);
+MDBX_INTERNAL int txn_end(MDBX_txn *txn, unsigned mode);
 MDBX_INTERNAL int txn_write(MDBX_txn *txn, iov_ctx_t *ctx);
 
 /* env.c */
@@ -4303,6 +4318,8 @@ typedef LSTATUS(WINAPI *MDBX_RegGetValueA)(HKEY hkey, LPCSTR lpSubKey,
                                            LPDWORD pdwType, PVOID pvData,
                                            LPDWORD pcbData);
 
+typedef long(WINAPI *MDBX_CoCreateGuid)(bin128_t *guid);
+
 NTSYSAPI ULONG RtlRandomEx(PULONG Seed);
 
 typedef BOOL(WINAPI *MDBX_SetFileIoOverlappedRange)(HANDLE FileHandle,
@@ -4325,6 +4342,7 @@ struct libmdbx_imports {
   MDBX_GetTickCount64 GetTickCount64;
   MDBX_RegGetValueA RegGetValueA;
   MDBX_SetFileIoOverlappedRange SetFileIoOverlappedRange;
+  MDBX_CoCreateGuid CoCreateGuid;
 };
 
 MDBX_INTERNAL void windows_import(void);
@@ -4432,7 +4450,8 @@ enum txn_flags {
   txn_ro_begin_flags = MDBX_TXN_RDONLY | MDBX_TXN_RDONLY_PREPARE,
   txn_rw_begin_flags = MDBX_TXN_NOMETASYNC | MDBX_TXN_NOSYNC | MDBX_TXN_TRY,
   txn_shrink_allowed = UINT32_C(0x40000000),
-  txn_gc_drained = 0x20 /* GC was depleted up to oldest reader */,
+  txn_parked = MDBX_TXN_PARKED,
+  txn_gc_drained = 0x40 /* GC was depleted up to oldest reader */,
   txn_state_flags = MDBX_TXN_FINISHED | MDBX_TXN_ERROR | MDBX_TXN_DIRTY |
                     MDBX_TXN_SPILLS | MDBX_TXN_HAS_CHILD | MDBX_TXN_INVALID |
                     txn_gc_drained
@@ -5573,8 +5592,12 @@ static inline int check_txn(const MDBX_txn *txn, int bad_bits) {
   if (unlikely(txn->signature != txn_signature))
     return MDBX_EBADSIGN;
 
-  if (unlikely(txn->flags & bad_bits))
-    return MDBX_BAD_TXN;
+  if (bad_bits && unlikely(txn->flags & bad_bits)) {
+    if ((bad_bits & MDBX_TXN_PARKED) == 0)
+      return MDBX_BAD_TXN;
+    else
+      return txn_check_badbits_parked(txn, bad_bits);
+  }
 
   tASSERT(txn, (txn->flags & MDBX_TXN_FINISHED) ||
                    (txn->flags & MDBX_NOSTICKYTHREADS) ==
@@ -5594,7 +5617,7 @@ static inline int check_txn(const MDBX_txn *txn, int bad_bits) {
 }
 
 static inline int check_txn_rw(const MDBX_txn *txn, int bad_bits) {
-  int err = check_txn(txn, bad_bits);
+  int err = check_txn(txn, bad_bits & ~MDBX_TXN_PARKED);
   if (unlikely(err))
     return err;
 
@@ -6360,7 +6383,12 @@ static inline meta_ptr_t meta_tail(const MDBX_env *env,
   return r;
 }
 
+static inline bool meta_is_used(const troika_t *troika, unsigned n) {
+  return n == troika->recent || n == troika->prefer_steady;
+}
+
 static inline bool meta_bootid_match(const meta_t *meta) {
+
   return memcmp(&meta->bootid, &globals.bootid, 16) == 0 &&
          (globals.bootid.x | globals.bootid.y) != 0;
 }
@@ -8636,12 +8664,7 @@ __cold int mdbx_env_openW(MDBX_env *env, const wchar_t *pathname,
         base + bitmap_bytes +
         env->max_dbi * (sizeof(txn->dbs[0]) + sizeof(txn->cursors[0]) +
                         sizeof(txn->dbi_seqs[0]) + sizeof(txn->dbi_state[0]));
-    rc = env_page_auxbuffer(env);
-    if (unlikely(rc != MDBX_SUCCESS))
-      goto bailout;
 
-    memset(env->page_auxbuf, -1, env->ps * (size_t)2);
-    memset(ptr_disp(env->page_auxbuf, env->ps * (size_t)2), 0, env->ps);
     txn = osal_calloc(1, size);
     if (unlikely(!txn)) {
       rc = MDBX_ENOMEM;
@@ -8833,6 +8856,7 @@ static int env_info_snap(const MDBX_env *env, const MDBX_txn *txn,
                          troika_t *const troika) {
   const size_t size_before_bootid = offsetof(MDBX_envinfo, mi_bootid);
   const size_t size_before_pgop_stat = offsetof(MDBX_envinfo, mi_pgop_stat);
+  const size_t size_before_dxbid = offsetof(MDBX_envinfo, mi_dxbid);
   if (unlikely(env->flags & ENV_FATAL_ERROR))
     return MDBX_PANIC;
 
@@ -8879,6 +8903,8 @@ static int env_info_snap(const MDBX_env *env, const MDBX_txn *txn,
     memcpy(&out->mi_bootid.meta[0], &meta0->bootid, 16);
     memcpy(&out->mi_bootid.meta[1], &meta1->bootid, 16);
     memcpy(&out->mi_bootid.meta[2], &meta2->bootid, 16);
+    if (likely(bytes > size_before_dxbid))
+      memcpy(&out->mi_dxbid, &meta0->dxbid, 16);
   }
 
   const volatile meta_t *txn_meta = head.ptr_v;
@@ -9001,8 +9027,9 @@ __cold int mdbx_env_info_ex(const MDBX_env *env, const MDBX_txn *txn,
 
   const size_t size_before_bootid = offsetof(MDBX_envinfo, mi_bootid);
   const size_t size_before_pgop_stat = offsetof(MDBX_envinfo, mi_pgop_stat);
+  const size_t size_before_dxbid = offsetof(MDBX_envinfo, mi_dxbid);
   if (unlikely(bytes != sizeof(MDBX_envinfo)) && bytes != size_before_bootid &&
-      bytes != size_before_pgop_stat)
+      bytes != size_before_pgop_stat && bytes != size_before_dxbid)
     return MDBX_EINVAL;
 
   if (txn) {
@@ -9044,8 +9071,9 @@ __cold int mdbx_preopen_snapinfoW(const wchar_t *pathname, MDBX_envinfo *out,
 
   const size_t size_before_bootid = offsetof(MDBX_envinfo, mi_bootid);
   const size_t size_before_pgop_stat = offsetof(MDBX_envinfo, mi_pgop_stat);
+  const size_t size_before_dxbid = offsetof(MDBX_envinfo, mi_dxbid);
   if (unlikely(bytes != sizeof(MDBX_envinfo)) && bytes != size_before_bootid &&
-      bytes != size_before_pgop_stat)
+      bytes != size_before_pgop_stat && bytes != size_before_dxbid)
     return MDBX_EINVAL;
 
   memset(out, 0, bytes);
@@ -9099,8 +9127,11 @@ __cold int mdbx_preopen_snapinfoW(const wchar_t *pathname, MDBX_envinfo *out,
   const unsigned n = 0;
   out->mi_recent_txnid = constmeta_txnid(&header);
   out->mi_meta_sign[n] = unaligned_peek_u64(4, &header.sign);
-  if (likely(bytes > size_before_bootid))
+  if (likely(bytes > size_before_bootid)) {
     memcpy(&out->mi_bootid.meta[n], &header.bootid, 16);
+    if (likely(bytes > size_before_dxbid))
+      memcpy(&out->mi_dxbid, &header.dxbid, 16);
+  }
 
 bailout:
   env_close(&env, false);
@@ -9448,8 +9479,7 @@ __cold int mdbx_env_set_geometry(MDBX_env *env, intptr_t size_lower,
             begin +
             atomic_load32(&env->lck_mmap.lck->rdt_length, mo_AcquireRelease);
         for (const reader_slot_t *reader = begin; reader < end; ++reader) {
-          if (reader->pid.weak == env->pid && reader->tid.weak &&
-              reader->tid.weak != CurrentTid) {
+          if (reader->pid.weak == env->pid && reader->tid.weak != CurrentTid) {
             /* At least one thread may don't use SRWL */
             rc = MDBX_EPERM;
             break;
@@ -12071,13 +12101,23 @@ __cold static int env_chk(MDBX_chk_scope_t *const scope) {
     return chk_error_rc(scope, err, "env_info");
 
   MDBX_chk_line_t *line =
-      chk_puts(chk_line_begin(scope, MDBX_chk_info), "current boot-id ");
+      chk_puts(chk_line_begin(scope, MDBX_chk_info -
+                                         (1 << MDBX_chk_severity_prio_shift)),
+               "dxb-id ");
+  if (chk->envinfo.mi_dxbid.x | chk->envinfo.mi_dxbid.y)
+    line = chk_print(line, "%016" PRIx64 "-%016" PRIx64,
+                     chk->envinfo.mi_dxbid.x, chk->envinfo.mi_dxbid.y);
+  else
+    line = chk_puts(line, "is absent");
+  chk_line_end(line);
+
+  line = chk_puts(chk_line_begin(scope, MDBX_chk_info), "current boot-id ");
   if (chk->envinfo.mi_bootid.current.x | chk->envinfo.mi_bootid.current.y)
     line = chk_print(line, "%016" PRIx64 "-%016" PRIx64,
                      chk->envinfo.mi_bootid.current.x,
                      chk->envinfo.mi_bootid.current.y);
   else
-    line = chk_puts(line, "unavailable");
+    line = chk_puts(line, "is unavailable");
   chk_line_end(line);
 
   err = osal_filesize(env->lazy_fd, &env->dxb_mmap.filesize);
@@ -13097,26 +13137,24 @@ int coherency_check_written(const MDBX_env *env, const txnid_t txnid,
                             uint64_t *timestamp) {
   const bool report = !(timestamp && *timestamp);
   const txnid_t head_txnid = meta_txnid(meta);
-  if (unlikely(head_txnid < MIN_TXNID || head_txnid < txnid)) {
-    if (report) {
-      env->lck->pgops.incoherence.weak =
-          (env->lck->pgops.incoherence.weak >= INT32_MAX)
-              ? INT32_MAX
-              : env->lck->pgops.incoherence.weak + 1;
-      WARNING("catch %s txnid %" PRIaTXN " for meta_%" PRIaPGNO " %s",
-              (head_txnid < MIN_TXNID) ? "invalid" : "unexpected", head_txnid,
-              bytes2pgno(env, ptr_dist(meta, env->dxb_mmap.base)),
-              "(workaround for incoherent flaw of unified page/buffer cache)");
+  if (likely(head_txnid >= MIN_TXNID && head_txnid >= txnid)) {
+    if (likely(
+            coherency_check(env, head_txnid, &meta->trees.gc, meta, report))) {
+      eASSERT(env, meta->trees.gc.flags == MDBX_INTEGERKEY);
+      eASSERT(env, check_sdb_flags(meta->trees.main.flags));
+      return MDBX_SUCCESS;
     }
-    return coherency_timeout(timestamp, pgno, env);
+  } else if (report) {
+    env->lck->pgops.incoherence.weak =
+        (env->lck->pgops.incoherence.weak >= INT32_MAX)
+            ? INT32_MAX
+            : env->lck->pgops.incoherence.weak + 1;
+    WARNING("catch %s txnid %" PRIaTXN " for meta_%" PRIaPGNO " %s",
+            (head_txnid < MIN_TXNID) ? "invalid" : "unexpected", head_txnid,
+            bytes2pgno(env, ptr_dist(meta, env->dxb_mmap.base)),
+            "(workaround for incoherent flaw of unified page/buffer cache)");
   }
-  if (unlikely(
-          !coherency_check(env, head_txnid, &meta->trees.gc, meta, report)))
-    return coherency_timeout(timestamp, pgno, env);
-
-  eASSERT(env, meta->trees.gc.flags == MDBX_INTEGERKEY);
-  eASSERT(env, check_sdb_flags(meta->trees.main.flags));
-  return MDBX_SUCCESS;
+  return coherency_timeout(timestamp, pgno, env);
 }
 
 bool coherency_check_meta(const MDBX_env *env, const volatile meta_t *meta,
@@ -17989,7 +18027,7 @@ int mdbx_dbi_close(MDBX_env *env, MDBX_dbi dbi) {
 
 int mdbx_dbi_flags_ex(const MDBX_txn *txn, MDBX_dbi dbi, unsigned *flags,
                       unsigned *state) {
-  int rc = check_txn(txn, MDBX_TXN_BLOCKED - MDBX_TXN_ERROR);
+  int rc = check_txn(txn, MDBX_TXN_BLOCKED - MDBX_TXN_ERROR - MDBX_TXN_PARKED);
   if (unlikely(rc != MDBX_SUCCESS))
     return rc;
 
@@ -19318,6 +19356,12 @@ __cold int dxb_setup(MDBX_env *env, const int lck_rc,
 
   if (env->ps != header.pagesize)
     env_setup_pagesize(env, header.pagesize);
+  if ((env->flags & MDBX_RDONLY) == 0) {
+    err = env_page_auxbuffer(env);
+    if (unlikely(err != MDBX_SUCCESS))
+      return err;
+  }
+
   const size_t used_bytes = pgno2bytes(env, header.geometry.first_unallocated);
   const size_t used_aligned2os_bytes =
       ceil_powerof2(used_bytes, globals.sys_pagesize);
@@ -19722,14 +19766,16 @@ __cold int dxb_setup(MDBX_env *env, const int lck_rc,
 
     if ((env->flags & MDBX_RDONLY) == 0 && env->stuck_meta < 0 &&
         (globals.runtime_flags & MDBX_DBG_DONT_UPGRADE) == 0) {
-      for (int n = 0; n < NUM_METAS; ++n) {
+      for (unsigned n = 0; n < NUM_METAS; ++n) {
         meta_t *const meta = METAPAGE(env, n);
         if (unlikely(unaligned_peek_u64(4, &meta->magic_and_version) !=
-                     MDBX_DATA_MAGIC)) {
-          const txnid_t txnid = constmeta_txnid(meta);
+                     MDBX_DATA_MAGIC) ||
+            (meta->dxbid.x | meta->dxbid.y) == 0) {
+          const txnid_t txnid =
+              meta_is_used(&troika, n) ? constmeta_txnid(meta) : 0;
           NOTICE("%s %s"
                  "meta[%u], txnid %" PRIaTXN,
-                 "updating db-format signature for",
+                 "updating db-format/guid signature for",
                  meta_is_steady(meta) ? "stead-" : "weak-", n, txnid);
           err = meta_override(env, n, txnid, meta);
           if (unlikely(err != MDBX_SUCCESS) &&
@@ -20746,10 +20792,16 @@ bool env_txn0_owned(const MDBX_env *env) {
 }
 
 int env_page_auxbuffer(MDBX_env *env) {
-  return env->page_auxbuf ? MDBX_SUCCESS
-                          : osal_memalign_alloc(globals.sys_pagesize,
-                                                env->ps * (size_t)NUM_METAS,
-                                                &env->page_auxbuf);
+  const int err =
+      env->page_auxbuf
+          ? MDBX_SUCCESS
+          : osal_memalign_alloc(globals.sys_pagesize,
+                                env->ps * (size_t)NUM_METAS, &env->page_auxbuf);
+  if (likely(err == MDBX_SUCCESS)) {
+    memset(env->page_auxbuf, -1, env->ps * (size_t)2);
+    memset(ptr_disp(env->page_auxbuf, env->ps * (size_t)2), 0, env->ps);
+  }
+  return err;
 }
 
 __cold unsigned env_setup_pagesize(MDBX_env *env, const size_t pagesize) {
@@ -20758,11 +20810,8 @@ __cold unsigned env_setup_pagesize(MDBX_env *env, const size_t pagesize) {
   ENSURE(env, is_powerof2(pagesize));
   ENSURE(env, pagesize >= MDBX_MIN_PAGESIZE);
   ENSURE(env, pagesize <= MDBX_MAX_PAGESIZE);
+  ENSURE(env, !env->page_auxbuf && env->ps != pagesize);
   env->ps = (unsigned)pagesize;
-  if (env->page_auxbuf) {
-    osal_memalign_free(env->page_auxbuf);
-    env->page_auxbuf = nullptr;
-  }
 
   STATIC_ASSERT(MAX_GC1OVPAGE(MDBX_MIN_PAGESIZE) > 4);
   STATIC_ASSERT(MAX_GC1OVPAGE(MDBX_MAX_PAGESIZE) < PAGELIST_LIMIT);
@@ -25615,7 +25664,8 @@ osal_suspend_threads_before_remap(MDBX_env *env, mdbx_handle_array_t **array) {
         atomic_load32(&env->lck_mmap.lck->rdt_length, mo_AcquireRelease);
     const uintptr_t WriteTxnOwner = env->basal_txn ? env->basal_txn->owner : 0;
     for (const reader_slot_t *reader = begin; reader < end; ++reader) {
-      if (reader->pid.weak != env->pid || !reader->tid.weak) {
+      if (reader->pid.weak != env->pid || !reader->tid.weak ||
+          reader->tid.weak >= MDBX_TID_TXN_OUSTED) {
       skip_lck:
         continue;
       }
@@ -26815,8 +26865,8 @@ int meta_sync(const MDBX_env *env, const meta_ptr_t head) {
   return rc;
 }
 
-__cold static page_t *meta_model(const MDBX_env *env, page_t *model,
-                                 size_t num) {
+__cold static page_t *meta_model(const MDBX_env *env, page_t *model, size_t num,
+                                 const bin128_t *guid) {
   ENSURE(env, is_powerof2(env->ps));
   ENSURE(env, env->ps >= MDBX_MIN_PAGESIZE);
   ENSURE(env, env->ps <= MDBX_MAX_PAGESIZE);
@@ -26856,6 +26906,7 @@ __cold static page_t *meta_model(const MDBX_env *env, page_t *model,
   model_meta->trees.gc.flags = MDBX_INTEGERKEY;
   model_meta->trees.gc.root = P_INVALID;
   model_meta->trees.main.root = P_INVALID;
+  memcpy(&model_meta->dxbid, guid, sizeof(model_meta->dxbid));
   meta_set_txnid(env, model_meta, MIN_TXNID + num);
   unaligned_poke_u64(4, model_meta->sign, meta_sign_calculate(model_meta));
   eASSERT(env, coherency_check_meta(env, model_meta, true));
@@ -26863,21 +26914,20 @@ __cold static page_t *meta_model(const MDBX_env *env, page_t *model,
 }
 
 __cold meta_t *meta_init_triplet(const MDBX_env *env, void *buffer) {
+  const bin128_t guid = osal_guid(env);
   page_t *page0 = (page_t *)buffer;
-  page_t *page1 = meta_model(env, page0, 0);
-  page_t *page2 = meta_model(env, page1, 1);
-  meta_model(env, page2, 2);
+  page_t *page1 = meta_model(env, page0, 0, &guid);
+  page_t *page2 = meta_model(env, page1, 1, &guid);
+  meta_model(env, page2, 2, &guid);
   return page_meta(page2);
 }
 
 __cold int __must_check_result meta_override(MDBX_env *env, size_t target,
                                              txnid_t txnid,
                                              const meta_t *shape) {
-  int rc = env_page_auxbuffer(env);
-  if (unlikely(rc != MDBX_SUCCESS))
-    return rc;
   page_t *const page = env->page_auxbuf;
-  meta_model(env, page, target);
+  meta_model(env, page, target,
+             &((target == 0 && shape) ? shape : METAPAGE(env, 0))->dxbid);
   meta_t *const model = page_meta(page);
   meta_set_txnid(env, model, txnid);
   if (txnid)
@@ -26913,8 +26963,14 @@ __cold int __must_check_result meta_override(MDBX_env *env, size_t target,
       }
     }
   }
+
+  if (target == 0 && (model->dxbid.x | model->dxbid.y) == 0) {
+    const bin128_t guid = osal_guid(env);
+    memcpy(&model->dxbid, &guid, sizeof(model->dxbid));
+  }
+
   meta_sign_as_steady(model);
-  rc = meta_validate(env, model, page, (pgno_t)target, nullptr);
+  int rc = meta_validate(env, model, page, (pgno_t)target, nullptr);
   if (unlikely(MDBX_IS_ERROR(rc)))
     return MDBX_PROBLEM;
 
@@ -27488,7 +27544,7 @@ const char *mdbx_strerror_ANSI2OEM(int errnum) {
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
 
-bsr_t mvcc_bind_slot(MDBX_env *env, const uintptr_t tid) {
+bsr_t mvcc_bind_slot(MDBX_env *env) {
   eASSERT(env, env->lck_mmap.lck);
   eASSERT(env, env->lck->magic_and_version == MDBX_LOCK_MAGIC);
   eASSERT(env, env->lck->os_and_format == MDBX_LOCK_FORMAT);
@@ -27546,7 +27602,8 @@ bsr_t mvcc_bind_slot(MDBX_env *env, const uintptr_t tid) {
   safe64_reset(&result.rslot->txnid, true);
   if (slot == nreaders)
     env->lck->rdt_length.weak = (uint32_t)++nreaders;
-  result.rslot->tid.weak = (env->flags & MDBX_NOSTICKYTHREADS) ? 0 : tid;
+  result.rslot->tid.weak =
+      (env->flags & MDBX_NOSTICKYTHREADS) ? 0 : osal_thread_self();
   atomic_store32(&result.rslot->pid, env->pid, mo_AcquireRelease);
   lck_rdt_unlock(env);
 
@@ -27803,6 +27860,92 @@ __cold MDBX_INTERNAL int mvcc_cleanup_dead(MDBX_env *env, int rdt_locked,
   return rc;
 }
 
+int txn_park(MDBX_txn *txn, bool autounpark) {
+  reader_slot_t *const rslot = txn->to.reader;
+  tASSERT(txn, (txn->flags & (MDBX_TXN_FINISHED | MDBX_TXN_RDONLY |
+                              MDBX_TXN_PARKED)) == MDBX_TXN_RDONLY);
+  tASSERT(txn, txn->to.reader->tid.weak < MDBX_TID_TXN_OUSTED);
+  if (unlikely((txn->flags & (MDBX_TXN_FINISHED | MDBX_TXN_RDONLY |
+                              MDBX_TXN_PARKED)) != MDBX_TXN_RDONLY))
+    return MDBX_BAD_TXN;
+
+  const uint32_t pid = atomic_load32(&rslot->pid, mo_Relaxed);
+  const uint64_t tid = atomic_load64(&rslot->tid, mo_Relaxed);
+  const uint64_t txnid = atomic_load64(&rslot->txnid, mo_Relaxed);
+  if (unlikely(pid != txn->env->pid)) {
+    ERROR("unexpected pid %u%s%u", pid, " != must ", txn->env->pid);
+    return MDBX_PROBLEM;
+  }
+  if (unlikely(tid != txn->owner || txnid != txn->txnid)) {
+    ERROR("unexpected thread-id 0x%" PRIx64 "%s0x%0zx"
+          " and/or txn-id %" PRIaTXN "%s%" PRIaTXN,
+          tid, " != must ", txn->owner, txnid, " != must ", txn->txnid);
+    return MDBX_BAD_RSLOT;
+  }
+
+  atomic_store64(&rslot->tid, MDBX_TID_TXN_PARKED, mo_AcquireRelease);
+  atomic_store32(&txn->env->lck->rdt_refresh_flag, true, mo_Relaxed);
+  txn->flags +=
+      autounpark ? MDBX_TXN_PARKED | MDBX_TXN_AUTOUNPARK : MDBX_TXN_PARKED;
+  return MDBX_SUCCESS;
+}
+
+int txn_unpark(MDBX_txn *txn) {
+  if (unlikely((txn->flags & (MDBX_TXN_FINISHED | MDBX_TXN_HAS_CHILD |
+                              MDBX_TXN_RDONLY | MDBX_TXN_PARKED)) !=
+               (MDBX_TXN_RDONLY | MDBX_TXN_PARKED)))
+    return MDBX_BAD_TXN;
+
+  for (reader_slot_t *const rslot = txn->to.reader; rslot; atomic_yield()) {
+    const uint32_t pid = atomic_load32(&rslot->pid, mo_Relaxed);
+    uint64_t tid = safe64_read(&rslot->tid);
+    uint64_t txnid = safe64_read(&rslot->txnid);
+    if (unlikely(pid != txn->env->pid)) {
+      ERROR("unexpected pid %u%s%u", pid, " != expected ", txn->env->pid);
+      return MDBX_PROBLEM;
+    }
+    if (unlikely(tid == MDBX_TID_TXN_OUSTED ||
+                 txnid >= SAFE64_INVALID_THRESHOLD))
+      break;
+    if (unlikely(tid != MDBX_TID_TXN_PARKED || txnid != txn->txnid)) {
+      ERROR("unexpected thread-id 0x%" PRIx64 "%s0x%" PRIx64
+            " and/or txn-id %" PRIaTXN "%s%" PRIaTXN,
+            tid, " != must ", MDBX_TID_TXN_OUSTED, txnid, " != must ",
+            txn->txnid);
+      break;
+    }
+    if (unlikely((txn->flags & MDBX_TXN_ERROR)))
+      break;
+
+#if MDBX_64BIT_CAS
+    if (unlikely(!atomic_cas64(&rslot->tid, MDBX_TID_TXN_PARKED, txn->owner)))
+      continue;
+#else
+    atomic_store32(&rslot->tid.high, (uint32_t)((uint64_t)txn->owner >> 32),
+                   mo_Relaxed);
+    if (unlikely(!atomic_cas32(&rslot->tid.low, (uint32_t)MDBX_TID_TXN_PARKED,
+                               (uint32_t)txn->owner))) {
+      atomic_store32(&rslot->tid.high, (uint32_t)(MDBX_TID_TXN_PARKED >> 32),
+                     mo_AcquireRelease);
+      continue;
+    }
+#endif
+    txnid = safe64_read(&rslot->txnid);
+    tid = safe64_read(&rslot->tid);
+    if (unlikely(txnid != txn->txnid || tid != txn->owner)) {
+      ERROR("unexpected thread-id 0x%" PRIx64 "%s0x%zx"
+            " and/or txn-id %" PRIaTXN "%s%" PRIaTXN,
+            tid, " != must ", txn->owner, txnid, " != must ", txn->txnid);
+      break;
+    }
+    txn->flags &= ~(MDBX_TXN_PARKED | MDBX_TXN_AUTOUNPARK);
+    return MDBX_SUCCESS;
+  }
+
+  int err = txn_end(txn, TXN_END_OUSTED | TXN_END_RESET | TXN_END_UPDATE);
+  return err ? err : MDBX_OUSTED;
+}
+
 __cold txnid_t mvcc_kick_laggards(MDBX_env *env, const txnid_t straggler) {
   DEBUG("DB size maxed out by reading #%" PRIaTXN, straggler);
   osal_memory_fence(mo_AcquireRelease, false);
@@ -27826,29 +27969,61 @@ __cold txnid_t mvcc_kick_laggards(MDBX_env *env, const txnid_t straggler) {
     if (MDBX_IS_ERROR(mvcc_cleanup_dead(env, false, nullptr)))
       break;
 
-    if (!callback)
-      break;
-
     reader_slot_t *stucked = nullptr;
     uint64_t hold_retired = 0;
     for (size_t i = 0; i < lck->rdt_length.weak; ++i) {
-      const uint64_t snap_retired =
-          atomic_load64(&lck->rdt[i].snapshot_pages_retired, mo_Relaxed);
-      const txnid_t rtxn = safe64_read(&lck->rdt[i].txnid);
+      uint32_t pid;
+      reader_slot_t *const rslot = &lck->rdt[i];
+      txnid_t rtxn = safe64_read(&rslot->txnid);
+    retry:
       if (rtxn == straggler &&
-          atomic_load32(&lck->rdt[i].pid, mo_AcquireRelease)) {
-        hold_retired = snap_retired;
-        stucked = &lck->rdt[i];
+          (pid = atomic_load32(&rslot->pid, mo_AcquireRelease)) != 0) {
+        const uint64_t tid = safe64_read(&rslot->tid);
+        if (tid == MDBX_TID_TXN_PARKED) {
+          /* Читающая транзакция была помечена владельцем как "припаркованная",
+           * т.е. подлежащая асинхронному прерыванию, либо восстановлению
+           * по активности читателя.
+           *
+           * Если первый CAS(slot->tid) будет успешным, то
+           * safe64_reset_compare() безопасно очистит txnid, либо откажется
+           * из-за того что читатель сбросил и/или перезапустил транзакцию.
+           * При этом читатеть может не заметить вытестения, если приступит
+           * к завершению транзакции. Все эти исходы нас устраивют.
+           *
+           * Если первый CAS(slot->tid) будет НЕ успешным, то значит читатеть
+           * восстановил транзакцию, либо завершил её, либо даже освободил слот.
+           */
+          bool ousted =
+#if MDBX_64BIT_CAS
+              atomic_cas64(&rslot->tid, MDBX_TID_TXN_PARKED,
+                           MDBX_TID_TXN_OUSTED);
+#else
+              atomic_cas32(&rslot->tid.low, (uint32_t)MDBX_TID_TXN_PARKED,
+                           (uint32_t)MDBX_TID_TXN_OUSTED);
+#endif
+          if (likely(ousted)) {
+            ousted = safe64_reset_compare(&rslot->txnid, rtxn);
+            NOTICE("ousted-%s parked read-txn %" PRIaTXN
+                   ", pid %u, tid 0x%" PRIx64,
+                   ousted ? "complete" : "half", rtxn, pid, tid);
+            eASSERT(env, ousted || safe64_read(&rslot->txnid) > straggler);
+            continue;
+          }
+          rtxn = safe64_read(&rslot->txnid);
+          goto retry;
+        }
+        hold_retired =
+            atomic_load64(&lck->rdt[i].snapshot_pages_retired, mo_Relaxed);
+        stucked = rslot;
       }
     }
 
-    if (!stucked)
+    if (!callback || !stucked)
       break;
 
     uint32_t pid = atomic_load32(&stucked->pid, mo_AcquireRelease);
-    uint64_t tid = atomic_load64(&stucked->tid, mo_AcquireRelease);
-    if (safe64_read(&stucked->txnid) != straggler || !pid ||
-        stucked->snapshot_pages_retired.weak != hold_retired)
+    uint64_t tid = safe64_read(&stucked->tid);
+    if (safe64_read(&stucked->txnid) != straggler || !pid)
       continue;
 
     const meta_ptr_t head = meta_recent(env, &env->txn->tw.troika);
@@ -27922,10 +28097,7 @@ __cold int mdbx_thread_register(const MDBX_env *env) {
     return MDBX_RESULT_TRUE /* already registered */;
   }
 
-  const uintptr_t tid = osal_thread_self();
-  if (env->txn && unlikely(env->basal_txn->owner == tid))
-    return MDBX_TXN_OVERLAPPING;
-  return mvcc_bind_slot((MDBX_env *)env, tid).err;
+  return mvcc_bind_slot((MDBX_env *)env).err;
 }
 
 __cold int mdbx_thread_unregister(const MDBX_env *env) {
@@ -31286,15 +31458,38 @@ __cold static void bootid_collect(bin128_t *p, const void *s, size_t n) {
   bootid_shake(p);
 
   /* minor non-linear tomfoolery */
-  const unsigned z = p->x % 61;
+  const unsigned z = p->x % 61 + 1;
   p->y = p->y << z | p->y >> (64 - z);
   bootid_shake(p);
   bootid_shake(p);
-  const unsigned q = p->x % 59;
+  const unsigned q = p->x % 59 + 1;
   p->y = p->y << q | p->y >> (64 - q);
   bootid_shake(p);
   bootid_shake(p);
   bootid_shake(p);
+}
+
+static size_t hamming_weight(size_t v) {
+  const size_t m1 = (size_t)UINT64_C(0x5555555555555555);
+  const size_t m2 = (size_t)UINT64_C(0x3333333333333333);
+  const size_t m4 = (size_t)UINT64_C(0x0f0f0f0f0f0f0f0f);
+  const size_t h01 = (size_t)UINT64_C(0x0101010101010101);
+  v -= (v >> 1) & m1;
+  v = (v & m2) + ((v >> 2) & m2);
+  v = (v + (v >> 4)) & m4;
+  return (v * h01) >> (sizeof(v) * 8 - 8);
+}
+
+static inline size_t hw64(uint64_t v) {
+  size_t r = hamming_weight((size_t)v);
+  if (sizeof(v) > sizeof(r))
+    r += hamming_weight((size_t)(v >> sizeof(r) * 4 >> sizeof(r) * 4));
+  return r;
+}
+
+static bool check_uuid(bin128_t uuid) {
+  size_t hw = hw64(uuid.x) + hw64(uuid.y) + hw64(uuid.x ^ uuid.y);
+  return (hw >> 6) == 1;
 }
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -31398,7 +31593,7 @@ bootid_parse_uuid(bin128_t *s, const void *p, const size_t n) {
       s->y += aligned.y;
     } else
       bootid_collect(s, p, n);
-    return true;
+    return check_uuid(*s);
   }
 
   if (n)
@@ -31406,28 +31601,33 @@ bootid_parse_uuid(bin128_t *s, const void *p, const size_t n) {
   return false;
 }
 
+#if defined(__linux__) || defined(__gnu_linux__)
+__cold static bool proc_read_uuid(const char *path, bin128_t *target) {
+  const int fd = open(path, O_RDONLY | O_NOFOLLOW);
+  if (fd != -1) {
+    struct statfs fs;
+    char buf[42];
+    const ssize_t len =
+        (fstatfs(fd, &fs) == 0 && fs.f_type == /* procfs */ 0x9FA0)
+            ? read(fd, buf, sizeof(buf))
+            : -1;
+    const int err = close(fd);
+    assert(err == 0);
+    (void)err;
+    if (len > 0)
+      return bootid_parse_uuid(target, buf, len);
+  }
+  return false;
+}
+#endif /* Linux */
+
 __cold static bin128_t osal_bootid(void) {
-  bin128_t bin = {{0, 0}};
+  bin128_t uuid = {{0, 0}};
   bool got_machineid = false, got_boottime = false, got_bootseq = false;
 
 #if defined(__linux__) || defined(__gnu_linux__)
-  {
-    const int fd =
-        open("/proc/sys/kernel/random/boot_id", O_RDONLY | O_NOFOLLOW);
-    if (fd != -1) {
-      struct statfs fs;
-      char buf[42];
-      const ssize_t len =
-          (fstatfs(fd, &fs) == 0 && fs.f_type == /* procfs */ 0x9FA0)
-              ? read(fd, buf, sizeof(buf))
-              : -1;
-      const int err = close(fd);
-      assert(err == 0);
-      (void)err;
-      if (len > 0 && bootid_parse_uuid(&bin, buf, len))
-        return bin;
-    }
-  }
+  if (proc_read_uuid("/proc/sys/kernel/random/boot_id", &uuid))
+    return uuid;
 #endif /* Linux */
 
 #if defined(__APPLE__) || defined(__MACH__)
@@ -31435,16 +31635,15 @@ __cold static bin128_t osal_bootid(void) {
     char buf[42];
     size_t len = sizeof(buf);
     if (!sysctlbyname("kern.bootsessionuuid", buf, &len, nullptr, 0) &&
-        bootid_parse_uuid(&bin, buf, len))
-      return bin;
+        bootid_parse_uuid(&uuid, buf, len))
+      return uuid;
 
 #if defined(__MAC_OS_X_VERSION_MIN_REQUIRED) &&                                \
     __MAC_OS_X_VERSION_MIN_REQUIRED > 1050
-    uuid_t uuid;
+    uuid_t hostuuid;
     struct timespec wait = {0, 1000000000u / 42};
-    if (!gethostuuid(uuid, &wait) &&
-        bootid_parse_uuid(&bin, uuid, sizeof(uuid)))
-      got_machineid = true;
+    if (!gethostuuid(hostuuid, &wait))
+      got_machineid = bootid_parse_uuid(&uuid, hostuuid, sizeof(hostuuid));
 #endif /* > 10.5 */
 
     struct timeval boottime;
@@ -31482,7 +31681,7 @@ __cold static bin128_t osal_bootid(void) {
                          "MachineGuid", &buf.MachineGuid,
                          &len) == ERROR_SUCCESS &&
         len < sizeof(buf))
-      got_machineid = bootid_parse_uuid(&bin, &buf.MachineGuid, len);
+      got_machineid = bootid_parse_uuid(&uuid, &buf.MachineGuid, len);
 
     if (!got_machineid) {
       /* again, Windows is madness */
@@ -31500,7 +31699,7 @@ __cold static bin128_t osal_bootid(void) {
                            "DigitalProductId", &buf.DigitalProductId,
                            &len) == ERROR_SUCCESS &&
           len > 42 && len < sizeof(buf)) {
-        bootid_collect(&bin, &buf.DigitalProductId, len);
+        bootid_collect(&uuid, &buf.DigitalProductId, len);
         got_machineid = true;
       }
       len = sizeof(buf);
@@ -31508,7 +31707,7 @@ __cold static bin128_t osal_bootid(void) {
                            "DigitalProductId", &buf.DigitalProductId,
                            &len) == ERROR_SUCCESS &&
           len > 42 && len < sizeof(buf)) {
-        bootid_collect(&bin, &buf.DigitalProductId, len);
+        bootid_collect(&uuid, &buf.DigitalProductId, len);
         got_machineid = true;
       }
       len = sizeof(buf);
@@ -31516,7 +31715,7 @@ __cold static bin128_t osal_bootid(void) {
                            "DigitalProductId", &buf.DigitalProductId,
                            &len) == ERROR_SUCCESS &&
           len > 42 && len < sizeof(buf)) {
-        bootid_collect(&bin, &buf.DigitalProductId, len);
+        bootid_collect(&uuid, &buf.DigitalProductId, len);
         got_machineid = true;
       }
     }
@@ -31528,7 +31727,7 @@ __cold static bin128_t osal_bootid(void) {
     if (mdbx_RegGetValue(HKEY_LOCAL_MACHINE, HKLM_PrefetcherParams, "BootId",
                          &buf.BootId, &len) == ERROR_SUCCESS &&
         len > 1 && len < sizeof(buf)) {
-      bootid_collect(&bin, &buf.BootId, len);
+      bootid_collect(&uuid, &buf.BootId, len);
       got_bootseq = true;
     }
 
@@ -31536,7 +31735,7 @@ __cold static bin128_t osal_bootid(void) {
     if (mdbx_RegGetValue(HKEY_LOCAL_MACHINE, HKLM_PrefetcherParams, "BaseTime",
                          &buf.BaseTime, &len) == ERROR_SUCCESS &&
         len >= sizeof(buf.BaseTime) && buf.BaseTime) {
-      bootid_collect(&bin, &buf.BaseTime, len);
+      bootid_collect(&uuid, &buf.BaseTime, len);
       got_boottime = true;
     }
 
@@ -31552,7 +31751,7 @@ __cold static bin128_t osal_bootid(void) {
           buf.SysTimeOfDayInfoHacked.BootTime.QuadPart -
           buf.SysTimeOfDayInfoHacked.BootTimeBias;
       if (UnbiasedBootTime) {
-        bootid_collect(&bin, &UnbiasedBootTime, sizeof(UnbiasedBootTime));
+        bootid_collect(&uuid, &UnbiasedBootTime, sizeof(UnbiasedBootTime));
         got_boottime = true;
       }
     }
@@ -31560,7 +31759,7 @@ __cold static bin128_t osal_bootid(void) {
     if (!got_boottime) {
       uint64_t boottime = windows_bootime();
       if (boottime) {
-        bootid_collect(&bin, &boottime, sizeof(boottime));
+        bootid_collect(&uuid, &boottime, sizeof(boottime));
         got_boottime = true;
       }
     }
@@ -31578,7 +31777,7 @@ __cold static bin128_t osal_bootid(void) {
 #endif
                 mib,
             ARRAY_LENGTH(mib), &buf, &len, nullptr, 0) == 0)
-      got_machineid = bootid_parse_uuid(&bin, buf, len);
+      got_machineid = bootid_parse_uuid(&uuid, buf, len);
   }
 #endif /* CTL_HW && HW_UUID */
 
@@ -31593,7 +31792,7 @@ __cold static bin128_t osal_bootid(void) {
 #endif
                 mib,
             ARRAY_LENGTH(mib), &buf, &len, nullptr, 0) == 0)
-      got_machineid = bootid_parse_uuid(&bin, buf, len);
+      got_machineid = bootid_parse_uuid(&uuid, buf, len);
   }
 #endif /* CTL_KERN && KERN_HOSTUUID */
 
@@ -31602,7 +31801,7 @@ __cold static bin128_t osal_bootid(void) {
     char buf[42];
     size_t len = sizeof(buf);
     if (sysctlbyname("machdep.dmi.system-uuid", buf, &len, nullptr, 0) == 0)
-      got_machineid = bootid_parse_uuid(&bin, buf, len);
+      got_machineid = bootid_parse_uuid(&uuid, buf, len);
   }
 #endif /* __NetBSD__ */
 
@@ -31610,7 +31809,7 @@ __cold static bin128_t osal_bootid(void) {
   if (!got_machineid) {
     const int hostid = gethostid();
     if (hostid > 0) {
-      bootid_collect(&bin, &hostid, sizeof(hostid));
+      bootid_collect(&uuid, &hostid, sizeof(hostid));
       got_machineid = true;
     }
   }
@@ -31618,8 +31817,8 @@ __cold static bin128_t osal_bootid(void) {
 
   if (!got_machineid) {
   lack:
-    bin.x = bin.y = 0;
-    return bin;
+    uuid.x = uuid.y = 0;
+    return uuid;
   }
 
   /*--------------------------------------------------------------------------*/
@@ -31636,7 +31835,7 @@ __cold static bin128_t osal_bootid(void) {
                 mib,
             ARRAY_LENGTH(mib), &boottime, &len, nullptr, 0) == 0 &&
         len == sizeof(boottime) && boottime.tv_sec) {
-      bootid_collect(&bin, &boottime, len);
+      bootid_collect(&uuid, &boottime, len);
       got_boottime = true;
     }
   }
@@ -31653,11 +31852,11 @@ __cold static bin128_t osal_bootid(void) {
           switch (kn->data_type) {
           case KSTAT_DATA_INT32:
           case KSTAT_DATA_UINT32:
-            bootid_collect(&bin, &kn->value, sizeof(int32_t));
+            bootid_collect(&uuid, &kn->value, sizeof(int32_t));
             got_boottime = true;
           case KSTAT_DATA_INT64:
           case KSTAT_DATA_UINT64:
-            bootid_collect(&bin, &kn->value, sizeof(int64_t));
+            bootid_collect(&uuid, &kn->value, sizeof(int64_t));
             got_boottime = true;
           }
         }
@@ -31673,12 +31872,12 @@ __cold static bin128_t osal_bootid(void) {
     const struct utmpx id = {.ut_type = BOOT_TIME};
     const struct utmpx *entry = getutxid(&id);
     if (entry) {
-      bootid_collect(&bin, entry, sizeof(*entry));
+      bootid_collect(&uuid, entry, sizeof(*entry));
       got_boottime = true;
       while (unlikely((entry = getutxid(&id)) != nullptr)) {
         /* have multiple reboot records, assuming we can distinguish next
          * bootsession even if RTC is wrong or absent */
-        bootid_collect(&bin, entry, sizeof(*entry));
+        bootid_collect(&uuid, entry, sizeof(*entry));
         got_bootseq = true;
       }
     }
@@ -31707,7 +31906,7 @@ __cold static bin128_t osal_bootid(void) {
       goto lack;
   }
 
-  return bin;
+  return uuid;
 }
 
 __cold int mdbx_get_sysraminfo(intptr_t *page_size, intptr_t *total_pages,
@@ -31828,6 +32027,100 @@ __cold int mdbx_get_sysraminfo(intptr_t *page_size, intptr_t *total_pages,
 
   return MDBX_SUCCESS;
 }
+
+/*----------------------------------------------------------------------------*/
+
+#ifdef __FreeBSD__
+#include <sys/uuid.h>
+#endif /* FreeBSD */
+
+#if __GLIBC_PREREQ(2, 25) || defined(__FreeBSD__) || defined(__NetBSD__) ||    \
+    defined(__BSD__) || defined(__bsdi__) || defined(__DragonFly__) ||         \
+    defined(__APPLE__) || __has_include(<sys/random.h>)
+#include <sys/random.h>
+#endif /* sys/random.h */
+
+MDBX_INTERNAL bin128_t osal_guid(const MDBX_env *env) {
+  struct {
+    uint64_t begin, end, cputime;
+    uintptr_t thread, pid;
+    const void *x, *y;
+    bin128_t (*z)(const MDBX_env *env);
+  } salt;
+
+  salt.begin = osal_monotime();
+  bin128_t uuid = {{0, 0}};
+
+#if defined(__linux__) || defined(__gnu_linux__)
+  if (proc_read_uuid("/proc/sys/kernel/random/uuid", &uuid) && check_uuid(uuid))
+    return uuid;
+#endif /* Linux */
+
+#ifdef __FreeBSD__
+  STATIC_ASSERT(sizeof(uuid) == sizeof(struct uuid));
+  if (uuidgen((struct uuid *)&uuid, 1) == 0 && check_uuid(uuid))
+    return uuid;
+#endif /* FreeBSD */
+
+#if defined(_WIN32) || defined(_WIN64)
+  if (imports.CoCreateGuid && imports.CoCreateGuid(&uuid) == 0 &&
+      check_uuid(uuid))
+    return uuid;
+
+  HCRYPTPROV hCryptProv = 0;
+  if (CryptAcquireContextW(&hCryptProv, nullptr, nullptr, PROV_RSA_FULL,
+                           CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
+    const BOOL ok =
+        CryptGenRandom(hCryptProv, sizeof(uuid), (unsigned char *)&uuid);
+    CryptReleaseContext(hCryptProv, 0);
+    if (ok && check_uuid(uuid))
+      return uuid;
+  }
+#elif defined(__IPHONE_OS_VERSION_MIN_REQUIRED) && defined(__IPHONE_8_0)
+#if __IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_8_0
+  if (CCRandomGenerateBytes(&uuid, sizeof(uuid)) == kCCSuccess &&
+      check_uuid(uuid))
+    return uuid;
+#endif /* iOS >= 8.x */
+#else
+  const int fd = open("/dev/urandom", O_RDONLY);
+  if (fd != -1) {
+    const ssize_t len = read(fd, &uuid, sizeof(uuid));
+    const int err = close(fd);
+    assert(err == 0);
+    (void)err;
+    if (len == sizeof(uuid) && check_uuid(uuid))
+      return uuid;
+  }
+#if (__GLIBC_PREREQ(2, 25) || defined(__FreeBSD__) || defined(__NetBSD__) ||   \
+     defined(__BSD__) || defined(__bsdi__) || defined(__DragonFly__)) &&       \
+    !defined(__APPLE__) && !defined(__ANDROID_API__)
+  if (getrandom(&uuid, sizeof(uuid), 0) == sizeof(uuid) && check_uuid(uuid))
+    return uuid;
+#elif defined(__OpenBSD__) || (defined(__sun) && defined(__SVR4)) ||           \
+    (defined(__MAC_OS_X_VERSION_MIN_REQUIRED) &&                               \
+     __MAC_OS_X_VERSION_MIN_REQUIRED >= 101200)
+  if (getentropy(&uuid, sizeof(uuid)) == 0 && check_uuid(uuid))
+    return uuid;
+#endif /* getrandom() / getentropy() */
+#endif /* !Windows */
+
+  uuid = globals.bootid;
+  bootid_collect(&uuid, env, sizeof(*env));
+  salt.thread = osal_thread_self();
+  salt.pid = osal_getpid();
+  salt.x = &salt;
+  salt.y = env;
+  salt.z = &osal_guid;
+  do {
+    salt.cputime = osal_cputime(nullptr);
+    salt.end = osal_monotime();
+    bootid_collect(&uuid, &salt, sizeof(salt));
+  } while (!check_uuid(uuid));
+  return uuid;
+}
+
+/*--------------------------------------------------------------------------*/
 
 void osal_ctor(void) {
 #if MDBX_HAVE_PWRITEV && defined(_SC_IOV_MAX)
@@ -37869,8 +38162,8 @@ static void take_gcprof(MDBX_txn *txn, MDBX_commit_latency *latency) {
 }
 
 int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
-  STATIC_ASSERT(MDBX_TXN_FINISHED ==
-                MDBX_TXN_BLOCKED - MDBX_TXN_HAS_CHILD - MDBX_TXN_ERROR);
+  STATIC_ASSERT(MDBX_TXN_FINISHED == MDBX_TXN_BLOCKED - MDBX_TXN_HAS_CHILD -
+                                         MDBX_TXN_ERROR - MDBX_TXN_PARKED);
   const uint64_t ts_0 = latency ? osal_monotime() : 0;
   uint64_t ts_1 = 0, ts_2 = 0, ts_3 = 0, ts_4 = 0, ts_5 = 0, gc_cputime = 0;
 
@@ -38255,6 +38548,7 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
   meta.trees.gc = txn->dbs[FREE_DBI];
   meta.trees.main = txn->dbs[MAIN_DBI];
   meta.canary = txn->canary;
+  memcpy(&meta.dxbid, &head.ptr_c->dxbid, sizeof(meta.dxbid));
 
   txnid_t commit_txnid = txn->txnid;
 #if MDBX_ENABLE_BIGFOOT
@@ -38334,7 +38628,6 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
   }
 #endif /* MDBX_ENV_CHECKPID */
 
-  const uintptr_t tid = osal_thread_self();
   flags |= env->flags & (MDBX_NOSTICKYTHREADS | MDBX_WRITEMAP);
   if (flags & MDBX_TXN_RDONLY) {
     eASSERT(env, (flags & ~(txn_ro_begin_flags | MDBX_WRITEMAP |
@@ -38364,7 +38657,7 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
                    r->txnid.weak < SAFE64_INVALID_THRESHOLD))
         return MDBX_BAD_RSLOT;
     } else if (env->lck_mmap.lck) {
-      bsr_t brs = mvcc_bind_slot(env, tid);
+      bsr_t brs = mvcc_bind_slot(env);
       if (unlikely(brs.err != MDBX_SUCCESS))
         return brs.err;
       r = brs.rslot;
@@ -38383,7 +38676,11 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
       txn->flags = MDBX_TXN_RDONLY | MDBX_TXN_FINISHED;
       return MDBX_SUCCESS;
     }
-    txn->owner = tid;
+    txn->owner = (uintptr_t)r->tid.weak;
+    if ((env->flags & MDBX_NOSTICKYTHREADS) == 0 && env->txn &&
+        unlikely(env->basal_txn->owner == txn->owner) &&
+        (globals.runtime_flags & MDBX_DBG_LEGACY_OVERLAP) == 0)
+      return MDBX_TXN_OVERLAPPING;
 
     /* Seek & fetch the last meta */
     uint64_t timestamp = 0;
@@ -38395,7 +38692,7 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
               ? /* regular */ meta_recent(env, &troika)
               : /* recovery mode */ meta_ptr(env, env->stuck_meta);
       if (likely(r)) {
-        safe64_reset(&r->txnid, false);
+        safe64_reset(&r->txnid, true);
         atomic_store32(&r->snapshot_pages_used,
                        head.ptr_v->geometry.first_unallocated, mo_Relaxed);
         atomic_store64(
@@ -38429,7 +38726,7 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
           rc = MDBX_PROBLEM;
           txn->txnid = INVALID_TXNID;
           if (likely(r))
-            safe64_reset(&r->txnid, false);
+            safe64_reset(&r->txnid, true);
           goto bailout;
         }
         timestamp = 0;
@@ -38444,7 +38741,7 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
       if (unlikely(rc != MDBX_RESULT_TRUE)) {
         txn->txnid = INVALID_TXNID;
         if (likely(r))
-          safe64_reset(&r->txnid, false);
+          safe64_reset(&r->txnid, true);
         goto bailout;
       }
     }
@@ -38452,7 +38749,7 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
     if (unlikely(txn->txnid < MIN_TXNID || txn->txnid > MAX_TXNID)) {
       ERROR("%s", "environment corrupted by died writer, must shutdown!");
       if (likely(r))
-        safe64_reset(&r->txnid, false);
+        safe64_reset(&r->txnid, true);
       txn->txnid = INVALID_TXNID;
       rc = MDBX_CORRUPTED;
       goto bailout;
@@ -38465,6 +38762,7 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
   } else {
     eASSERT(env, (flags & ~(txn_rw_begin_flags | MDBX_TXN_SPILLS |
                             MDBX_WRITEMAP | MDBX_NOSTICKYTHREADS)) == 0);
+    const uintptr_t tid = osal_thread_self();
     if (unlikely(txn->owner == tid ||
                  /* not recovery mode */ env->stuck_meta >= 0))
       return MDBX_BUSY;
@@ -38580,7 +38878,8 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
 
   if (unlikely(env->dbs_flags[MAIN_DBI] !=
                (DB_VALID | txn->dbs[MAIN_DBI].flags))) {
-    const bool need_txn_lock = env->basal_txn && env->basal_txn->owner != tid;
+    const bool need_txn_lock =
+        env->basal_txn && env->basal_txn->owner != osal_thread_self();
     bool should_unlock = false;
     if (need_txn_lock) {
       rc = lck_txn_lock(env, true);
@@ -38745,7 +39044,7 @@ bailout:
   return rc;
 }
 
-int txn_end(MDBX_txn *txn, const unsigned mode) {
+int txn_end(MDBX_txn *txn, unsigned mode) {
   MDBX_env *env = txn->env;
   static const char *const names[] = TXN_END_NAMES;
 
@@ -38764,14 +39063,27 @@ int txn_end(MDBX_txn *txn, const unsigned mode) {
       reader_slot_t *slot = txn->to.reader;
       eASSERT(env, slot->pid.weak == env->pid);
       if (likely(!(txn->flags & MDBX_TXN_FINISHED))) {
-        ENSURE(env, txn->txnid >=
-                        /* paranoia is appropriate here */ env->lck
-                            ->cached_oldest.weak);
-        eASSERT(env, txn->txnid == slot->txnid.weak &&
-                         slot->txnid.weak >= env->lck->cached_oldest.weak);
+        if (likely((txn->flags & MDBX_TXN_PARKED) == 0)) {
+          ENSURE(env, txn->txnid >=
+                          /* paranoia is appropriate here */ env->lck
+                              ->cached_oldest.weak);
+          eASSERT(env, txn->txnid == slot->txnid.weak &&
+                           slot->txnid.weak >= env->lck->cached_oldest.weak);
+        } else {
+          if ((mode & TXN_END_OUSTED) == 0 &&
+              safe64_read(&slot->tid) == MDBX_TID_TXN_OUSTED)
+            mode += TXN_END_OUSTED;
+          do {
+            safe64_reset(&slot->txnid, false);
+            atomic_store64(&slot->tid, txn->owner, mo_AcquireRelease);
+            atomic_yield();
+          } while (
+              unlikely(safe64_read(&slot->txnid) < SAFE64_INVALID_THRESHOLD ||
+                       safe64_read(&slot->tid) != txn->owner));
+        }
         dxb_sanitize_tail(env, nullptr);
         atomic_store32(&slot->snapshot_pages_used, 0, mo_Relaxed);
-        safe64_reset(&slot->txnid, false);
+        safe64_reset(&slot->txnid, true);
         atomic_store32(&env->lck->rdt_refresh_flag, true, mo_Relaxed);
       } else {
         eASSERT(env, slot->pid.weak == env->pid);
@@ -38788,7 +39100,9 @@ int txn_end(MDBX_txn *txn, const unsigned mode) {
       imports.srwl_ReleaseShared(&env->remap_guard);
 #endif
     txn->n_dbi = 0; /* prevent further DBI activity */
-    txn->flags = MDBX_TXN_RDONLY | MDBX_TXN_FINISHED;
+    txn->flags = (mode & TXN_END_OUSTED)
+                     ? MDBX_TXN_RDONLY | MDBX_TXN_FINISHED | MDBX_TXN_OUSTED
+                     : MDBX_TXN_RDONLY | MDBX_TXN_FINISHED;
     txn->owner = 0;
   } else if (!(txn->flags & MDBX_TXN_FINISHED)) {
     ENSURE(env,
@@ -38898,16 +39212,17 @@ int mdbx_txn_renew(MDBX_txn *txn) {
   if (unlikely((txn->flags & MDBX_TXN_RDONLY) == 0))
     return MDBX_EINVAL;
 
-  int rc;
   if (unlikely(txn->owner != 0 || !(txn->flags & MDBX_TXN_FINISHED))) {
-    rc = mdbx_txn_reset(txn);
+    int rc = mdbx_txn_reset(txn);
     if (unlikely(rc != MDBX_SUCCESS))
       return rc;
   }
 
-  rc = txn_renew(txn, MDBX_TXN_RDONLY);
+  int rc = txn_renew(txn, MDBX_TXN_RDONLY);
   if (rc == MDBX_SUCCESS) {
-    tASSERT(txn, txn->owner == osal_thread_self());
+    tASSERT(txn, txn->owner == (txn->flags & MDBX_NOSTICKYTHREADS)
+                     ? 0
+                     : osal_thread_self());
     DEBUG("renew txn %" PRIaTXN "%c %p on env %p, root page %" PRIaPGNO
           "/%" PRIaPGNO,
           txn->txnid, (txn->flags & MDBX_TXN_RDONLY) ? 'r' : 'w', (void *)txn,
@@ -38965,12 +39280,7 @@ int mdbx_txn_begin_ex(MDBX_env *env, MDBX_txn *parent, MDBX_txn_flags_t flags,
 
     flags |= parent->flags & (txn_rw_begin_flags | MDBX_TXN_SPILLS |
                               MDBX_NOSTICKYTHREADS | MDBX_WRITEMAP);
-  } else if (flags & MDBX_TXN_RDONLY) {
-    if ((env->flags & MDBX_NOSTICKYTHREADS) == 0 && env->txn &&
-        unlikely(env->basal_txn->owner == osal_thread_self()) &&
-        (globals.runtime_flags & MDBX_DBG_LEGACY_OVERLAP) == 0)
-      return MDBX_TXN_OVERLAPPING;
-  } else {
+  } else if ((flags & MDBX_TXN_RDONLY) == 0) {
     /* Reuse preallocated write txn. However, do not touch it until
      * txn_renew() succeeds, since it currently may be active. */
     txn = env->basal_txn;
@@ -39204,8 +39514,10 @@ int mdbx_txn_info(const MDBX_txn *txn, MDBX_txn_info *info, bool scan_rlt) {
 
     info->txn_reader_lag = head.txnid - info->txn_id;
     info->txn_space_dirty = info->txn_space_retired = 0;
-    uint64_t reader_snapshot_pages_retired;
+    uint64_t reader_snapshot_pages_retired = 0;
     if (txn->to.reader &&
+        ((txn->flags & MDBX_TXN_PARKED) == 0 ||
+         safe64_read(&txn->to.reader->tid) != MDBX_TID_TXN_OUSTED) &&
         head_retired >
             (reader_snapshot_pages_retired = atomic_load64(
                  &txn->to.reader->snapshot_pages_retired, mo_Relaxed))) {
@@ -39223,19 +39535,21 @@ int mdbx_txn_info(const MDBX_txn *txn, MDBX_txn_info *info, bool scan_rlt) {
         retry:
           if (atomic_load32(&lck->rdt[i].pid, mo_AcquireRelease)) {
             jitter4testing(true);
+            const uint64_t snap_tid = safe64_read(&lck->rdt[i].tid);
             const txnid_t snap_txnid = safe64_read(&lck->rdt[i].txnid);
             const uint64_t snap_retired = atomic_load64(
                 &lck->rdt[i].snapshot_pages_retired, mo_AcquireRelease);
             if (unlikely(snap_retired !=
                          atomic_load64(&lck->rdt[i].snapshot_pages_retired,
                                        mo_Relaxed)) ||
-                snap_txnid != safe64_read(&lck->rdt[i].txnid))
+                snap_txnid != safe64_read(&lck->rdt[i].txnid) ||
+                snap_tid != safe64_read(&lck->rdt[i].tid))
               goto retry;
             if (snap_txnid <= txn->txnid) {
               retired_next_reader = 0;
               break;
             }
-            if (snap_txnid < next_reader) {
+            if (snap_txnid < next_reader && snap_tid >= MDBX_TID_TXN_OUSTED) {
               next_reader = snap_txnid;
               retired_next_reader = pgno2bytes(
                   env, (pgno_t)(snap_retired -
@@ -39300,7 +39614,7 @@ uint64_t mdbx_txn_id(const MDBX_txn *txn) {
   return txn->txnid;
 }
 
-int mdbx_txn_flags(const MDBX_txn *txn) {
+MDBX_txn_flags_t mdbx_txn_flags(const MDBX_txn *txn) {
   STATIC_ASSERT(
       (MDBX_TXN_INVALID &
        (MDBX_TXN_FINISHED | MDBX_TXN_ERROR | MDBX_TXN_DIRTY | MDBX_TXN_SPILLS |
@@ -39309,7 +39623,12 @@ int mdbx_txn_flags(const MDBX_txn *txn) {
   if (unlikely(!txn || txn->signature != txn_signature))
     return MDBX_TXN_INVALID;
   assert(0 == (int)(txn->flags & MDBX_TXN_INVALID));
-  return txn->flags;
+
+  MDBX_txn_flags_t flags = txn->flags;
+  if (F_ISSET(flags, MDBX_TXN_PARKED | MDBX_TXN_RDONLY) && txn->to.reader &&
+      safe64_read(&txn->to.reader->tid) == MDBX_TID_TXN_OUSTED)
+    flags |= MDBX_TXN_OUSTED;
+  return flags;
 }
 
 int mdbx_txn_reset(MDBX_txn *txn) {
@@ -39360,6 +39679,58 @@ int mdbx_txn_abort(MDBX_txn *txn) {
   }
 
   return txn_abort(txn);
+}
+
+int mdbx_txn_park(MDBX_txn *txn, bool autounpark) {
+  STATIC_ASSERT(MDBX_TXN_BLOCKED > MDBX_TXN_ERROR);
+  int rc = check_txn(txn, MDBX_TXN_BLOCKED - MDBX_TXN_ERROR);
+  if (unlikely(rc != MDBX_SUCCESS))
+    return rc;
+  if (unlikely((txn->flags & MDBX_TXN_RDONLY) == 0))
+    return MDBX_TXN_INVALID;
+
+  if (unlikely((txn->flags & MDBX_TXN_ERROR))) {
+    rc = txn_end(txn, TXN_END_RESET | TXN_END_UPDATE);
+    return rc ? rc : MDBX_OUSTED;
+  }
+
+  return txn_park(txn, autounpark);
+}
+
+int mdbx_txn_unpark(MDBX_txn *txn, bool restart_if_ousted) {
+  STATIC_ASSERT(MDBX_TXN_BLOCKED > MDBX_TXN_PARKED + MDBX_TXN_ERROR);
+  int rc = check_txn(txn, MDBX_TXN_BLOCKED - MDBX_TXN_PARKED - MDBX_TXN_ERROR);
+  if (unlikely(rc != MDBX_SUCCESS))
+    return rc;
+  if (unlikely(!F_ISSET(txn->flags, MDBX_TXN_RDONLY | MDBX_TXN_PARKED)))
+    return MDBX_SUCCESS;
+
+  rc = txn_unpark(txn);
+  if (likely(rc != MDBX_OUSTED) || !restart_if_ousted)
+    return rc;
+
+  tASSERT(txn, txn->flags & MDBX_TXN_FINISHED);
+  rc = txn_renew(txn, MDBX_TXN_RDONLY);
+  return (rc == MDBX_SUCCESS) ? MDBX_RESULT_TRUE : rc;
+}
+
+int txn_check_badbits_parked(const MDBX_txn *txn, int bad_bits) {
+  tASSERT(txn, (bad_bits & MDBX_TXN_PARKED) && (txn->flags & bad_bits));
+  /* Здесь осознано заложено отличие в поведении припаркованных транзакций:
+   *  - некоторые функции (например mdbx_env_info_ex()), допускают
+   *    использование поломанных транзакций (с флагом MDBX_TXN_ERROR), но
+   *    не могут работать с припаркованными транзакциями (требуют распарковки).
+   *  - но при распарковке поломанные транзакции завершаются.
+   *  - получается что транзакцию можно припарковать, потом поломать вызвав
+   *    mdbx_txn_break(), но далее любое её использование приведет к завершению
+   *    при распарковке. */
+  if ((txn->flags & (bad_bits | MDBX_TXN_AUTOUNPARK)) !=
+      (MDBX_TXN_PARKED | MDBX_TXN_AUTOUNPARK))
+    return MDBX_BAD_TXN;
+
+  tASSERT(txn, bad_bits == MDBX_TXN_BLOCKED ||
+                   bad_bits == MDBX_TXN_BLOCKED - MDBX_TXN_ERROR);
+  return mdbx_txn_unpark((MDBX_txn *)txn, false);
 }
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
@@ -39856,6 +40227,11 @@ void windows_import(void) {
   if (hAdvapi32dll) {
     MDBX_IMPORT(hAdvapi32dll, RegGetValueA);
   }
+
+  const HINSTANCE hOle32dll = GetModuleHandleA("ole32.dll");
+  if (hOle32dll) {
+    MDBX_IMPORT(hOle32dll, CoCreateGuid);
+  }
 }
 
 #undef MDBX_IMPORT
@@ -39892,9 +40268,9 @@ __dll_export
         0,
         13,
         0,
-        70,
-        {"2024-07-05T20:33:43+03:00", "cc833af0abd059cbcc23e32b7788554995d5c6ea", "3798d47a719a19b111896c22468abf139e333cee",
-         "v0.13.0-70-g3798d47a"},
+        76,
+        {"2024-07-12T11:43:12+03:00", "3bd50abdfc8d371f58405b04bffa3155cf40536a", "32df0ad1ebcb7d36ec744c94d8fa134873e7f011",
+         "v0.13.0-76-g32df0ad1"},
         sourcery};
 
 __dll_export
