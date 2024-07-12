@@ -3,7 +3,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 84c5b5a6ebb00909e8a4d9736c054aac2e2abf8eca1b0620485c462bbed23474_v0_13_0_64_g7abeac76
+#define MDBX_BUILD_SOURCERY 9bf76fce8e3f74f34d482d7b2e9a6cc1bcabd797a6a4b4491ce5f6cd0ef29120_v0_13_0_70_g3798d47a
 
 
 #define LIBMDBX_INTERNALS
@@ -5102,6 +5102,9 @@ MDBX_INTERNAL int dbi_open(MDBX_txn *txn, const MDBX_val *const name,
 
 MDBX_INTERNAL int dbi_bind(MDBX_txn *txn, const size_t dbi, unsigned user_flags,
                            MDBX_cmp_func *keycmp, MDBX_cmp_func *datacmp);
+
+MDBX_INTERNAL const tree_t *dbi_dig(const MDBX_txn *txn, const size_t dbi,
+                                    tree_t *fallback);
 
 
 
@@ -10355,28 +10358,24 @@ int mdbx_replace(MDBX_txn *txn, MDBX_dbi dbi, const MDBX_val *key,
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
 
-__cold static tree_t *audit_db_dig(const MDBX_txn *txn, const size_t dbi,
-                                   tree_t *fallback) {
-  const MDBX_txn *dig = txn;
-  do {
-    tASSERT(txn, txn->n_dbi == dig->n_dbi);
-    const uint8_t state = dbi_state(dig, dbi);
-    if (state & DBI_LINDO)
-      switch (state & (DBI_VALID | DBI_STALE | DBI_OLDEN)) {
-      case DBI_VALID:
-      case DBI_OLDEN:
-        return dig->dbs + dbi;
-      case 0:
-        return nullptr;
-      case DBI_VALID | DBI_STALE:
-      case DBI_OLDEN | DBI_STALE:
-        break;
-      default:
-        tASSERT(txn, !!"unexpected dig->dbi_state[dbi]");
-      }
-    dig = dig->parent;
-  } while (dig);
-  return fallback;
+struct audit_ctx {
+  size_t used;
+  uint8_t *const done_bitmap;
+};
+
+static int audit_dbi(void *ctx, const MDBX_txn *txn, const MDBX_val *name,
+                     MDBX_db_flags_t flags, const struct MDBX_stat *stat,
+                     MDBX_dbi dbi) {
+  struct audit_ctx *audit_ctx = ctx;
+  (void)name;
+  (void)txn;
+  (void)flags;
+  audit_ctx->used += (size_t)stat->ms_branch_pages +
+                     (size_t)stat->ms_leaf_pages +
+                     (size_t)stat->ms_overflow_pages;
+  if (dbi)
+    audit_ctx->done_bitmap[dbi / CHAR_BIT] |= 1 << dbi % CHAR_BIT;
+  return MDBX_SUCCESS;
 }
 
 static size_t audit_db_used(const tree_t *db) {
@@ -10423,8 +10422,6 @@ __cold static int audit_ex_locked(MDBX_txn *txn, size_t retired_stored,
   tASSERT(txn, rc == MDBX_NOTFOUND);
 
   const size_t done_bitmap_size = (txn->n_dbi + CHAR_BIT - 1) / CHAR_BIT;
-  uint8_t *const done_bitmap = alloca(done_bitmap_size);
-  memset(done_bitmap, 0, done_bitmap_size);
   if (txn->parent) {
     tASSERT(txn, txn->n_dbi == txn->parent->n_dbi &&
                      txn->n_dbi == txn->env->txn->n_dbi);
@@ -10434,51 +10431,20 @@ __cold static int audit_ex_locked(MDBX_txn *txn, size_t retired_stored,
 #endif /* MDBX_ENABLE_DBI_SPARSE */
   }
 
-  size_t used = NUM_METAS +
-                audit_db_used(audit_db_dig(txn, FREE_DBI, nullptr)) +
-                audit_db_used(audit_db_dig(txn, MAIN_DBI, nullptr));
-  rc = cursor_init(&cx.outer, txn, MAIN_DBI);
-  if (unlikely(rc != MDBX_SUCCESS))
-    return rc;
+  struct audit_ctx ctx = {0, alloca(done_bitmap_size)};
+  memset(ctx.done_bitmap, 0, done_bitmap_size);
+  ctx.used = NUM_METAS + audit_db_used(dbi_dig(txn, FREE_DBI, nullptr)) +
+             audit_db_used(dbi_dig(txn, MAIN_DBI, nullptr));
 
-  rc = tree_search(&cx.outer, nullptr, Z_FIRST);
-  while (rc == MDBX_SUCCESS) {
-    page_t *mp = cx.outer.pg[cx.outer.top];
-    for (size_t k = 0; k < page_numkeys(mp); k++) {
-      node_t *node = page_node(mp, k);
-      if (node_flags(node) != N_SUBDATA)
-        continue;
-      if (unlikely(node_ds(node) != sizeof(tree_t))) {
-        ERROR("%s/%d: %s %u", "MDBX_CORRUPTED", MDBX_CORRUPTED,
-              "invalid dupsort sub-tree node size", (unsigned)node_ds(node));
-        return MDBX_CORRUPTED;
-      }
-
-      tree_t reside;
-      const tree_t *db = memcpy(&reside, node_data(node), sizeof(reside));
-      const MDBX_val name = {node_key(node), node_ks(node)};
-      for (size_t dbi = CORE_DBS; dbi < env->n_dbi; ++dbi) {
-        if (dbi >= txn->n_dbi || !(env->dbs_flags[dbi] & DB_VALID))
-          continue;
-        if (env->kvs[MAIN_DBI].clc.k.cmp(&name, &env->kvs[dbi].name))
-          continue;
-
-        done_bitmap[dbi / CHAR_BIT] |= 1 << dbi % CHAR_BIT;
-        db = audit_db_dig(txn, dbi, &reside);
-        break;
-      }
-      used += audit_db_used(db);
-    }
-    rc = cursor_sibling_right(&cx.outer);
-  }
-  tASSERT(txn, rc == MDBX_NOTFOUND);
+  rc = mdbx_enumerate_subdb(txn, audit_dbi, &ctx);
+  tASSERT(txn, rc == MDBX_SUCCESS);
 
   for (size_t dbi = CORE_DBS; dbi < txn->n_dbi; ++dbi) {
-    if (done_bitmap[dbi / CHAR_BIT] & (1 << dbi % CHAR_BIT))
+    if (ctx.done_bitmap[dbi / CHAR_BIT] & (1 << dbi % CHAR_BIT))
       continue;
-    const tree_t *db = audit_db_dig(txn, dbi, nullptr);
+    const tree_t *db = dbi_dig(txn, dbi, nullptr);
     if (db)
-      used += audit_db_used(db);
+      ctx.used += audit_db_used(db);
     else if (dbi_state(txn, dbi))
       WARNING("audit %s@%" PRIaTXN
               ": unable account dbi %zd / \"%*s\", state 0x%02x",
@@ -10487,7 +10453,7 @@ __cold static int audit_ex_locked(MDBX_txn *txn, size_t retired_stored,
               (const char *)env->kvs[dbi].name.iov_base, dbi_state(txn, dbi));
   }
 
-  if (pending + gc + used == txn->geo.first_unallocated)
+  if (pending + gc + ctx.used == txn->geo.first_unallocated)
     return MDBX_SUCCESS;
 
   if ((txn->flags & MDBX_TXN_RDONLY) == 0)
@@ -10500,7 +10466,7 @@ __cold static int audit_ex_locked(MDBX_txn *txn, size_t retired_stored,
   ERROR("audit @%" PRIaTXN ": %zu(pending) + %zu"
         "(gc) + %zu(count) = %zu(total) <> %zu"
         "(allocated)",
-        txn->txnid, pending, gc, used, pending + gc + used,
+        txn->txnid, pending, gc, ctx.used, pending + gc + ctx.used,
         (size_t)txn->geo.first_unallocated);
   return MDBX_PROBLEM;
 }
@@ -18110,6 +18076,86 @@ __cold int mdbx_dbi_stat(const MDBX_txn *txn, MDBX_dbi dbi, MDBX_stat *dest,
   dest->ms_psize = txn->env->ps;
   stat_get(&txn->dbs[dbi], dest, bytes);
   return MDBX_SUCCESS;
+}
+
+__cold const tree_t *dbi_dig(const MDBX_txn *txn, const size_t dbi,
+                             tree_t *fallback) {
+  const MDBX_txn *dig = txn;
+  do {
+    tASSERT(txn, txn->n_dbi == dig->n_dbi);
+    const uint8_t state = dbi_state(dig, dbi);
+    if (state & DBI_LINDO)
+      switch (state & (DBI_VALID | DBI_STALE | DBI_OLDEN)) {
+      case DBI_VALID:
+      case DBI_OLDEN:
+        return dig->dbs + dbi;
+      case 0:
+        return nullptr;
+      case DBI_VALID | DBI_STALE:
+      case DBI_OLDEN | DBI_STALE:
+        break;
+      default:
+        tASSERT(txn, !!"unexpected dig->dbi_state[dbi]");
+      }
+    dig = dig->parent;
+  } while (dig);
+  return fallback;
+}
+
+__cold int mdbx_enumerate_subdb(const MDBX_txn *txn, MDBX_subdb_enum_func *func,
+                                void *ctx) {
+  if (unlikely(!func))
+    return MDBX_EINVAL;
+
+  int rc = check_txn(txn, MDBX_TXN_BLOCKED);
+  if (unlikely(rc != MDBX_SUCCESS))
+    return rc;
+
+  cursor_couple_t cx;
+  rc = cursor_init(&cx.outer, txn, MAIN_DBI);
+  if (unlikely(rc != MDBX_SUCCESS))
+    return rc;
+
+  cx.outer.next = txn->cursors[MAIN_DBI];
+  txn->cursors[MAIN_DBI] = &cx.outer;
+  for (rc = outer_first(&cx.outer, nullptr, nullptr); rc == MDBX_SUCCESS;
+       rc = outer_next(&cx.outer, nullptr, nullptr, MDBX_NEXT_NODUP)) {
+    node_t *node =
+        page_node(cx.outer.pg[cx.outer.top], cx.outer.ki[cx.outer.top]);
+    if (node_flags(node) != N_SUBDATA)
+      continue;
+    if (unlikely(node_ds(node) != sizeof(tree_t))) {
+      ERROR("%s/%d: %s %u", "MDBX_CORRUPTED", MDBX_CORRUPTED,
+            "invalid dupsort sub-tree node size", (unsigned)node_ds(node));
+      rc = MDBX_CORRUPTED;
+      break;
+    }
+
+    tree_t reside;
+    const tree_t *tree = memcpy(&reside, node_data(node), sizeof(reside));
+    const MDBX_val name = {node_key(node), node_ks(node)};
+    const MDBX_env *const env = txn->env;
+    MDBX_dbi dbi = 0;
+    for (size_t i = CORE_DBS; i < env->n_dbi; ++i) {
+      if (i >= txn->n_dbi || !(env->dbs_flags[i] & DB_VALID))
+        continue;
+      if (env->kvs[MAIN_DBI].clc.k.cmp(&name, &env->kvs[i].name))
+        continue;
+
+      tree = dbi_dig(txn, i, &reside);
+      dbi = (MDBX_dbi)i;
+      break;
+    }
+
+    MDBX_stat stat;
+    stat_get(tree, &stat, sizeof(stat));
+    rc = func(ctx, txn, &name, tree->flags, &stat, dbi);
+    if (rc != MDBX_SUCCESS)
+      break;
+  }
+  txn->cursors[MAIN_DBI] = cx.outer.next;
+
+  return (rc == MDBX_NOTFOUND) ? MDBX_SUCCESS : rc;
 }
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
@@ -26912,7 +26958,7 @@ __cold int __must_check_result meta_override(MDBX_env *env, size_t target,
     osal_flush_incoherent_mmap(env->dxb_mmap.base, pgno2bytes(env, NUM_METAS),
                                globals.sys_pagesize);
   }
-  eASSERT(env, (!env->txn && !env->basal_txn) ||
+  eASSERT(env, (!env->txn && (env->flags & ENV_ACTIVE) == 0) ||
                    (env->stuck_meta == (int)target &&
                     (env->flags & (MDBX_EXCLUSIVE | MDBX_RDONLY)) ==
                         MDBX_EXCLUSIVE));
@@ -39846,9 +39892,9 @@ __dll_export
         0,
         13,
         0,
-        64,
-        {"2024-06-26T09:44:42+03:00", "57d014f58b79279af6fbad3a3ffd19cdc5a174f2", "7abeac762f36276ad035546b7caa015838784f40",
-         "v0.13.0-64-g7abeac76"},
+        70,
+        {"2024-07-05T20:33:43+03:00", "cc833af0abd059cbcc23e32b7788554995d5c6ea", "3798d47a719a19b111896c22468abf139e333cee",
+         "v0.13.0-70-g3798d47a"},
         sourcery};
 
 __dll_export
