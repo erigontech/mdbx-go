@@ -1597,7 +1597,7 @@ func BenchmarkCursor_SetRange_OneKey(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _, err := c.Get(k, nil, SetRange)
+			_, _, err := c.Get(k, nil, Set)
 			if err != nil {
 				return err
 			}
@@ -1642,7 +1642,7 @@ func BenchmarkCursor_SetRange_Sequence(b *testing.B) {
 		}
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _, err = c.Get(keys[i], nil, SetRange)
+			_, _, err = c.Get(keys[i], nil, Set)
 			if err != nil {
 				return err
 			}
@@ -1688,7 +1688,7 @@ func BenchmarkCursor_SetRange_Random(b *testing.B) {
 		}
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _, err = c.Get(keys[i], nil, SetRange)
+			_, _, err = c.Get(keys[i], nil, Set)
 			if err != nil {
 				return err
 			}
