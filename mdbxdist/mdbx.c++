@@ -2,7 +2,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
 
-#define MDBX_BUILD_SOURCERY d79e72327b34c872db0c1e8bde5a171c679a0abe4bf48a8fafb5c6e131edfef6_v0_13_0_76_g32df0ad1
+#define MDBX_BUILD_SOURCERY 8a7ed0d2f8aeb7b9717769da24fc25220b34661de75b717be86738f994901302_v0_13_0_86_g22776ad5
 
 
 #define LIBMDBX_INTERNALS
@@ -1144,7 +1144,7 @@ typedef CRITICAL_SECTION osal_fastmutex_t;
 
 #if !defined(_MSC_VER) && !defined(__try)
 #define __try
-#define __except(COND) if (false)
+#define __except(COND) if (/* (void)(COND), */ false)
 #endif /* stub for MSVC's __try/__except */
 
 #if MDBX_WITHOUT_MSVC_CRT

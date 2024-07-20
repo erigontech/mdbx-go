@@ -3,7 +3,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY d79e72327b34c872db0c1e8bde5a171c679a0abe4bf48a8fafb5c6e131edfef6_v0_13_0_76_g32df0ad1
+#define MDBX_BUILD_SOURCERY 8a7ed0d2f8aeb7b9717769da24fc25220b34661de75b717be86738f994901302_v0_13_0_86_g22776ad5
 
 
 #define LIBMDBX_INTERNALS
@@ -1145,7 +1145,7 @@ typedef CRITICAL_SECTION osal_fastmutex_t;
 
 #if !defined(_MSC_VER) && !defined(__try)
 #define __try
-#define __except(COND) if (false)
+#define __except(COND) if (/* (void)(COND), */ false)
 #endif /* stub for MSVC's __try/__except */
 
 #if MDBX_WITHOUT_MSVC_CRT
@@ -18189,11 +18189,13 @@ __cold int mdbx_enumerate_subdb(const MDBX_txn *txn, MDBX_subdb_enum_func *func,
     stat_get(tree, &stat, sizeof(stat));
     rc = func(ctx, txn, &name, tree->flags, &stat, dbi);
     if (rc != MDBX_SUCCESS)
-      break;
+      goto bailout;
   }
-  txn->cursors[MAIN_DBI] = cx.outer.next;
+  rc = (rc == MDBX_NOTFOUND) ? MDBX_SUCCESS : rc;
 
-  return (rc == MDBX_NOTFOUND) ? MDBX_SUCCESS : rc;
+bailout:
+  txn->cursors[MAIN_DBI] = cx.outer.next;
+  return rc;
 }
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
@@ -29290,11 +29292,10 @@ MDBX_INTERNAL int osal_ioring_add(osal_ioring_t *ior, const size_t offset,
     item->sgv[0].Buffer = PtrToPtr64(data);
     for (size_t i = 1; i < segments; ++i) {
       data = ptr_disp(data, ior->pagesize);
-      item->sgv[slots_used].Buffer = PtrToPtr64(data);
+      item->sgv[i].Buffer = PtrToPtr64(data);
     }
-    item->sgv[slots_used].Buffer = 0;
+    item->sgv[slots_used = segments].Buffer = 0;
     assert((item->single.iov_len & ior_WriteFile_flag) == 0);
-    slots_used = segments;
   }
   ior->last_bytes = bytes;
   ior_last_sgvcnt(ior, item) = slots_used;
@@ -29358,6 +29359,17 @@ MDBX_INTERNAL void osal_ioring_walk(osal_ioring_t *ior, iov_ctx_t *ctx,
   }
 }
 
+#if defined(_WIN32) || defined(_WIN64)
+static pgno_t safe_get_pgno(const page_t* page) {
+  SIZE_T NumberOfBytesRead = 0;
+  pgno_t pgno = P_INVALID;
+  if (ReadProcessMemory(GetCurrentProcess(), &page->pgno, &pgno, sizeof(pgno), &NumberOfBytesRead)
+      && NumberOfBytesRead == sizeof(pgno))
+    return pgno;
+  return P_INVALID;
+}
+#endif
+
 MDBX_INTERNAL osal_ioring_write_result_t
 osal_ioring_write(osal_ioring_t *ior, mdbx_filehandle_t fd) {
   osal_ioring_write_result_t r = {MDBX_SUCCESS, 0};
@@ -29399,12 +29411,12 @@ osal_ioring_write(osal_ioring_t *ior, mdbx_filehandle_t fd) {
       } else {
         r.err = (int)GetLastError();
         if (unlikely(r.err != ERROR_IO_PENDING)) {
-          ERROR("%s: fd %p, item %p (%zu), pgno %u, bytes %zu, offset %" PRId64
-                ", err %d",
+          void *data = Ptr64ToPtr(item->sgv[0].Buffer);
+          ERROR("%s: fd %p, item %p (%zu), addr %p pgno %u, bytes %zu,"
+                " offset %" PRId64 ", err %d",
                 "WriteFileGather", fd, __Wpedantic_format_voidptr(item),
-                item - ior->pool, ((page_t *)item->single.iov_base)->pgno,
-                bytes, item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32),
-                r.err);
+                item - ior->pool, data, safe_get_pgno((page_t *)data), bytes,
+                item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32), r.err);
           goto bailout_rc;
         }
         assert(wait_for > ior->event_pool + ior->event_stack);
@@ -29421,22 +29433,23 @@ osal_ioring_write(osal_ioring_t *ior, mdbx_filehandle_t fd) {
         r.err = (int)GetLastError();
         switch (r.err) {
         default:
-          ERROR("%s: fd %p, item %p (%zu), pgno %u, bytes %zu, offset %" PRId64
-                ", err %d",
+          ERROR("%s: fd %p, item %p (%zu), addr %p pgno %u, bytes %zu,"
+                " offset %" PRId64 ", err %d",
                 "WriteFileEx", fd, __Wpedantic_format_voidptr(item),
-                item - ior->pool, ((page_t *)item->single.iov_base)->pgno,
-                bytes, item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32),
-                r.err);
+                item - ior->pool, item->single.iov_base,
+                safe_get_pgno((page_t *)item->single.iov_base), bytes,
+                item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32), r.err);
           goto bailout_rc;
         case ERROR_NOT_FOUND:
         case ERROR_USER_MAPPED_FILE:
         case ERROR_LOCK_VIOLATION:
-          WARNING(
-              "%s: fd %p, item %p (%zu), pgno %u, bytes %zu, offset %" PRId64
-              ", err %d",
-              "WriteFileEx", fd, __Wpedantic_format_voidptr(item),
-              item - ior->pool, ((page_t *)item->single.iov_base)->pgno, bytes,
-              item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32), r.err);
+          WARNING("%s: fd %p, item %p (%zu), addr %p pgno %u, bytes %zu,"
+                  " offset %" PRId64 ", err %d",
+                  "WriteFileEx", fd, __Wpedantic_format_voidptr(item),
+                  item - ior->pool, item->single.iov_base,
+                  safe_get_pgno((page_t *)item->single.iov_base), bytes,
+                  item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32),
+                  r.err);
           SleepEx(0, true);
           goto retry;
         case ERROR_INVALID_USER_BUFFER:
@@ -29454,10 +29467,11 @@ osal_ioring_write(osal_ioring_t *ior, mdbx_filehandle_t fd) {
       if (!WriteFile(fd, item->single.iov_base, (DWORD)bytes, &written,
                      &item->ov)) {
         r.err = (int)GetLastError();
-        ERROR("%s: fd %p, item %p (%zu), pgno %u, bytes %zu, offset %" PRId64
-              ", err %d",
+        ERROR("%s: fd %p, item %p (%zu), addr %p pgno %u, bytes %zu,"
+              " offset %" PRId64 ", err %d",
               "WriteFile", fd, __Wpedantic_format_voidptr(item),
-              item - ior->pool, ((page_t *)item->single.iov_base)->pgno, bytes,
+              item - ior->pool, item->single.iov_base,
+              safe_get_pgno((page_t *)item->single.iov_base), bytes,
               item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32), r.err);
         goto bailout_rc;
       } else if (unlikely(written != bytes)) {
@@ -29511,7 +29525,9 @@ osal_ioring_write(osal_ioring_t *ior, mdbx_filehandle_t fd) {
     assert(ior->async_waiting == ior->async_completed);
     for (ior_item_t *item = ior->pool; item <= ior->last;) {
       size_t i = 1, bytes = item->single.iov_len - ior_WriteFile_flag;
+      void *data = item->single.iov_base;
       if (bytes & ior_WriteFile_flag) {
+        data = Ptr64ToPtr(item->sgv[0].Buffer);
         bytes = ior->pagesize;
         /* Zap: Reading invalid data from 'item->sgv' */
         MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(6385);
@@ -29522,11 +29538,10 @@ osal_ioring_write(osal_ioring_t *ior, mdbx_filehandle_t fd) {
         if (!HasOverlappedIoCompleted(&item->ov)) {
           DWORD written = 0;
           if (unlikely(!GetOverlappedResult(fd, &item->ov, &written, true))) {
-            ERROR("%s: item %p (%zu), pgno %u, bytes %zu, offset %" PRId64
-                  ", err %d",
+            ERROR("%s: item %p (%zu), addr %p pgno %u, bytes %zu,"
+                  " offset %" PRId64 ", err %d",
                   "GetOverlappedResult", __Wpedantic_format_voidptr(item),
-                  item - ior->pool, ((page_t *)item->single.iov_base)->pgno,
-                  bytes,
+                  item - ior->pool, data, safe_get_pgno((page_t *)data), bytes,
                   item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32),
                   (int)GetLastError());
             goto bailout_geterr;
@@ -29544,10 +29559,10 @@ osal_ioring_write(osal_ioring_t *ior, mdbx_filehandle_t fd) {
         if ((r.err & 0x80000000) &&
             GetOverlappedResult(nullptr, &item->ov, &written, true))
           r.err = (int)GetLastError();
-        ERROR("%s: item %p (%zu), pgno %u, bytes %zu, offset %" PRId64
-              ", err %d",
+        ERROR("%s: item %p (%zu), addr %p pgno %u, bytes %zu,"
+              " offset %" PRId64 ", err %d",
               "Result", __Wpedantic_format_voidptr(item), item - ior->pool,
-              ((page_t *)item->single.iov_base)->pgno, bytes,
+              data, safe_get_pgno((page_t *)data), bytes,
               item->ov.Offset + ((uint64_t)item->ov.OffsetHigh << 32),
               (int)GetLastError());
         goto bailout_rc;
@@ -32039,6 +32054,10 @@ __cold int mdbx_get_sysraminfo(intptr_t *page_size, intptr_t *total_pages,
     defined(__APPLE__) || __has_include(<sys/random.h>)
 #include <sys/random.h>
 #endif /* sys/random.h */
+
+#if defined(_WIN32) || defined(_WIN64)
+#include <wincrypt.h>
+#endif /* Windows */
 
 MDBX_INTERNAL bin128_t osal_guid(const MDBX_env *env) {
   struct {
@@ -40268,9 +40287,9 @@ __dll_export
         0,
         13,
         0,
-        76,
-        {"2024-07-12T11:43:12+03:00", "3bd50abdfc8d371f58405b04bffa3155cf40536a", "32df0ad1ebcb7d36ec744c94d8fa134873e7f011",
-         "v0.13.0-76-g32df0ad1"},
+        86,
+        {"2024-07-19T21:26:39+03:00", "e20ca6a79c305ac06cad8a8ef3752cf58bccc9d1", "22776ad5bbc3a409bb0be8c28ffb8065a6bc6287",
+         "v0.13.0-86-g22776ad5"},
         sourcery};
 
 __dll_export
