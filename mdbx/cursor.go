@@ -198,7 +198,7 @@ func (c *Cursor) getVal(setkey, setval []byte, op uint) error {
 	if len(setval) > 0 {
 		v = (*C.char)(unsafe.Pointer(&setval[0]))
 	}
-	ret := C.mdbxgo_cursor_get2(
+	ret := C.mdbxgo_cursor_get(
 		c._c,
 		k, C.size_t(len(setkey)),
 		v, C.size_t(len(setval)),
