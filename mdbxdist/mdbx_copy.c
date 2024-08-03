@@ -18,7 +18,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
 
-#define MDBX_BUILD_SOURCERY 8a7ed0d2f8aeb7b9717769da24fc25220b34661de75b717be86738f994901302_v0_13_0_86_g22776ad5
+#define MDBX_BUILD_SOURCERY 8f23af99dc8a425935da3f9fbc044a565c83f49f124f885acceba17444721dde_v0_13_0_110_gdd0ee3f2
 
 
 #define LIBMDBX_INTERNALS
@@ -1291,20 +1291,20 @@ typedef struct osal_mmap {
 typedef struct ior_item {
 #if defined(_WIN32) || defined(_WIN64)
   OVERLAPPED ov;
-#define ior_svg_gap4terminator 1
+#define ior_sgv_gap4terminator 1
 #define ior_sgv_element FILE_SEGMENT_ELEMENT
 #else
   size_t offset;
 #if MDBX_HAVE_PWRITEV
   size_t sgvcnt;
-#define ior_svg_gap4terminator 0
+#define ior_sgv_gap4terminator 0
 #define ior_sgv_element struct iovec
 #endif /* MDBX_HAVE_PWRITEV */
 #endif /* !Windows */
   union {
     MDBX_val single;
 #if defined(ior_sgv_element)
-    ior_sgv_element sgv[1 + ior_svg_gap4terminator];
+    ior_sgv_element sgv[1 + ior_sgv_gap4terminator];
 #endif /* ior_sgv_element */
   };
 } ior_item_t;
@@ -3527,10 +3527,13 @@ static void signal_handler(int sig) {
 static void usage(const char *prog) {
   fprintf(
       stderr,
-      "usage: %s [-V] [-q] [-c] [-u|U] src_path [dest_path]\n"
+      "usage: %s [-V] [-q] [-c] [-d] [-p] [-u|U] src_path [dest_path]\n"
       "  -V\t\tprint version and exit\n"
       "  -q\t\tbe quiet\n"
       "  -c\t\tenable compactification (skip unused pages)\n"
+      "  -d\t\tenforce copy to be a dynamic size DB\n"
+      "  -p\t\tusing transaction parking/ousting during copying MVCC-snapshot\n"
+      "    \t\tto avoid stopping recycling and overflowing the DB\n"
       "  -u\t\twarmup database before copying\n"
       "  -U\t\twarmup and try lock database pages in memory before copying\n"
       "  src_path\tsource database\n"
@@ -3554,6 +3557,10 @@ int main(int argc, char *argv[]) {
       flags |= MDBX_NOSUBDIR;
     else if (argv[1][1] == 'c' && argv[1][2] == '\0')
       cpflags |= MDBX_CP_COMPACT;
+    else if (argv[1][1] == 'd' && argv[1][2] == '\0')
+      cpflags |= MDBX_CP_FORCE_DYNAMIC_SIZE;
+    else if (argv[1][1] == 'p' && argv[1][2] == '\0')
+      cpflags |= MDBX_CP_THROTTLE_MVCC;
     else if (argv[1][1] == 'q' && argv[1][2] == '\0')
       quiet = true;
     else if (argv[1][1] == 'u' && argv[1][2] == '\0')

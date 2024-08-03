@@ -18,7 +18,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
 
-#define MDBX_BUILD_SOURCERY 8a7ed0d2f8aeb7b9717769da24fc25220b34661de75b717be86738f994901302_v0_13_0_86_g22776ad5
+#define MDBX_BUILD_SOURCERY 8f23af99dc8a425935da3f9fbc044a565c83f49f124f885acceba17444721dde_v0_13_0_110_gdd0ee3f2
 
 
 #define LIBMDBX_INTERNALS
@@ -1291,20 +1291,20 @@ typedef struct osal_mmap {
 typedef struct ior_item {
 #if defined(_WIN32) || defined(_WIN64)
   OVERLAPPED ov;
-#define ior_svg_gap4terminator 1
+#define ior_sgv_gap4terminator 1
 #define ior_sgv_element FILE_SEGMENT_ELEMENT
 #else
   size_t offset;
 #if MDBX_HAVE_PWRITEV
   size_t sgvcnt;
-#define ior_svg_gap4terminator 0
+#define ior_sgv_gap4terminator 0
 #define ior_sgv_element struct iovec
 #endif /* MDBX_HAVE_PWRITEV */
 #endif /* !Windows */
   union {
     MDBX_val single;
 #if defined(ior_sgv_element)
-    ior_sgv_element sgv[1 + ior_svg_gap4terminator];
+    ior_sgv_element sgv[1 + ior_sgv_gap4terminator];
 #endif /* ior_sgv_element */
   };
 } ior_item_t;
@@ -3559,8 +3559,14 @@ static int reader_list_func(void *ctx, int num, int slot, mdbx_pid_t pid,
            "pid", (int)sizeof(size_t) * 2, "thread", "txnid", "lag", "used",
            "retained");
 
-  printf(" %3d)\t[%d]\t%6" PRIdSIZE " %*" PRIxPTR, num, slot, (size_t)pid,
-         (int)sizeof(size_t) * 2, (uintptr_t)thread);
+  if (thread < (mdbx_tid_t)((intptr_t)MDBX_TID_TXN_OUSTED))
+    printf(" %3d)\t[%d]\t%6" PRIdSIZE " %*" PRIxPTR, num, slot, (size_t)pid,
+           (int)sizeof(size_t) * 2, (uintptr_t)thread);
+  else
+    printf(" %3d)\t[%d]\t%6" PRIdSIZE " %sed", num, slot, (size_t)pid,
+           (thread == (mdbx_tid_t)((uintptr_t)MDBX_TID_TXN_PARKED)) ? "park"
+                                                                    : "oust");
+
   if (txnid)
     printf(" %20" PRIu64 " %10" PRIu64 " %12.1fM %12.1fM\n", txnid, lag,
            bytes_used / 1048576.0, bytes_retained / 1048576.0);

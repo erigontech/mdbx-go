@@ -2,7 +2,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
 
-#define MDBX_BUILD_SOURCERY 8a7ed0d2f8aeb7b9717769da24fc25220b34661de75b717be86738f994901302_v0_13_0_86_g22776ad5
+#define MDBX_BUILD_SOURCERY 8f23af99dc8a425935da3f9fbc044a565c83f49f124f885acceba17444721dde_v0_13_0_110_gdd0ee3f2
 
 
 #define LIBMDBX_INTERNALS
@@ -1275,20 +1275,20 @@ typedef struct osal_mmap {
 typedef struct ior_item {
 #if defined(_WIN32) || defined(_WIN64)
   OVERLAPPED ov;
-#define ior_svg_gap4terminator 1
+#define ior_sgv_gap4terminator 1
 #define ior_sgv_element FILE_SEGMENT_ELEMENT
 #else
   size_t offset;
 #if MDBX_HAVE_PWRITEV
   size_t sgvcnt;
-#define ior_svg_gap4terminator 0
+#define ior_sgv_gap4terminator 0
 #define ior_sgv_element struct iovec
 #endif /* MDBX_HAVE_PWRITEV */
 #endif /* !Windows */
   union {
     MDBX_val single;
 #if defined(ior_sgv_element)
-    ior_sgv_element sgv[1 + ior_svg_gap4terminator];
+    ior_sgv_element sgv[1 + ior_sgv_gap4terminator];
 #endif /* ior_sgv_element */
   };
 } ior_item_t;
@@ -3740,7 +3740,8 @@ DEFINE_EXCEPTION(transaction_full)
 DEFINE_EXCEPTION(transaction_overlapping)
 DEFINE_EXCEPTION(duplicated_lck_file)
 DEFINE_EXCEPTION(dangling_map_id)
-
+DEFINE_EXCEPTION(transaction_ousted)
+DEFINE_EXCEPTION(mvcc_retarded)
 #undef DEFINE_EXCEPTION
 
 __cold const char *error::what() const noexcept {
@@ -3762,6 +3763,7 @@ __cold const char *error::what() const noexcept {
     ERROR_CASE(MDBX_EINTR);
     ERROR_CASE(MDBX_ENOFILE);
     ERROR_CASE(MDBX_EREMOTE);
+    ERROR_CASE(MDBX_EDEADLK);
 #undef ERROR_CASE
   default:
     return "SYSTEM";
@@ -3829,6 +3831,8 @@ __cold void error::throw_exception() const {
     CASE_EXCEPTION(transaction_overlapping, MDBX_TXN_OVERLAPPING);
     CASE_EXCEPTION(duplicated_lck_file, MDBX_DUPLICATED_CLK);
     CASE_EXCEPTION(dangling_map_id, MDBX_DANGLING_DBI);
+    CASE_EXCEPTION(transaction_ousted, MDBX_OUSTED);
+    CASE_EXCEPTION(mvcc_retarded, MDBX_MVCC_RETARDED);
 #undef CASE_EXCEPTION
   default:
     if (is_mdbx_error())
