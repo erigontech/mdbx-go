@@ -3,7 +3,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 8f23af99dc8a425935da3f9fbc044a565c83f49f124f885acceba17444721dde_v0_13_0_110_gdd0ee3f2
+#define MDBX_BUILD_SOURCERY 40a5b5a8cb0aa52b17df5a541e416ef747538cfa71b8010c27e9010b9a079946_v0_13_0_115_g7bff3b3d
 
 
 #define LIBMDBX_INTERNALS
@@ -2520,11 +2520,11 @@ typedef enum page_type {
  * omit entries and pack sorted MDBX_DUPFIXED values after the page header.
  *
  * P_LARGE records occupy one or more contiguous pages where only the
- * first has a page header. They hold the real data of N_BIGDATA nodes.
+ * first has a page header. They hold the real data of N_BIG nodes.
  *
  * P_SUBP sub-pages are small leaf "pages" with duplicate data.
- * A node with flag N_DUPDATA but not N_SUBDATA contains a sub-page.
- * (Duplicate data can also go in sub-databases, which use normal pages.)
+ * A node with flag N_DUP but not N_TREE contains a sub-page.
+ * (Duplicate data can also go in tables, which use normal pages.)
  *
  * P_META pages contain meta_t, the start point of an MDBX snapshot.
  *
@@ -2555,10 +2555,10 @@ typedef struct page {
  * Used in pages of type P_BRANCH and P_LEAF without P_DUPFIX.
  * We guarantee 2-byte alignment for 'node_t's.
  *
- * Leaf node flags describe node contents.  N_BIGDATA says the node's
+ * Leaf node flags describe node contents.  N_BIG says the node's
  * data part is the page number of an overflow page with actual data.
- * N_DUPDATA and N_SUBDATA can be combined giving duplicate data in
- * a sub-page/sub-database, and named databases (just N_SUBDATA). */
+ * N_DUP and N_TREE can be combined giving duplicate data in
+ * a sub-page/table, and named databases (just N_TREE). */
 typedef struct node {
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
   union {
@@ -2587,9 +2587,9 @@ typedef struct node {
 #define NODESIZE 8u
 
 typedef enum node_flags {
-  N_BIGDATA = 0x01 /* data put on large page */,
-  N_SUBDATA = 0x02 /* data is a sub-database */,
-  N_DUPDATA = 0x04 /* data has duplicates */
+  N_BIG = 0x01 /* data put on large page */,
+  N_TREE = 0x02 /* data is a b-tree */,
+  N_DUP = 0x04 /* data has duplicates */
 } node_flags_t;
 
 #pragma pack(pop)
@@ -3922,16 +3922,16 @@ MDBX_INTERNAL int __must_check_result env_page_auxbuffer(MDBX_env *env);
 MDBX_INTERNAL unsigned env_setup_pagesize(MDBX_env *env, const size_t pagesize);
 
 /* tree.c */
-MDBX_INTERNAL int tree_drop(MDBX_cursor *mc, const bool may_have_subDBs);
+MDBX_INTERNAL int tree_drop(MDBX_cursor *mc, const bool may_have_tables);
 MDBX_INTERNAL int __must_check_result tree_rebalance(MDBX_cursor *mc);
 MDBX_INTERNAL int __must_check_result tree_propagate_key(MDBX_cursor *mc,
                                                          const MDBX_val *key);
 MDBX_INTERNAL void recalculate_merge_thresholds(MDBX_env *env);
 MDBX_INTERNAL void recalculate_subpage_thresholds(MDBX_env *env);
 
-/* subdb.c */
-MDBX_INTERNAL int __must_check_result sdb_fetch(MDBX_txn *txn, size_t dbi);
-MDBX_INTERNAL int __must_check_result sdb_setup(const MDBX_env *env,
+/* table.c */
+MDBX_INTERNAL int __must_check_result tbl_fetch(MDBX_txn *txn, size_t dbi);
+MDBX_INTERNAL int __must_check_result tbl_setup(const MDBX_env *env,
                                                 kvx_t *const kvx,
                                                 const tree_t *const db);
 
@@ -4392,7 +4392,7 @@ typedef struct clc {
   size_t lmin, lmax;  /* min/max length constraints */
 } clc_t;
 
-/* Вспомогательная информация о subDB.
+/* Вспомогательная информация о table.
  *
  * Совокупность потребностей:
  * 1. Для транзакций и основного курсора нужны все поля.
@@ -4432,7 +4432,7 @@ typedef struct clc2 {
 
 struct kvx {
   clc2_t clc;
-  MDBX_val name; /* имя subDB */
+  MDBX_val name; /* имя table */
 };
 
 /* Non-shared DBI state flags inside transaction */
@@ -4874,7 +4874,7 @@ MDBX_MAYBE_UNUSED static void static_checks(void) {
 
 
 /* valid flags for mdbx_node_add() */
-#define NODE_ADD_FLAGS (N_DUPDATA | N_SUBDATA | MDBX_RESERVE | MDBX_APPEND)
+#define NODE_ADD_FLAGS (N_DUP | N_TREE | MDBX_RESERVE | MDBX_APPEND)
 
 /* Get the page number pointed to by a branch node */
 MDBX_NOTHROW_PURE_FUNCTION static inline pgno_t
@@ -4949,7 +4949,7 @@ node_size(const MDBX_val *key, const MDBX_val *value) {
 
 MDBX_NOTHROW_PURE_FUNCTION static inline pgno_t
 node_largedata_pgno(const node_t *const __restrict node) {
-  assert(node_flags(node) & N_BIGDATA);
+  assert(node_flags(node) & N_BIG);
   return peek_pgno(node_data(node));
 }
 
@@ -4964,7 +4964,7 @@ static inline int __must_check_result node_read(MDBX_cursor *mc,
                                                 const page_t *mp) {
   data->iov_len = node_ds(node);
   data->iov_base = node_data(node);
-  if (likely(node_flags(node) != N_BIGDATA))
+  if (likely(node_flags(node) != N_BIG))
     return MDBX_SUCCESS;
   return node_read_bigdata(mc, node, data, mp);
 }
@@ -5162,10 +5162,10 @@ MDBX_MAYBE_UNUSED MDBX_INTERNAL bool pv2pages_verify(void);
  *       LEAF_NODE_MAX = even_floor(PAGESPACE / 2 - sizeof(indx_t));
  *       DATALEN_NO_OVERFLOW = LEAF_NODE_MAX - NODESIZE - KEYLEN_MAX;
  *
- *  - SubDatabase-node must fit into one leaf-page:
- *       SUBDB_NAME_MAX = LEAF_NODE_MAX - node_hdr_len - sizeof(tree_t);
+ *  - Table-node must fit into one leaf-page:
+ *       TABLE_NAME_MAX = LEAF_NODE_MAX - node_hdr_len - sizeof(tree_t);
  *
- *  - Dupsort values itself are a keys in a dupsort-subdb and couldn't be longer
+ *  - Dupsort values itself are a keys in a dupsort-table and couldn't be longer
  *    than the KEYLEN_MAX. But dupsort node must not great than LEAF_NODE_MAX,
  *    since dupsort value couldn't be placed on a large/overflow page:
  *       DUPSORT_DATALEN_MAX = min(KEYLEN_MAX,
@@ -5330,7 +5330,7 @@ flags_db2sub(uint16_t db_flags) {
   return sub_flags;
 }
 
-static inline bool check_sdb_flags(unsigned flags) {
+static inline bool check_table_flags(unsigned flags) {
   switch (flags & ~(MDBX_REVERSEKEY | MDBX_INTEGERKEY)) {
   default:
     NOTICE("invalid db-flags 0x%x", flags);
@@ -6073,7 +6073,7 @@ MDBX_MAYBE_UNUSED static inline void
 cursor_inner_refresh(const MDBX_cursor *mc, const page_t *mp, unsigned ki) {
   cASSERT(mc, is_leaf(mp));
   const node_t *node = page_node(mp, ki);
-  if ((node_flags(node) & (N_DUPDATA | N_SUBDATA)) == N_DUPDATA)
+  if ((node_flags(node) & (N_DUP | N_TREE)) == N_DUP)
     mc->subcur->cursor.pg[0] = node_data(node);
 }
 
@@ -6844,13 +6844,13 @@ static inline void thread_key_delete(osal_thread_key_t key) {
 
 
 
-typedef struct walk_sdb {
+typedef struct walk_tbl {
   MDBX_val name;
   tree_t *internal, *nested;
-} walk_sdb_t;
+} walk_tbl_t;
 
 typedef int walk_func(const size_t pgno, const unsigned number, void *const ctx,
-                      const int deep, const walk_sdb_t *subdb,
+                      const int deep, const walk_tbl_t *table,
                       const size_t page_size, const page_type_t page_type,
                       const MDBX_error_t err, const size_t nentries,
                       const size_t payload_bytes, const size_t header_bytes,
@@ -7631,12 +7631,12 @@ int mdbx_cursor_compare(const MDBX_cursor *l, const MDBX_cursor *r,
   if (is_pointed(&l->subcur->cursor)) {
     const page_t *mp = l->pg[l->top];
     const node_t *node = page_node(mp, l->ki[l->top]);
-    assert(node_flags(node) & N_DUPDATA);
+    assert(node_flags(node) & N_DUP);
   }
   if (is_pointed(&r->subcur->cursor)) {
     const page_t *mp = r->pg[r->top];
     const node_t *node = page_node(mp, r->ki[r->top]);
-    assert(node_flags(node) & N_DUPDATA);
+    assert(node_flags(node) & N_DUP);
   }
 #endif /* MDBX_DEBUG */
 
@@ -7680,7 +7680,7 @@ int mdbx_cursor_count(const MDBX_cursor *mc, size_t *countp) {
     if (!inner_hollow(mc)) {
       const page_t *mp = mc->pg[mc->top];
       const node_t *node = page_node(mp, mc->ki[mc->top]);
-      cASSERT(mc, node_flags(node) & N_DUPDATA);
+      cASSERT(mc, node_flags(node) & N_DUP);
       *countp = unlikely(mc->subcur->nested_tree.items > PTRDIFF_MAX)
                     ? PTRDIFF_MAX
                     : (size_t)mc->subcur->nested_tree.items;
@@ -7937,7 +7937,7 @@ int mdbx_cursor_get_batch(MDBX_cursor *mc, size_t *count, MDBX_val *pairs,
     return MDBX_BAD_DBI;
 
   if (unlikely(mc->subcur))
-    return MDBX_INCOMPATIBLE /* must be a non-dupsort subDB */;
+    return MDBX_INCOMPATIBLE /* must be a non-dupsort table */;
 
   switch (op) {
   case MDBX_NEXT:
@@ -9941,16 +9941,16 @@ __cold int mdbx_dbi_dupsort_depthmask(const MDBX_txn *txn, MDBX_dbi dbi,
     const tree_t *db = node_data(node);
     const unsigned flags = node_flags(node);
     switch (flags) {
-    case N_BIGDATA:
+    case N_BIG:
     case 0:
       /* single-value entry, deep = 0 */
       *mask |= 1 << 0;
       break;
-    case N_DUPDATA:
+    case N_DUP:
       /* single sub-page, deep = 1 */
       *mask |= 1 << 1;
       break;
-    case N_DUPDATA | N_SUBDATA:
+    case N_DUP | N_TREE:
       /* sub-tree */
       *mask |= 1 << UNALIGNED_PEEK_16(db, tree_t, height);
       break;
@@ -10210,7 +10210,7 @@ int mdbx_put(MDBX_txn *txn, MDBX_dbi dbi, const MDBX_val *key, MDBX_val *data,
       /* LY: allows update (explicit overwrite) only for unique keys */
       node_t *node =
           page_node(cx.outer.pg[cx.outer.top], cx.outer.ki[cx.outer.top]);
-      if (node_flags(node) & N_DUPDATA) {
+      if (node_flags(node) & N_DUP) {
         tASSERT(txn, inner_pointed(&cx.outer) &&
                          cx.outer.subcur->nested_tree.items > 1);
         rc = MDBX_EMULTIVAL;
@@ -10323,7 +10323,7 @@ int mdbx_replace_ex(MDBX_txn *txn, MDBX_dbi dbi, const MDBX_val *key,
         if (flags & MDBX_CURRENT) {
           /* disallow update/delete for multi-values */
           node_t *node = page_node(page, cx.outer.ki[cx.outer.top]);
-          if (node_flags(node) & N_DUPDATA) {
+          if (node_flags(node) & N_DUP) {
             tASSERT(txn, inner_pointed(&cx.outer) &&
                              cx.outer.subcur->nested_tree.items > 1);
             if (cx.outer.subcur->nested_tree.items > 1) {
@@ -10466,7 +10466,7 @@ __cold static int audit_ex_locked(MDBX_txn *txn, size_t retired_stored,
   ctx.used = NUM_METAS + audit_db_used(dbi_dig(txn, FREE_DBI, nullptr)) +
              audit_db_used(dbi_dig(txn, MAIN_DBI, nullptr));
 
-  rc = mdbx_enumerate_subdb(txn, audit_dbi, &ctx);
+  rc = mdbx_enumerate_tables(txn, audit_dbi, &ctx);
   tASSERT(txn, rc == MDBX_SUCCESS);
 
   for (size_t dbi = CORE_DBS; dbi < txn->n_dbi; ++dbi) {
@@ -10525,12 +10525,12 @@ typedef struct MDBX_chk_internal {
   bool write_locked;
   uint8_t scope_depth;
 
-  MDBX_chk_subdb_t subdb_gc, subdb_main;
+  MDBX_chk_table_t table_gc, table_main;
   int16_t *pagemap;
-  MDBX_chk_subdb_t *last_lookup;
+  MDBX_chk_table_t *last_lookup;
   const void *last_nested;
   MDBX_chk_scope_t scope_stack[12];
-  MDBX_chk_subdb_t *subdb[MDBX_MAX_DBI + CORE_DBS];
+  MDBX_chk_table_t *table[MDBX_MAX_DBI + CORE_DBS];
 
   MDBX_envinfo envinfo;
   troika_t troika;
@@ -10996,18 +10996,18 @@ __cold static const char *chk_v2a(MDBX_chk_internal_t *chk,
 }
 
 __cold static void chk_dispose(MDBX_chk_internal_t *chk) {
-  assert(chk->subdb[FREE_DBI] == &chk->subdb_gc);
-  assert(chk->subdb[MAIN_DBI] == &chk->subdb_main);
-  for (size_t i = 0; i < ARRAY_LENGTH(chk->subdb); ++i) {
-    MDBX_chk_subdb_t *const sdb = chk->subdb[i];
-    if (sdb) {
-      chk->subdb[i] = nullptr;
-      if (chk->cb->subdb_dispose && sdb->cookie) {
-        chk->cb->subdb_dispose(chk->usr, sdb);
-        sdb->cookie = nullptr;
+  assert(chk->table[FREE_DBI] == &chk->table_gc);
+  assert(chk->table[MAIN_DBI] == &chk->table_main);
+  for (size_t i = 0; i < ARRAY_LENGTH(chk->table); ++i) {
+    MDBX_chk_table_t *const tbl = chk->table[i];
+    if (tbl) {
+      chk->table[i] = nullptr;
+      if (chk->cb->table_dispose && tbl->cookie) {
+        chk->cb->table_dispose(chk->usr, tbl);
+        tbl->cookie = nullptr;
       }
-      if (sdb != &chk->subdb_gc && sdb != &chk->subdb_main) {
-        osal_free(sdb);
+      if (tbl != &chk->table_gc && tbl != &chk->table_main) {
+        osal_free(tbl);
       }
     }
   }
@@ -11150,8 +11150,8 @@ histogram_print(MDBX_chk_scope_t *scope, MDBX_chk_line_t *line,
 
 //-----------------------------------------------------------------------------
 
-__cold static int chk_get_sdb(MDBX_chk_scope_t *const scope,
-                              const walk_sdb_t *in, MDBX_chk_subdb_t **out) {
+__cold static int chk_get_tbl(MDBX_chk_scope_t *const scope,
+                              const walk_tbl_t *in, MDBX_chk_table_t **out) {
   MDBX_chk_internal_t *const chk = scope->internal;
   if (chk->last_lookup &&
       chk->last_lookup->name.iov_base == in->name.iov_base) {
@@ -11159,33 +11159,33 @@ __cold static int chk_get_sdb(MDBX_chk_scope_t *const scope,
     return MDBX_SUCCESS;
   }
 
-  for (size_t i = 0; i < ARRAY_LENGTH(chk->subdb); ++i) {
-    MDBX_chk_subdb_t *sdb = chk->subdb[i];
-    if (!sdb) {
-      sdb = osal_calloc(1, sizeof(MDBX_chk_subdb_t));
-      if (unlikely(!sdb)) {
+  for (size_t i = 0; i < ARRAY_LENGTH(chk->table); ++i) {
+    MDBX_chk_table_t *tbl = chk->table[i];
+    if (!tbl) {
+      tbl = osal_calloc(1, sizeof(MDBX_chk_table_t));
+      if (unlikely(!tbl)) {
         *out = nullptr;
-        return chk_error_rc(scope, MDBX_ENOMEM, "alloc_subDB");
+        return chk_error_rc(scope, MDBX_ENOMEM, "alloc_table");
       }
-      chk->subdb[i] = sdb;
-      sdb->flags = in->internal->flags;
-      sdb->id = -1;
-      sdb->name = in->name;
+      chk->table[i] = tbl;
+      tbl->flags = in->internal->flags;
+      tbl->id = -1;
+      tbl->name = in->name;
     }
-    if (sdb->name.iov_base == in->name.iov_base) {
-      if (sdb->id < 0) {
-        sdb->id = (int)i;
-        sdb->cookie =
-            chk->cb->subdb_filter
-                ? chk->cb->subdb_filter(chk->usr, &sdb->name, sdb->flags)
+    if (tbl->name.iov_base == in->name.iov_base) {
+      if (tbl->id < 0) {
+        tbl->id = (int)i;
+        tbl->cookie =
+            chk->cb->table_filter
+                ? chk->cb->table_filter(chk->usr, &tbl->name, tbl->flags)
                 : (void *)(intptr_t)-1;
       }
-      *out = (chk->last_lookup = sdb);
+      *out = (chk->last_lookup = tbl);
       return MDBX_SUCCESS;
     }
   }
-  chk_scope_issue(scope, "too many subDBs > %u",
-                  (unsigned)ARRAY_LENGTH(chk->subdb) - CORE_DBS - /* meta */ 1);
+  chk_scope_issue(scope, "too many tables > %u",
+                  (unsigned)ARRAY_LENGTH(chk->table) - CORE_DBS - /* meta */ 1);
   *out = nullptr;
   return MDBX_PROBLEM;
 }
@@ -11252,7 +11252,7 @@ __cold static void chk_verbose_meta(MDBX_chk_scope_t *const scope,
 
 __cold static int
 chk_pgvisitor(const size_t pgno, const unsigned npages, void *const ctx,
-              const int deep, const walk_sdb_t *sdb_info,
+              const int deep, const walk_tbl_t *tbl_info,
               const size_t page_size, const page_type_t pagetype,
               const MDBX_error_t page_err, const size_t nentries,
               const size_t payload_bytes, const size_t header_bytes,
@@ -11262,8 +11262,8 @@ chk_pgvisitor(const size_t pgno, const unsigned npages, void *const ctx,
   MDBX_chk_context_t *const usr = chk->usr;
   MDBX_env *const env = usr->env;
 
-  MDBX_chk_subdb_t *sdb;
-  int err = chk_get_sdb(scope, sdb_info, &sdb);
+  MDBX_chk_table_t *tbl;
+  int err = chk_get_tbl(scope, tbl_info, &tbl);
   if (unlikely(err))
     return err;
 
@@ -11271,21 +11271,21 @@ chk_pgvisitor(const size_t pgno, const unsigned npages, void *const ctx,
     chk_scope_issue(scope, "too deeply %u", deep);
     return MDBX_CORRUPTED /* avoid infinite loop/recursion */;
   }
-  histogram_acc(deep, &sdb->histogram.deep);
+  histogram_acc(deep, &tbl->histogram.deep);
   usr->result.processed_pages += npages;
   const size_t page_bytes = payload_bytes + header_bytes + unused_bytes;
 
   int height = deep + 1;
-  if (sdb->id >= CORE_DBS)
+  if (tbl->id >= CORE_DBS)
     height -= usr->txn->dbs[MAIN_DBI].height;
-  const tree_t *nested = sdb_info->nested;
+  const tree_t *nested = tbl_info->nested;
   if (nested) {
-    if (sdb->flags & MDBX_DUPSORT)
-      height -= sdb_info->internal->height;
+    if (tbl->flags & MDBX_DUPSORT)
+      height -= tbl_info->internal->height;
     else {
       chk_object_issue(scope, "nested tree", pgno, "unexpected",
-                       "subDb %s flags 0x%x, deep %i", chk_v2a(chk, &sdb->name),
-                       sdb->flags, deep);
+                       "table %s flags 0x%x, deep %i", chk_v2a(chk, &tbl->name),
+                       tbl->flags, deep);
       nested = nullptr;
     }
   } else
@@ -11298,82 +11298,82 @@ chk_pgvisitor(const size_t pgno, const unsigned npages, void *const ctx,
     chk_object_issue(scope, "page", pgno, "unknown page-type",
                      "type %u, deep %i", (unsigned)pagetype, deep);
     pagetype_caption = "unknown";
-    sdb->pages.other += npages;
+    tbl->pages.other += npages;
     break;
   case page_broken:
     assert(page_err != MDBX_SUCCESS);
     pagetype_caption = "broken";
-    sdb->pages.other += npages;
+    tbl->pages.other += npages;
     break;
   case page_sub_broken:
     assert(page_err != MDBX_SUCCESS);
     pagetype_caption = "broken-subpage";
-    sdb->pages.other += npages;
+    tbl->pages.other += npages;
     break;
   case page_large:
     pagetype_caption = "large";
-    histogram_acc(npages, &sdb->histogram.large_pages);
-    if (sdb->flags & MDBX_DUPSORT)
+    histogram_acc(npages, &tbl->histogram.large_pages);
+    if (tbl->flags & MDBX_DUPSORT)
       chk_object_issue(scope, "page", pgno, "unexpected",
-                       "type %u, subDb %s flags 0x%x, deep %i",
-                       (unsigned)pagetype, chk_v2a(chk, &sdb->name), sdb->flags,
+                       "type %u, table %s flags 0x%x, deep %i",
+                       (unsigned)pagetype, chk_v2a(chk, &tbl->name), tbl->flags,
                        deep);
     break;
   case page_branch:
     branch = true;
     if (!nested) {
       pagetype_caption = "branch";
-      sdb->pages.branch += 1;
+      tbl->pages.branch += 1;
     } else {
       pagetype_caption = "nested-branch";
-      sdb->pages.nested_branch += 1;
+      tbl->pages.nested_branch += 1;
     }
     break;
   case page_dupfix_leaf:
     if (!nested)
       chk_object_issue(scope, "page", pgno, "unexpected",
-                       "type %u, subDb %s flags 0x%x, deep %i",
-                       (unsigned)pagetype, chk_v2a(chk, &sdb->name), sdb->flags,
+                       "type %u, table %s flags 0x%x, deep %i",
+                       (unsigned)pagetype, chk_v2a(chk, &tbl->name), tbl->flags,
                        deep);
     /* fall through */
     __fallthrough;
   case page_leaf:
     if (!nested) {
       pagetype_caption = "leaf";
-      sdb->pages.leaf += 1;
-      if (height != sdb_info->internal->height)
+      tbl->pages.leaf += 1;
+      if (height != tbl_info->internal->height)
         chk_object_issue(scope, "page", pgno, "wrong tree height",
-                         "actual %i != %i subDb %s", height,
-                         sdb_info->internal->height, chk_v2a(chk, &sdb->name));
+                         "actual %i != %i table %s", height,
+                         tbl_info->internal->height, chk_v2a(chk, &tbl->name));
     } else {
       pagetype_caption =
           (pagetype == page_leaf) ? "nested-leaf" : "nested-leaf-dupfix";
-      sdb->pages.nested_leaf += 1;
+      tbl->pages.nested_leaf += 1;
       if (chk->last_nested != nested) {
-        histogram_acc(height, &sdb->histogram.nested_tree);
+        histogram_acc(height, &tbl->histogram.nested_tree);
         chk->last_nested = nested;
       }
       if (height != nested->height)
         chk_object_issue(scope, "page", pgno, "wrong nested-tree height",
                          "actual %i != %i dupsort-node %s", height,
-                         nested->height, chk_v2a(chk, &sdb->name));
+                         nested->height, chk_v2a(chk, &tbl->name));
     }
     break;
   case page_sub_dupfix_leaf:
   case page_sub_leaf:
     pagetype_caption =
         (pagetype == page_sub_leaf) ? "subleaf-dupsort" : "subleaf-dupfix";
-    sdb->pages.nested_subleaf += 1;
-    if ((sdb->flags & MDBX_DUPSORT) == 0 || nested)
+    tbl->pages.nested_subleaf += 1;
+    if ((tbl->flags & MDBX_DUPSORT) == 0 || nested)
       chk_object_issue(scope, "page", pgno, "unexpected",
-                       "type %u, subDb %s flags 0x%x, deep %i",
-                       (unsigned)pagetype, chk_v2a(chk, &sdb->name), sdb->flags,
+                       "type %u, table %s flags 0x%x, deep %i",
+                       (unsigned)pagetype, chk_v2a(chk, &tbl->name), tbl->flags,
                        deep);
     break;
   }
 
   if (npages) {
-    if (sdb->cookie) {
+    if (tbl->cookie) {
       MDBX_chk_line_t *line = chk_line_begin(scope, MDBX_chk_extra);
       if (npages == 1)
         chk_print(line, "%s-page %" PRIuSIZE, pagetype_caption, pgno);
@@ -11384,7 +11384,7 @@ chk_pgvisitor(const size_t pgno, const unsigned npages, void *const ctx,
                              " of %s: header %" PRIiPTR ", %s %" PRIiPTR
                              ", payload %" PRIiPTR ", unused %" PRIiPTR
                              ", deep %i",
-                             chk_v2a(chk, &sdb->name), header_bytes,
+                             chk_v2a(chk, &tbl->name), header_bytes,
                              (pagetype == page_branch) ? "keys" : "entries",
                              nentries, payload_bytes, unused_bytes, deep));
     }
@@ -11397,18 +11397,18 @@ chk_pgvisitor(const size_t pgno, const unsigned npages, void *const ctx,
                          "%s-page: %" PRIuSIZE " > %" PRIuSIZE ", deep %i",
                          pagetype_caption, spanpgno, usr->result.alloc_pages,
                          deep);
-        sdb->pages.all += 1;
+        tbl->pages.all += 1;
       } else if (chk->pagemap[spanpgno]) {
-        const MDBX_chk_subdb_t *const rival =
-            chk->subdb[chk->pagemap[spanpgno] - 1];
+        const MDBX_chk_table_t *const rival =
+            chk->table[chk->pagemap[spanpgno] - 1];
         chk_object_issue(scope, "page", spanpgno,
-                         (branch && rival == sdb) ? "loop" : "already used",
+                         (branch && rival == tbl) ? "loop" : "already used",
                          "%s-page: by %s, deep %i", pagetype_caption,
                          chk_v2a(chk, &rival->name), deep);
         already_used = true;
       } else {
-        chk->pagemap[spanpgno] = (int16_t)sdb->id + 1;
-        sdb->pages.all += 1;
+        chk->pagemap[spanpgno] = (int16_t)tbl->id + 1;
+        tbl->pages.all += 1;
       }
     }
 
@@ -11438,7 +11438,7 @@ chk_pgvisitor(const size_t pgno, const unsigned npages, void *const ctx,
                        "%s-page: payload %" PRIuSIZE " bytes, %" PRIuSIZE
                        " entries, deep %i",
                        pagetype_caption, payload_bytes, nentries, deep);
-      sdb->pages.empty += 1;
+      tbl->pages.empty += 1;
     }
 
     if (npages) {
@@ -11449,9 +11449,9 @@ chk_pgvisitor(const size_t pgno, const unsigned npages, void *const ctx,
                          pagetype_caption, page_size, page_bytes, header_bytes,
                          payload_bytes, unused_bytes, deep);
         if (page_size > page_bytes)
-          sdb->lost_bytes += page_size - page_bytes;
+          tbl->lost_bytes += page_size - page_bytes;
       } else {
-        sdb->payload_bytes += payload_bytes + header_bytes;
+        tbl->payload_bytes += payload_bytes + header_bytes;
         usr->result.total_payload_bytes += payload_bytes + header_bytes;
       }
     }
@@ -11489,21 +11489,21 @@ __cold static int chk_tree(MDBX_chk_scope_t *const scope) {
     if (!chk->pagemap[n])
       usr->result.unused_pages += 1;
 
-  MDBX_chk_subdb_t total;
+  MDBX_chk_table_t total;
   memset(&total, 0, sizeof(total));
   total.pages.all = NUM_METAS;
-  for (size_t i = 0; i < ARRAY_LENGTH(chk->subdb) && chk->subdb[i]; ++i) {
-    MDBX_chk_subdb_t *const sdb = chk->subdb[i];
-    total.payload_bytes += sdb->payload_bytes;
-    total.lost_bytes += sdb->lost_bytes;
-    total.pages.all += sdb->pages.all;
-    total.pages.empty += sdb->pages.empty;
-    total.pages.other += sdb->pages.other;
-    total.pages.branch += sdb->pages.branch;
-    total.pages.leaf += sdb->pages.leaf;
-    total.pages.nested_branch += sdb->pages.nested_branch;
-    total.pages.nested_leaf += sdb->pages.nested_leaf;
-    total.pages.nested_subleaf += sdb->pages.nested_subleaf;
+  for (size_t i = 0; i < ARRAY_LENGTH(chk->table) && chk->table[i]; ++i) {
+    MDBX_chk_table_t *const tbl = chk->table[i];
+    total.payload_bytes += tbl->payload_bytes;
+    total.lost_bytes += tbl->lost_bytes;
+    total.pages.all += tbl->pages.all;
+    total.pages.empty += tbl->pages.empty;
+    total.pages.other += tbl->pages.other;
+    total.pages.branch += tbl->pages.branch;
+    total.pages.leaf += tbl->pages.leaf;
+    total.pages.nested_branch += tbl->pages.nested_branch;
+    total.pages.nested_leaf += tbl->pages.nested_leaf;
+    total.pages.nested_subleaf += tbl->pages.nested_subleaf;
   }
   assert(total.pages.all == usr->result.processed_pages);
 
@@ -11518,70 +11518,70 @@ __cold static int chk_tree(MDBX_chk_scope_t *const scope) {
 
   err = chk_scope_restore(scope, err);
   if (scope->verbosity > MDBX_chk_info) {
-    for (size_t i = 0; i < ARRAY_LENGTH(chk->subdb) && chk->subdb[i]; ++i) {
-      MDBX_chk_subdb_t *const sdb = chk->subdb[i];
+    for (size_t i = 0; i < ARRAY_LENGTH(chk->table) && chk->table[i]; ++i) {
+      MDBX_chk_table_t *const tbl = chk->table[i];
       MDBX_chk_scope_t *inner =
-          chk_scope_push(scope, 0, "tree %s:", chk_v2a(chk, &sdb->name));
-      if (sdb->pages.all == 0)
+          chk_scope_push(scope, 0, "tree %s:", chk_v2a(chk, &tbl->name));
+      if (tbl->pages.all == 0)
         chk_line_end(
             chk_print(chk_line_begin(inner, MDBX_chk_resolution), "empty"));
       else {
         MDBX_chk_line_t *line = chk_line_begin(inner, MDBX_chk_info);
         if (line) {
           line = chk_print(line, "page usage: subtotal %" PRIuSIZE,
-                           sdb->pages.all);
+                           tbl->pages.all);
           const size_t branch_pages =
-              sdb->pages.branch + sdb->pages.nested_branch;
-          const size_t leaf_pages = sdb->pages.leaf + sdb->pages.nested_leaf +
-                                    sdb->pages.nested_subleaf;
-          if (sdb->pages.other)
-            line = chk_print(line, ", other %" PRIuSIZE, sdb->pages.other);
-          if (sdb->pages.other == 0 ||
-              (branch_pages | leaf_pages | sdb->histogram.large_pages.count) !=
+              tbl->pages.branch + tbl->pages.nested_branch;
+          const size_t leaf_pages = tbl->pages.leaf + tbl->pages.nested_leaf +
+                                    tbl->pages.nested_subleaf;
+          if (tbl->pages.other)
+            line = chk_print(line, ", other %" PRIuSIZE, tbl->pages.other);
+          if (tbl->pages.other == 0 ||
+              (branch_pages | leaf_pages | tbl->histogram.large_pages.count) !=
                   0) {
             line = chk_print(line, ", branch %" PRIuSIZE ", leaf %" PRIuSIZE,
                              branch_pages, leaf_pages);
-            if (sdb->histogram.large_pages.count ||
-                (sdb->flags & MDBX_DUPSORT) == 0) {
+            if (tbl->histogram.large_pages.count ||
+                (tbl->flags & MDBX_DUPSORT) == 0) {
               line = chk_print(line, ", large %" PRIuSIZE,
-                               sdb->histogram.large_pages.count);
-              if (sdb->histogram.large_pages.amount |
-                  sdb->histogram.large_pages.count)
-                line = histogram_print(inner, line, &sdb->histogram.large_pages,
+                               tbl->histogram.large_pages.count);
+              if (tbl->histogram.large_pages.amount |
+                  tbl->histogram.large_pages.count)
+                line = histogram_print(inner, line, &tbl->histogram.large_pages,
                                        " amount", "single", true);
             }
           }
-          line = histogram_dist(chk_line_feed(line), &sdb->histogram.deep,
+          line = histogram_dist(chk_line_feed(line), &tbl->histogram.deep,
                                 "tree deep density", "1", false);
-          if (sdb != &chk->subdb_gc && sdb->histogram.nested_tree.count) {
+          if (tbl != &chk->table_gc && tbl->histogram.nested_tree.count) {
             line = chk_print(chk_line_feed(line), "nested tree(s) %" PRIuSIZE,
-                             sdb->histogram.nested_tree.count);
-            line = histogram_dist(line, &sdb->histogram.nested_tree, " density",
+                             tbl->histogram.nested_tree.count);
+            line = histogram_dist(line, &tbl->histogram.nested_tree, " density",
                                   "1", false);
             line = chk_print(chk_line_feed(line),
                              "nested tree(s) pages %" PRIuSIZE
                              ": branch %" PRIuSIZE ", leaf %" PRIuSIZE
                              ", subleaf %" PRIuSIZE,
-                             sdb->pages.nested_branch + sdb->pages.nested_leaf,
-                             sdb->pages.nested_branch, sdb->pages.nested_leaf,
-                             sdb->pages.nested_subleaf);
+                             tbl->pages.nested_branch + tbl->pages.nested_leaf,
+                             tbl->pages.nested_branch, tbl->pages.nested_leaf,
+                             tbl->pages.nested_subleaf);
           }
 
-          const size_t bytes = pgno2bytes(env, sdb->pages.all);
+          const size_t bytes = pgno2bytes(env, tbl->pages.all);
           line = chk_print(
               chk_line_feed(line),
               "page filling: subtotal %" PRIuSIZE
               " bytes (%.1f%%), payload %" PRIuSIZE
               " (%.1f%%), unused %" PRIuSIZE " (%.1f%%)",
-              bytes, bytes * 100.0 / total_page_bytes, sdb->payload_bytes,
-              sdb->payload_bytes * 100.0 / bytes, bytes - sdb->payload_bytes,
-              (bytes - sdb->payload_bytes) * 100.0 / bytes);
-          if (sdb->pages.empty)
+              bytes, bytes * 100.0 / total_page_bytes, tbl->payload_bytes,
+              tbl->payload_bytes * 100.0 / bytes, bytes - tbl->payload_bytes,
+              (bytes - tbl->payload_bytes) * 100.0 / bytes);
+          if (tbl->pages.empty)
             line = chk_print(line, ", %" PRIuSIZE " empty pages",
-                             sdb->pages.empty);
-          if (sdb->lost_bytes)
+                             tbl->pages.empty);
+          if (tbl->lost_bytes)
             line =
-                chk_print(line, ", %" PRIuSIZE " bytes lost", sdb->lost_bytes);
+                chk_print(line, ", %" PRIuSIZE " bytes lost", tbl->lost_bytes);
           chk_line_end(line);
         }
       }
@@ -11609,23 +11609,23 @@ __cold static int chk_tree(MDBX_chk_scope_t *const scope) {
 }
 
 typedef int(chk_kv_visitor)(MDBX_chk_scope_t *const scope,
-                            MDBX_chk_subdb_t *sdb, const size_t record_number,
+                            MDBX_chk_table_t *tbl, const size_t record_number,
                             const MDBX_val *key, const MDBX_val *data);
 
 __cold static int chk_handle_kv(MDBX_chk_scope_t *const scope,
-                                MDBX_chk_subdb_t *sdb,
+                                MDBX_chk_table_t *tbl,
                                 const size_t record_number, const MDBX_val *key,
                                 const MDBX_val *data) {
   MDBX_chk_internal_t *const chk = scope->internal;
   int err = MDBX_SUCCESS;
-  assert(sdb->cookie);
-  if (chk->cb->subdb_handle_kv)
-    err = chk->cb->subdb_handle_kv(chk->usr, sdb, record_number, key, data);
+  assert(tbl->cookie);
+  if (chk->cb->table_handle_kv)
+    err = chk->cb->table_handle_kv(chk->usr, tbl, record_number, key, data);
   return err ? err : chk_check_break(scope);
 }
 
 __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
-                         MDBX_chk_subdb_t *sdb, chk_kv_visitor *handler) {
+                         MDBX_chk_table_t *tbl, chk_kv_visitor *handler) {
   MDBX_chk_internal_t *const chk = scope->internal;
   MDBX_chk_context_t *const usr = chk->usr;
   MDBX_env *const env = usr->env;
@@ -11638,14 +11638,14 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
     chk_line_end(
         chk_flush(chk_print(chk_line_begin(scope, MDBX_chk_error),
                             "abort processing %s due to a previous error",
-                            chk_v2a(chk, &sdb->name))));
+                            chk_v2a(chk, &tbl->name))));
     err = MDBX_BAD_TXN;
     goto bailout;
   }
 
   if (0 > (int)dbi) {
     err = dbi_open(
-        txn, &sdb->name, MDBX_DB_ACCEDE, &dbi,
+        txn, &tbl->name, MDBX_DB_ACCEDE, &dbi,
         (chk->flags & MDBX_CHK_IGNORE_ORDER) ? cmp_equal_or_greater : nullptr,
         (chk->flags & MDBX_CHK_IGNORE_ORDER) ? cmp_equal_or_greater : nullptr);
     if (unlikely(err)) {
@@ -11661,7 +11661,7 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
   const tree_t *const db = txn->dbs + dbi;
   if (handler) {
     const char *key_mode = nullptr;
-    switch (sdb->flags & (MDBX_REVERSEKEY | MDBX_INTEGERKEY)) {
+    switch (tbl->flags & (MDBX_REVERSEKEY | MDBX_INTEGERKEY)) {
     case 0:
       key_mode = "usual";
       break;
@@ -11677,11 +11677,11 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
     default:
       key_mode = "inconsistent";
       chk_scope_issue(scope, "wrong key-mode (0x%x)",
-                      sdb->flags & (MDBX_REVERSEKEY | MDBX_INTEGERKEY));
+                      tbl->flags & (MDBX_REVERSEKEY | MDBX_INTEGERKEY));
     }
 
     const char *value_mode = nullptr;
-    switch (sdb->flags & (MDBX_DUPSORT | MDBX_REVERSEDUP | MDBX_DUPFIXED |
+    switch (tbl->flags & (MDBX_DUPSORT | MDBX_REVERSEDUP | MDBX_DUPFIXED |
                           MDBX_INTEGERDUP)) {
     case 0:
       value_mode = "single";
@@ -11710,7 +11710,7 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
     default:
       value_mode = "inconsistent";
       chk_scope_issue(scope, "wrong value-mode (0x%x)",
-                      sdb->flags & (MDBX_DUPSORT | MDBX_REVERSEDUP |
+                      tbl->flags & (MDBX_DUPSORT | MDBX_REVERSEDUP |
                                     MDBX_DUPFIXED | MDBX_INTEGERDUP));
     }
 
@@ -11718,7 +11718,7 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
     line = chk_print(line, "key-value kind: %s-key => %s-value", key_mode,
                      value_mode);
     line = chk_print(line, ", flags:");
-    if (!sdb->flags)
+    if (!tbl->flags)
       line = chk_print(line, " none");
     else {
       const uint8_t f[] = {MDBX_DUPSORT,
@@ -11731,10 +11731,10 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
       const char *const t[] = {"dupsort", "integerkey", "reversekey",
                                "dupfix",  "reversedup", "integerdup"};
       for (size_t i = 0; f[i]; i++)
-        if (sdb->flags & f[i])
+        if (tbl->flags & f[i])
           line = chk_print(line, " %s", t[i]);
     }
-    chk_line_end(chk_print(line, " (0x%02X)", sdb->flags));
+    chk_line_end(chk_print(line, " (0x%02X)", tbl->flags));
 
     line = chk_print(chk_line_begin(scope, MDBX_chk_verbose),
                      "entries %" PRIu64 ", sequence %" PRIu64, db->items,
@@ -11752,14 +11752,14 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
                            db->large_pages));
 
     if ((chk->flags & MDBX_CHK_SKIP_BTREE_TRAVERSAL) == 0) {
-      const size_t branch_pages = sdb->pages.branch + sdb->pages.nested_branch;
-      const size_t leaf_pages = sdb->pages.leaf + sdb->pages.nested_leaf;
+      const size_t branch_pages = tbl->pages.branch + tbl->pages.nested_branch;
+      const size_t leaf_pages = tbl->pages.leaf + tbl->pages.nested_leaf;
       const size_t subtotal_pages =
           db->branch_pages + db->leaf_pages + db->large_pages;
-      if (subtotal_pages != sdb->pages.all)
+      if (subtotal_pages != tbl->pages.all)
         chk_scope_issue(
             scope, "%s pages mismatch (%" PRIuSIZE " != walked %" PRIuSIZE ")",
-            "subtotal", subtotal_pages, sdb->pages.all);
+            "subtotal", subtotal_pages, tbl->pages.all);
       if (db->branch_pages != branch_pages)
         chk_scope_issue(
             scope, "%s pages mismatch (%" PRIaPGNO " != walked %" PRIuSIZE ")",
@@ -11768,11 +11768,11 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
         chk_scope_issue(
             scope, "%s pages mismatch (%" PRIaPGNO " != walked %" PRIuSIZE ")",
             "all-leaf", db->leaf_pages, leaf_pages);
-      if (db->large_pages != sdb->histogram.large_pages.amount)
+      if (db->large_pages != tbl->histogram.large_pages.amount)
         chk_scope_issue(
             scope, "%s pages mismatch (%" PRIaPGNO " != walked %" PRIuSIZE ")",
             "large/overlow", db->large_pages,
-            sdb->histogram.large_pages.amount);
+            tbl->histogram.large_pages.amount);
     }
   }
 
@@ -11787,7 +11787,7 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
       cursor->subcur->cursor.checking |= z_ignord | z_pagecheck;
   }
 
-  const size_t maxkeysize = mdbx_env_get_maxkeysize_ex(env, sdb->flags);
+  const size_t maxkeysize = mdbx_env_get_maxkeysize_ex(env, tbl->flags);
   MDBX_val prev_key = {nullptr, 0}, prev_data = {nullptr, 0};
   MDBX_val key, data;
   err = mdbx_cursor_get(cursor, &key, &data, MDBX_FIRST);
@@ -11802,7 +11802,7 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
                        "key length exceeds max-key-size",
                        "%" PRIuPTR " > %" PRIuPTR, key.iov_len, maxkeysize);
       bad_key = true;
-    } else if ((sdb->flags & MDBX_INTEGERKEY) && key.iov_len != 8 &&
+    } else if ((tbl->flags & MDBX_INTEGERKEY) && key.iov_len != 8 &&
                key.iov_len != 4) {
       chk_object_issue(scope, "entry", record_count, "wrong key length",
                        "%" PRIuPTR " != 4or8", key.iov_len);
@@ -11810,7 +11810,7 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
     }
 
     bool bad_data = false;
-    if ((sdb->flags & MDBX_INTEGERDUP) && data.iov_len != 8 &&
+    if ((tbl->flags & MDBX_INTEGERDUP) && data.iov_len != 8 &&
         data.iov_len != 4) {
       chk_object_issue(scope, "entry", record_count, "wrong data length",
                        "%" PRIuPTR " != 4or8", data.iov_len);
@@ -11818,7 +11818,7 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
     }
 
     if (prev_key.iov_base) {
-      if (prev_data.iov_base && !bad_data && (sdb->flags & MDBX_DUPFIXED) &&
+      if (prev_data.iov_base && !bad_data && (tbl->flags & MDBX_DUPFIXED) &&
           prev_data.iov_len != data.iov_len) {
         chk_object_issue(scope, "entry", record_count, "different data length",
                          "%" PRIuPTR " != %" PRIuPTR, prev_data.iov_len,
@@ -11830,7 +11830,7 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
         int cmp = mdbx_cmp(txn, dbi, &key, &prev_key);
         if (cmp == 0) {
           ++dups;
-          if ((sdb->flags & MDBX_DUPSORT) == 0) {
+          if ((tbl->flags & MDBX_DUPSORT) == 0) {
             chk_object_issue(scope, "entry", record_count, "duplicated entries",
                              nullptr);
             if (prev_data.iov_base && data.iov_len == prev_data.iov_len &&
@@ -11853,57 +11853,55 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
     }
 
     if (!bad_key) {
-      if (!prev_key.iov_base && (sdb->flags & MDBX_INTEGERKEY))
+      if (!prev_key.iov_base && (tbl->flags & MDBX_INTEGERKEY))
         chk_line_end(chk_print(chk_line_begin(scope, MDBX_chk_info),
                                "fixed key-size %" PRIuSIZE, key.iov_len));
       prev_key = key;
     }
     if (!bad_data) {
       if (!prev_data.iov_base &&
-          (sdb->flags & (MDBX_INTEGERDUP | MDBX_DUPFIXED)))
+          (tbl->flags & (MDBX_INTEGERDUP | MDBX_DUPFIXED)))
         chk_line_end(chk_print(chk_line_begin(scope, MDBX_chk_info),
                                "fixed data-size %" PRIuSIZE, data.iov_len));
       prev_data = data;
     }
 
     record_count++;
-    histogram_acc(key.iov_len, &sdb->histogram.key_len);
-    histogram_acc(data.iov_len, &sdb->histogram.val_len);
+    histogram_acc(key.iov_len, &tbl->histogram.key_len);
+    histogram_acc(data.iov_len, &tbl->histogram.val_len);
 
     const node_t *const node =
         page_node(cursor->pg[cursor->top], cursor->ki[cursor->top]);
-    if (node_flags(node) == N_SUBDATA) {
-      if (dbi != MAIN_DBI || (sdb->flags & (MDBX_DUPSORT | MDBX_DUPFIXED |
+    if (node_flags(node) == N_TREE) {
+      if (dbi != MAIN_DBI || (tbl->flags & (MDBX_DUPSORT | MDBX_DUPFIXED |
                                             MDBX_REVERSEDUP | MDBX_INTEGERDUP)))
-        chk_object_issue(scope, "entry", record_count,
-                         "unexpected sub-database", "node-flags 0x%x",
-                         node_flags(node));
+        chk_object_issue(scope, "entry", record_count, "unexpected table",
+                         "node-flags 0x%x", node_flags(node));
       else if (data.iov_len != sizeof(tree_t))
-        chk_object_issue(scope, "entry", record_count,
-                         "wrong sub-database node size",
+        chk_object_issue(scope, "entry", record_count, "wrong table node size",
                          "node-size %" PRIuSIZE " != %" PRIuSIZE, data.iov_len,
                          sizeof(tree_t));
       else if (scope->stage == MDBX_chk_maindb)
-        /* подсчитываем subDB при первом проходе */
+        /* подсчитываем table при первом проходе */
         sub_databases += 1;
       else {
-        /* обработка subDB при втором проходе */
+        /* обработка table при втором проходе */
         tree_t aligned_db;
         memcpy(&aligned_db, data.iov_base, sizeof(aligned_db));
-        walk_sdb_t sdb_info = {.name = key};
-        sdb_info.internal = &aligned_db;
-        MDBX_chk_subdb_t *subdb;
-        err = chk_get_sdb(scope, &sdb_info, &subdb);
+        walk_tbl_t tbl_info = {.name = key};
+        tbl_info.internal = &aligned_db;
+        MDBX_chk_table_t *table;
+        err = chk_get_tbl(scope, &tbl_info, &table);
         if (unlikely(err))
           goto bailout;
-        if (subdb->cookie) {
+        if (table->cookie) {
           err = chk_scope_begin(
-              chk, 0, MDBX_chk_subdbs, subdb, &usr->result.problems_kv,
-              "Processing subDB %s...", chk_v2a(chk, &subdb->name));
+              chk, 0, MDBX_chk_tables, table, &usr->result.problems_kv,
+              "Processing table %s...", chk_v2a(chk, &table->name));
           if (likely(!err)) {
-            err = chk_db(usr->scope, (MDBX_dbi)-1, subdb, chk_handle_kv);
+            err = chk_db(usr->scope, (MDBX_dbi)-1, table, chk_handle_kv);
             if (err != MDBX_EINTR && err != MDBX_RESULT_TRUE)
-              usr->result.subdb_processed += 1;
+              usr->result.table_processed += 1;
           }
           err = chk_scope_restore(scope, err);
           if (unlikely(err))
@@ -11911,10 +11909,10 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
         } else
           chk_line_end(chk_flush(
               chk_print(chk_line_begin(scope, MDBX_chk_processing),
-                        "Skip processing %s...", chk_v2a(chk, &subdb->name))));
+                        "Skip processing %s...", chk_v2a(chk, &table->name))));
       }
     } else if (handler) {
-      err = handler(scope, sdb, record_count, &key, &data);
+      err = handler(scope, tbl, record_count, &key, &data);
       if (unlikely(err))
         goto bailout;
     }
@@ -11931,32 +11929,32 @@ __cold static int chk_db(MDBX_chk_scope_t *const scope, MDBX_dbi dbi,
 bailout:
   if (cursor) {
     if (handler) {
-      if (sdb->histogram.key_len.count) {
+      if (tbl->histogram.key_len.count) {
         MDBX_chk_line_t *line = chk_line_begin(scope, MDBX_chk_info);
-        line = histogram_dist(line, &sdb->histogram.key_len,
+        line = histogram_dist(line, &tbl->histogram.key_len,
                               "key length density", "0/1", false);
         chk_line_feed(line);
-        line = histogram_dist(line, &sdb->histogram.val_len,
+        line = histogram_dist(line, &tbl->histogram.val_len,
                               "value length density", "0/1", false);
         chk_line_end(line);
       }
       if (scope->stage == MDBX_chk_maindb)
-        usr->result.subdb_total = sub_databases;
-      if (chk->cb->subdb_conclude)
-        err = chk->cb->subdb_conclude(usr, sdb, cursor, err);
+        usr->result.table_total = sub_databases;
+      if (chk->cb->table_conclude)
+        err = chk->cb->table_conclude(usr, tbl, cursor, err);
       MDBX_chk_line_t *line = chk_line_begin(scope, MDBX_chk_resolution);
       line = chk_print(line, "summary: %" PRIuSIZE " records,", record_count);
-      if (dups || (sdb->flags & (MDBX_DUPSORT | MDBX_DUPFIXED |
+      if (dups || (tbl->flags & (MDBX_DUPSORT | MDBX_DUPFIXED |
                                  MDBX_REVERSEDUP | MDBX_INTEGERDUP)))
         line = chk_print(line, " %" PRIuSIZE " dups,", dups);
       if (sub_databases || dbi == MAIN_DBI)
-        line = chk_print(line, " %" PRIuSIZE " sub-databases,", sub_databases);
+        line = chk_print(line, " %" PRIuSIZE " tables,", sub_databases);
       line = chk_print(line,
                        " %" PRIuSIZE " key's bytes,"
                        " %" PRIuSIZE " data's bytes,"
                        " %" PRIuSIZE " problem(s)",
-                       sdb->histogram.key_len.amount,
-                       sdb->histogram.val_len.amount, scope->subtotal_issues);
+                       tbl->histogram.key_len.amount,
+                       tbl->histogram.val_len.amount, scope->subtotal_issues);
       chk_line_end(chk_flush(line));
     }
 
@@ -11968,13 +11966,13 @@ bailout:
 }
 
 __cold static int chk_handle_gc(MDBX_chk_scope_t *const scope,
-                                MDBX_chk_subdb_t *sdb,
+                                MDBX_chk_table_t *tbl,
                                 const size_t record_number, const MDBX_val *key,
                                 const MDBX_val *data) {
   MDBX_chk_internal_t *const chk = scope->internal;
   MDBX_chk_context_t *const usr = chk->usr;
-  assert(sdb == &chk->subdb_gc);
-  (void)sdb;
+  assert(tbl == &chk->table_gc);
+  (void)tbl;
   const char *bad = "";
   pgno_t *iptr = data->iov_base;
 
@@ -12043,9 +12041,9 @@ __cold static int chk_handle_gc(MDBX_chk_scope_t *const scope,
             if (id == 0)
               chk->pagemap[pgno] = -1 /* mark the pgno listed in GC */;
             else if (id > 0) {
-              assert(id - 1 <= (intptr_t)ARRAY_LENGTH(chk->subdb));
+              assert(id - 1 <= (intptr_t)ARRAY_LENGTH(chk->table));
               chk_object_issue(scope, "page", pgno, "already used", "by %s",
-                               chk_v2a(chk, &chk->subdb[id - 1]->name));
+                               chk_v2a(chk, &chk->table[id - 1]->name));
             } else
               chk_object_issue(scope, "page", pgno, "already listed in GC",
                                nullptr);
@@ -12057,7 +12055,7 @@ __cold static int chk_handle_gc(MDBX_chk_scope_t *const scope,
                                                      : pgno_sub(pgno, span)))
           ++span;
       }
-      if (sdb->cookie) {
+      if (tbl->cookie) {
         chk_line_end(chk_print(chk_line_begin(scope, MDBX_chk_details),
                                "transaction %" PRIaTXN ", %" PRIuSIZE
                                " pages, maxspan %" PRIuSIZE "%s",
@@ -12070,7 +12068,7 @@ __cold static int chk_handle_gc(MDBX_chk_scope_t *const scope,
                                                      : pgno_sub(pgno, span));
                ++span)
             ;
-          histogram_acc(span, &sdb->histogram.nested_tree);
+          histogram_acc(span, &tbl->histogram.nested_tree);
           MDBX_chk_line_t *line = chk_line_begin(scope, MDBX_chk_extra);
           if (line) {
             if (span > 1)
@@ -12343,13 +12341,13 @@ __cold static int env_chk(MDBX_chk_scope_t *const scope) {
         usr->result.problems_gc = usr->result.gc_tree_problems));
   else {
     err = chk_scope_begin(
-        chk, -1, MDBX_chk_gc, &chk->subdb_gc, &usr->result.problems_gc,
+        chk, -1, MDBX_chk_gc, &chk->table_gc, &usr->result.problems_gc,
         "Processing %s by txn#%" PRIaTXN "...", subj_gc, txn->txnid);
     if (likely(!err))
-      err = chk_db(usr->scope, FREE_DBI, &chk->subdb_gc, chk_handle_gc);
+      err = chk_db(usr->scope, FREE_DBI, &chk->table_gc, chk_handle_gc);
     line = chk_line_begin(scope, MDBX_chk_info);
     if (line) {
-      histogram_print(scope, line, &chk->subdb_gc.histogram.nested_tree,
+      histogram_print(scope, line, &chk->table_gc.histogram.nested_tree,
                       "span(s)", "single", false);
       chk_line_end(line);
     }
@@ -12481,32 +12479,32 @@ __cold static int env_chk(MDBX_chk_scope_t *const scope) {
         subj_main, subj_tree,
         usr->result.problems_kv = usr->result.kv_tree_problems));
   else {
-    err = chk_scope_begin(chk, 0, MDBX_chk_maindb, &chk->subdb_main,
+    err = chk_scope_begin(chk, 0, MDBX_chk_maindb, &chk->table_main,
                           &usr->result.problems_kv, "Processing %s...",
                           subj_main);
     if (likely(!err))
-      err = chk_db(usr->scope, MAIN_DBI, &chk->subdb_main, chk_handle_kv);
+      err = chk_db(usr->scope, MAIN_DBI, &chk->table_main, chk_handle_kv);
     chk_scope_restore(scope, err);
 
-    const char *const subj_subdbs = "sub-database(s)";
-    if (usr->result.problems_kv && usr->result.subdb_total)
+    const char *const subj_tables = "table(s)";
+    if (usr->result.problems_kv && usr->result.table_total)
       chk_line_end(chk_print(chk_line_begin(scope, MDBX_chk_processing),
-                             "Skip processing %s", subj_subdbs));
-    else if (usr->result.problems_kv == 0 && usr->result.subdb_total == 0)
+                             "Skip processing %s", subj_tables));
+    else if (usr->result.problems_kv == 0 && usr->result.table_total == 0)
       chk_line_end(chk_print(chk_line_begin(scope, MDBX_chk_info), "No %s",
-                             subj_subdbs));
-    else if (usr->result.problems_kv == 0 && usr->result.subdb_total) {
+                             subj_tables));
+    else if (usr->result.problems_kv == 0 && usr->result.table_total) {
       err = chk_scope_begin(
-          chk, 1, MDBX_chk_subdbs, nullptr, &usr->result.problems_kv,
-          "Processing %s by txn#%" PRIaTXN "...", subj_subdbs, txn->txnid);
+          chk, 1, MDBX_chk_tables, nullptr, &usr->result.problems_kv,
+          "Processing %s by txn#%" PRIaTXN "...", subj_tables, txn->txnid);
       if (!err)
-        err = chk_db(usr->scope, MAIN_DBI, &chk->subdb_main, nullptr);
+        err = chk_db(usr->scope, MAIN_DBI, &chk->table_main, nullptr);
       if (usr->scope->subtotal_issues)
         chk_line_end(chk_print(chk_line_begin(usr->scope, MDBX_chk_resolution),
                                "processed %" PRIuSIZE " of %" PRIuSIZE
                                " %s, %" PRIuSIZE " problems(s)",
-                               usr->result.subdb_processed,
-                               usr->result.subdb_total, subj_subdbs,
+                               usr->result.table_processed,
+                               usr->result.table_total, subj_tables,
                                usr->scope->subtotal_issues));
     }
     chk_scope_restore(scope, err);
@@ -12546,20 +12544,20 @@ __cold int mdbx_env_chk(MDBX_env *env, const struct MDBX_chk_callbacks *cb,
   chk->usr->env = env;
   chk->flags = flags;
 
-  chk->subdb_gc.id = -1;
-  chk->subdb_gc.name.iov_base = MDBX_CHK_GC;
-  chk->subdb[FREE_DBI] = &chk->subdb_gc;
+  chk->table_gc.id = -1;
+  chk->table_gc.name.iov_base = MDBX_CHK_GC;
+  chk->table[FREE_DBI] = &chk->table_gc;
 
-  chk->subdb_main.id = -1;
-  chk->subdb_main.name.iov_base = MDBX_CHK_MAIN;
-  chk->subdb[MAIN_DBI] = &chk->subdb_main;
+  chk->table_main.id = -1;
+  chk->table_main.name.iov_base = MDBX_CHK_MAIN;
+  chk->table[MAIN_DBI] = &chk->table_main;
 
   chk->monotime_timeout =
       timeout_seconds_16dot16
           ? osal_16dot16_to_monotime(timeout_seconds_16dot16) + osal_monotime()
           : 0;
   chk->usr->scope_nesting = 0;
-  chk->usr->result.subdbs = (const void *)&chk->subdb;
+  chk->usr->result.tables = (const void *)&chk->table;
 
   MDBX_chk_scope_t *const top = chk->scope_stack;
   top->verbosity = verbosity;
@@ -12591,8 +12589,8 @@ __cold int mdbx_env_chk(MDBX_env *env, const struct MDBX_chk_callbacks *cb,
 
   // doit
   if (likely(!rc)) {
-    chk->subdb_gc.flags = ctx->txn->dbs[FREE_DBI].flags;
-    chk->subdb_main.flags = ctx->txn->dbs[MAIN_DBI].flags;
+    chk->table_gc.flags = ctx->txn->dbs[FREE_DBI].flags;
+    chk->table_main.flags = ctx->txn->dbs[MAIN_DBI].flags;
     rc = env_chk(top);
   }
 
@@ -12999,7 +12997,7 @@ static bool coherency_check(const MDBX_env *env, const txnid_t txnid,
       unlikely(freedb_root_pgno >= last_pgno)) {
     if (report)
       WARNING(
-          "catch invalid %sdb root %" PRIaPGNO " for meta_txnid %" PRIaTXN
+          "catch invalid %s-db root %" PRIaPGNO " for meta_txnid %" PRIaTXN
           " %s",
           "free", freedb_root_pgno, txnid,
           (env->stuck_meta < 0)
@@ -13011,7 +13009,7 @@ static bool coherency_check(const MDBX_env *env, const txnid_t txnid,
       unlikely(maindb_root_pgno >= last_pgno)) {
     if (report)
       WARNING(
-          "catch invalid %sdb root %" PRIaPGNO " for meta_txnid %" PRIaTXN
+          "catch invalid %s-db root %" PRIaPGNO " for meta_txnid %" PRIaTXN
           " %s",
           "main", maindb_root_pgno, txnid,
           (env->stuck_meta < 0)
@@ -13024,7 +13022,7 @@ static bool coherency_check(const MDBX_env *env, const txnid_t txnid,
                 likely(magic_and_version == MDBX_DATA_MAGIC)))) {
     if (report)
       WARNING(
-          "catch invalid %sdb.mod_txnid %" PRIaTXN " for meta_txnid %" PRIaTXN
+          "catch invalid %s-db.mod_txnid %" PRIaTXN " for meta_txnid %" PRIaTXN
           " %s",
           "free", freedb_mod_txnid, txnid,
           (env->stuck_meta < 0)
@@ -13037,7 +13035,7 @@ static bool coherency_check(const MDBX_env *env, const txnid_t txnid,
                 likely(magic_and_version == MDBX_DATA_MAGIC)))) {
     if (report)
       WARNING(
-          "catch invalid %sdb.mod_txnid %" PRIaTXN " for meta_txnid %" PRIaTXN
+          "catch invalid %s-db.mod_txnid %" PRIaTXN " for meta_txnid %" PRIaTXN
           " %s",
           "main", maindb_mod_txnid, txnid,
           (env->stuck_meta < 0)
@@ -13052,7 +13050,7 @@ static bool coherency_check(const MDBX_env *env, const txnid_t txnid,
     if (unlikely(root_txnid != freedb_mod_txnid)) {
       if (report)
         WARNING("catch invalid root_page %" PRIaPGNO " mod_txnid %" PRIaTXN
-                " for %sdb.mod_txnid %" PRIaTXN " %s",
+                " for %s-db.mod_txnid %" PRIaTXN " %s",
                 freedb_root_pgno, root_txnid, "free", freedb_mod_txnid,
                 (env->stuck_meta < 0) ? "(workaround for incoherent flaw of "
                                         "unified page/buffer cache)"
@@ -13067,7 +13065,7 @@ static bool coherency_check(const MDBX_env *env, const txnid_t txnid,
     if (unlikely(root_txnid != maindb_mod_txnid)) {
       if (report)
         WARNING("catch invalid root_page %" PRIaPGNO " mod_txnid %" PRIaTXN
-                " for %sdb.mod_txnid %" PRIaTXN " %s",
+                " for %s-db.mod_txnid %" PRIaTXN " %s",
                 maindb_root_pgno, root_txnid, "main", maindb_mod_txnid,
                 (env->stuck_meta < 0) ? "(workaround for incoherent flaw of "
                                         "unified page/buffer cache)"
@@ -13138,7 +13136,7 @@ __hot int coherency_check_head(MDBX_txn *txn, const meta_ptr_t head,
     txn->dbs[FREE_DBI].flags &= DB_PERSISTENT_FLAGS;
   }
   tASSERT(txn, txn->dbs[FREE_DBI].flags == MDBX_INTEGERKEY);
-  tASSERT(txn, check_sdb_flags(txn->dbs[MAIN_DBI].flags));
+  tASSERT(txn, check_table_flags(txn->dbs[MAIN_DBI].flags));
   return MDBX_SUCCESS;
 }
 
@@ -13151,7 +13149,7 @@ int coherency_check_written(const MDBX_env *env, const txnid_t txnid,
     if (likely(
             coherency_check(env, head_txnid, &meta->trees.gc, meta, report))) {
       eASSERT(env, meta->trees.gc.flags == MDBX_INTEGERKEY);
-      eASSERT(env, check_sdb_flags(meta->trees.main.flags));
+      eASSERT(env, check_table_flags(meta->trees.main.flags));
       return MDBX_SUCCESS;
     }
   } else if (report) {
@@ -13361,17 +13359,17 @@ __cold static int stat_acc(const MDBX_txn *txn, MDBX_stat *st, size_t bytes) {
   if (!(txn->dbs[MAIN_DBI].flags & MDBX_DUPSORT) &&
       txn->dbs[MAIN_DBI].items /* TODO: use `md_subs` field */) {
 
-    /* scan and account not opened named subDBs */
+    /* scan and account not opened named tables */
     err = tree_search(&cx.outer, nullptr, Z_FIRST);
     while (err == MDBX_SUCCESS) {
       const page_t *mp = cx.outer.pg[cx.outer.top];
       for (size_t i = 0; i < page_numkeys(mp); i++) {
         const node_t *node = page_node(mp, i);
-        if (node_flags(node) != N_SUBDATA)
+        if (node_flags(node) != N_TREE)
           continue;
         if (unlikely(node_ds(node) != sizeof(tree_t))) {
           ERROR("%s/%d: %s %zu", "MDBX_CORRUPTED", MDBX_CORRUPTED,
-                "invalid subDb node size", node_ds(node));
+                "invalid table node size", node_ds(node));
           return MDBX_CORRUPTED;
         }
 
@@ -14130,11 +14128,10 @@ __cold static int compacting_walk(ctx_t *ctx, MDBX_cursor *mc,
     page_t *mp = mc->pg[mc->top];
     const size_t nkeys = page_numkeys(mp);
     if (is_leaf(mp)) {
-      if (!(mc->flags &
-            z_inner) /* may have nested N_SUBDATA or N_BIGDATA nodes */) {
+      if (!(mc->flags & z_inner) /* may have nested N_TREE or N_BIG nodes */) {
         for (size_t i = 0; i < nkeys; i++) {
           node_t *node = page_node(mp, i);
-          if (node_flags(node) == N_BIGDATA) {
+          if (node_flags(node) == N_BIG) {
             /* Need writable leaf */
             if (mp != leaf) {
               mc->pg[mc->top] = leaf;
@@ -14154,7 +14151,7 @@ __cold static int compacting_walk(ctx_t *ctx, MDBX_cursor *mc,
                                      npages);
             if (unlikely(rc != MDBX_SUCCESS))
               goto bailout;
-          } else if (node_flags(node) & N_SUBDATA) {
+          } else if (node_flags(node) & N_TREE) {
             if (!MDBX_DISABLE_VALIDATION &&
                 unlikely(node_ds(node) != sizeof(tree_t))) {
               ERROR("%s/%d: %s %u", "MDBX_CORRUPTED", MDBX_CORRUPTED,
@@ -14173,7 +14170,7 @@ __cold static int compacting_walk(ctx_t *ctx, MDBX_cursor *mc,
             }
 
             tree_t *nested = nullptr;
-            if (node_flags(node) & N_DUPDATA) {
+            if (node_flags(node) & N_DUP) {
               rc = cursor_dupsort_setup(mc, node, mp);
               if (likely(rc == MDBX_SUCCESS)) {
                 nested = &mc->subcur->nested_tree;
@@ -15181,10 +15178,10 @@ static __always_inline int couple_init(cursor_couple_t *couple,
   }
 
   if (unlikely(*dbi_state & DBI_STALE))
-    return sdb_fetch(couple->outer.txn, cursor_dbi(&couple->outer));
+    return tbl_fetch(couple->outer.txn, cursor_dbi(&couple->outer));
 
   if (unlikely(kvx->clc.k.lmax == 0))
-    return sdb_setup(txn->env, kvx, tree);
+    return tbl_setup(txn->env, kvx, tree);
 
   return MDBX_SUCCESS;
 }
@@ -15223,7 +15220,7 @@ int cursor_dupsort_setup(MDBX_cursor *mc, const node_t *node,
   default:
     ERROR("invalid node flags %u", flags);
     goto bailout;
-  case N_DUPDATA | N_SUBDATA:
+  case N_DUP | N_TREE:
     if (!MDBX_DISABLE_VALIDATION && unlikely(node_ds(node) != sizeof(tree_t))) {
       ERROR("invalid nested-db record size (%zu, expect %zu)", node_ds(node),
             sizeof(tree_t));
@@ -15239,7 +15236,7 @@ int cursor_dupsort_setup(MDBX_cursor *mc, const node_t *node,
     }
     mx->cursor.top_and_flags = z_fresh_mark | z_inner;
     break;
-  case N_DUPDATA:
+  case N_DUP:
     if (!MDBX_DISABLE_VALIDATION && unlikely(node_ds(node) <= PAGEHDRSZ)) {
       ERROR("invalid nested-page size %zu", node_ds(node));
       goto bailout;
@@ -15414,12 +15411,12 @@ static __always_inline int cursor_bring(const bool inner, const bool tend2first,
   }
 
   const node_t *__restrict node = page_node(mp, ki);
-  if (!inner && (node_flags(node) & N_DUPDATA)) {
+  if (!inner && (node_flags(node) & N_DUP)) {
     int err = cursor_dupsort_setup(mc, node, mp);
     if (unlikely(err != MDBX_SUCCESS))
       return err;
     MDBX_ANALYSIS_ASSUME(mc->subcur != nullptr);
-    if (node_flags(node) & N_SUBDATA) {
+    if (node_flags(node) & N_TREE) {
       err = tend2first ? inner_first(&mc->subcur->cursor, data)
                        : inner_last(&mc->subcur->cursor, data);
       if (unlikely(err != MDBX_SUCCESS))
@@ -15666,7 +15663,7 @@ __hot int cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
 
     if (mc->subcur) {
       node_t *node = page_node(mc->pg[mc->top], mc->ki[mc->top]);
-      if (node_flags(node) & N_DUPDATA) {
+      if (node_flags(node) & N_DUP) {
         cASSERT(mc, inner_pointed(mc));
         /* Если за ключом более одного значения, либо если размер данных
          * отличается, то вместо обновления требуется удаление и
@@ -15726,7 +15723,7 @@ __hot int cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
       }
     } else {
       csr_t csr =
-          /* olddata may not be updated in case DUPFIX-page of dupfix-subDB */
+          /* olddata may not be updated in case DUPFIX-page of dupfix-table */
           cursor_seek(mc, (MDBX_val *)key, &old_data, MDBX_SET);
       rc = csr.err;
       exact = csr.exact;
@@ -15744,7 +15741,7 @@ __hot int cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
           eASSERT(env,
                   data->iov_len == 0 && (old_data.iov_len == 0 ||
                                          /* olddata may not be updated in case
-                                            DUPFIX-page of dupfix-subDB */
+                                            DUPFIX-page of dupfix-table */
                                          (mc->tree->flags & MDBX_DUPFIXED)));
           return MDBX_SUCCESS;
         }
@@ -15887,7 +15884,7 @@ __hot int cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
     node_t *const node = page_node(mc->pg[mc->top], mc->ki[mc->top]);
 
     /* Large/Overflow page overwrites need special handling */
-    if (unlikely(node_flags(node) & N_BIGDATA)) {
+    if (unlikely(node_flags(node) & N_BIG)) {
       const size_t dpages = (node_size(key, data) > env->leaf_nodemax)
                                 ? largechunk_npages(env, data->iov_len)
                                 : 0;
@@ -15974,7 +15971,7 @@ __hot int cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
         mp->pgno = mc->pg[mc->top]->pgno;
 
         /* Was a single item before, must convert now */
-        if (!(node_flags(node) & N_DUPDATA)) {
+        if (!(node_flags(node) & N_DUP)) {
           /* does data match? */
           if (flags & MDBX_APPENDDUP) {
             const int cmp = mc->clc->v.cmp(data, &old_data);
@@ -16026,9 +16023,9 @@ __hot int cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
           cASSERT(mc, (xdata.iov_len & 1) == 0);
           fp->upper = (uint16_t)(xdata.iov_len - PAGEHDRSZ);
           old_data.iov_len = xdata.iov_len; /* pretend olddata is fp */
-        } else if (node_flags(node) & N_SUBDATA) {
+        } else if (node_flags(node) & N_TREE) {
           /* Data is on sub-DB, just store it */
-          flags |= N_DUPDATA | N_SUBDATA;
+          flags |= N_DUP | N_TREE;
           goto dupsort_put;
         } else {
           /* Data is on sub-page */
@@ -16123,7 +16120,7 @@ __hot int cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
             fp->txnid = mc->txn->front_txnid;
             fp->pgno = mp->pgno;
             mc->subcur->cursor.pg[0] = fp;
-            flags |= N_DUPDATA;
+            flags |= N_DUP;
             goto dupsort_put;
           }
           xdata.iov_len = old_data.iov_len + growth;
@@ -16162,7 +16159,7 @@ __hot int cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
           cASSERT(mc, env->ps > old_data.iov_len);
           growth = env->ps - (unsigned)old_data.iov_len;
           cASSERT(mc, (growth & 1) == 0);
-          flags |= N_DUPDATA | N_SUBDATA;
+          flags |= N_DUP | N_TREE;
           nested_dupdb.root = mp->pgno;
           nested_dupdb.sequence = 0;
           nested_dupdb.mod_txnid = mc->txn->txnid;
@@ -16197,12 +16194,12 @@ __hot int cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data,
         if (!insert_key)
           node_del(mc, 0);
         ref_data = &xdata;
-        flags |= N_DUPDATA;
+        flags |= N_DUP;
         goto insert_node;
       }
 
-      /* MDBX passes N_SUBDATA in 'flags' to write a DB record */
-      if (unlikely((node_flags(node) ^ flags) & N_SUBDATA))
+      /* MDBX passes N_TREE in 'flags' to write a DB record */
+      if (unlikely((node_flags(node) ^ flags) & N_TREE))
         return MDBX_INCOMPATIBLE;
 
     current:
@@ -16254,8 +16251,7 @@ insert_node:;
   } else {
     /* There is room already in this leaf page. */
     if (is_dupfix_leaf(mc->pg[mc->top])) {
-      cASSERT(mc, !(naf & (N_BIGDATA | N_SUBDATA | N_DUPDATA)) &&
-                      ref_data->iov_len == 0);
+      cASSERT(mc, !(naf & (N_BIG | N_TREE | N_DUP)) && ref_data->iov_len == 0);
       rc = node_add_dupfix(mc, mc->ki[mc->top], key);
     } else
       rc = node_add_leaf(mc, mc->ki[mc->top], key, ref_data, naf);
@@ -16280,7 +16276,7 @@ insert_node:;
      * storing the user data in the keys field, so there are strict
      * size limits on dupdata. The actual data fields of the child
      * DB are all zero size. */
-    if (flags & N_DUPDATA) {
+    if (flags & N_DUP) {
       MDBX_val empty;
     dupsort_put:
       empty.iov_len = 0;
@@ -16318,7 +16314,7 @@ insert_node:;
           goto dupsort_error;
         mx->cursor.tree->items = 1;
       }
-      if (!(node_flags(node) & N_SUBDATA) || sub_root) {
+      if (!(node_flags(node) & N_TREE) || sub_root) {
         page_t *const mp = mc->pg[mc->top];
         const intptr_t nkeys = page_numkeys(mp);
         const size_t dbi = cursor_dbi(mc);
@@ -16352,7 +16348,7 @@ insert_node:;
       inner_flags |=
           (flags & MDBX_APPENDDUP) >> SHIFT_MDBX_APPENDDUP_TO_MDBX_APPEND;
       rc = cursor_put(&mc->subcur->cursor, data, &empty, inner_flags);
-      if (flags & N_SUBDATA) {
+      if (flags & N_TREE) {
         void *db = node_data(node);
         mc->subcur->nested_tree.mod_txnid = mc->txn->txnid;
         memcpy(db, &mc->subcur->nested_tree, sizeof(tree_t));
@@ -16479,12 +16475,12 @@ __hot int cursor_del(MDBX_cursor *mc, unsigned flags) {
     goto del_key;
 
   node_t *node = page_node(mp, mc->ki[mc->top]);
-  if (node_flags(node) & N_DUPDATA) {
+  if (node_flags(node) & N_DUP) {
     if (flags & (MDBX_ALLDUPS | /* for compatibility */ MDBX_NODUPDATA)) {
       /* will subtract the final entry later */
       mc->tree->items -= mc->subcur->nested_tree.items - 1;
     } else {
-      if (!(node_flags(node) & N_SUBDATA)) {
+      if (!(node_flags(node) & N_TREE)) {
         page_t *sp = node_data(node);
         cASSERT(mc, is_subpage(sp));
         sp->txnid = mp->txnid;
@@ -16495,8 +16491,8 @@ __hot int cursor_del(MDBX_cursor *mc, unsigned flags) {
         return rc;
       /* If sub-DB still has entries, we're done */
       if (mc->subcur->nested_tree.items) {
-        if (node_flags(node) & N_SUBDATA) {
-          /* update subDB info */
+        if (node_flags(node) & N_TREE) {
+          /* update table info */
           mc->subcur->nested_tree.mod_txnid = mc->txn->txnid;
           memcpy(node_data(node), &mc->subcur->nested_tree, sizeof(tree_t));
         } else {
@@ -16517,7 +16513,7 @@ __hot int cursor_del(MDBX_cursor *mc, unsigned flags) {
             }
             if (m2->ki[mc->top] != mc->ki[mc->top]) {
               inner = page_node(mp, m2->ki[mc->top]);
-              if (node_flags(inner) & N_SUBDATA)
+              if (node_flags(inner) & N_TREE)
                 continue;
             }
             m2->subcur->cursor.pg[0] = node_data(inner);
@@ -16531,7 +16527,7 @@ __hot int cursor_del(MDBX_cursor *mc, unsigned flags) {
       /* otherwise fall thru and delete the sub-DB */
     }
 
-    if ((node_flags(node) & N_SUBDATA) && mc->subcur->cursor.tree->height) {
+    if ((node_flags(node) & N_TREE) && mc->subcur->cursor.tree->height) {
       /* add all the child DB's pages to the free list */
       rc = tree_drop(&mc->subcur->cursor, false);
       if (unlikely(rc != MDBX_SUCCESS))
@@ -16540,13 +16536,13 @@ __hot int cursor_del(MDBX_cursor *mc, unsigned flags) {
     inner_gone(mc);
   } else {
     cASSERT(mc, !inner_pointed(mc));
-    /* MDBX passes N_SUBDATA in 'flags' to delete a DB record */
-    if (unlikely((node_flags(node) ^ flags) & N_SUBDATA))
+    /* MDBX passes N_TREE in 'flags' to delete a DB record */
+    if (unlikely((node_flags(node) ^ flags) & N_TREE))
       return MDBX_INCOMPATIBLE;
   }
 
   /* add large/overflow pages to free list */
-  if (node_flags(node) & N_BIGDATA) {
+  if (node_flags(node) & N_BIG) {
     pgr_t lp = page_get_large(mc, node_largedata_pgno(node), mp->txnid);
     if (unlikely((rc = lp.err) || (rc = page_retire(mc, lp.page))))
       goto fail;
@@ -16624,19 +16620,19 @@ del_key:
          /* уже переместились вправо */ m3->pg[top] != mp)) {
       node = page_node(m3->pg[m3->top], m3->ki[m3->top]);
       /* Если это dupsort-узел, то должен быть валидный вложенный курсор. */
-      if (node_flags(node) & N_DUPDATA) {
+      if (node_flags(node) & N_DUP) {
         /* Тут три варианта событий:
-         * 1) Вложенный курсор уже инициализирован, у узла есть флаг N_SUBDATA,
+         * 1) Вложенный курсор уже инициализирован, у узла есть флаг N_TREE,
          *    соответственно дубликаты вынесены в отдельное дерево с корнем
          *    в отдельной странице = ничего корректировать не требуется.
-         * 2) Вложенный курсор уже инициализирован, у узла нет флага N_SUBDATA,
+         * 2) Вложенный курсор уже инициализирован, у узла нет флага N_TREE,
          *    соответственно дубликаты размещены на вложенной sub-странице.
          * 3) Курсор стоял на удалённом элементе, который имел одно значение,
          *    а после удаления переместился на следующий элемент с дубликатами.
          *    В этом случае вложенный курсор не инициализирован и тепеь его
          *    нужно установить на первый дубликат. */
         if (is_pointed(&m3->subcur->cursor)) {
-          if ((node_flags(node) & N_SUBDATA) == 0) {
+          if ((node_flags(node) & N_TREE) == 0) {
             cASSERT(m3, m3->subcur->cursor.top == 0 &&
                             m3->subcur->nested_tree.height == 1);
             m3->subcur->cursor.pg[0] = node_data(node);
@@ -16645,7 +16641,7 @@ del_key:
           rc = cursor_dupsort_setup(m3, node, m3->pg[m3->top]);
           if (unlikely(rc != MDBX_SUCCESS))
             goto fail;
-          if (node_flags(node) & N_SUBDATA) {
+          if (node_flags(node) & N_TREE) {
             rc = inner_first(&m3->subcur->cursor, nullptr);
             if (unlikely(rc != MDBX_SUCCESS))
               goto fail;
@@ -16865,13 +16861,13 @@ got_node:
     return ret;
   }
 
-  if (node_flags(node) & N_DUPDATA) {
+  if (node_flags(node) & N_DUP) {
     ret.err = cursor_dupsort_setup(mc, node, mp);
     if (unlikely(ret.err != MDBX_SUCCESS))
       return ret;
     if (op >= MDBX_SET) {
       MDBX_ANALYSIS_ASSUME(mc->subcur != nullptr);
-      if (node_flags(node) & N_SUBDATA) {
+      if (node_flags(node) & N_TREE) {
         ret.err = inner_first(&mc->subcur->cursor, data);
         if (unlikely(ret.err != MDBX_SUCCESS))
           return ret;
@@ -16983,7 +16979,7 @@ __hot int cursor_ops(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
       get_key_optional(node, key);
       if (!data)
         return MDBX_SUCCESS;
-      if (node_flags(node) & N_DUPDATA) {
+      if (node_flags(node) & N_DUP) {
         if (!MDBX_DISABLE_VALIDATION && unlikely(!mc->subcur))
           return unexpected_dupsort(mc);
         mc = &mc->subcur->cursor;
@@ -17114,7 +17110,7 @@ __hot int cursor_ops(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
     else {
       node_t *node = page_node(mc->pg[mc->top], mc->ki[mc->top]);
       get_key_optional(node, key);
-      if ((node_flags(node) & N_DUPDATA) == 0)
+      if ((node_flags(node) & N_DUP) == 0)
         return node_read(mc, node, data, mc->pg[mc->top]);
       else if (MDBX_DISABLE_VALIDATION || likely(mc->subcur))
         return ((op == MDBX_FIRST_DUP) ? inner_first
@@ -17406,7 +17402,7 @@ __noinline int dbi_import(MDBX_txn *txn, const size_t dbi) {
     if (parent) {
       /* вложенная пишущая транзакция */
       int rc = dbi_check(parent, dbi);
-      /* копируем состояние subDB очищая new-флаги. */
+      /* копируем состояние table очищая new-флаги. */
       eASSERT(env, txn->dbi_seqs == parent->dbi_seqs);
       txn->dbi_state[dbi] =
           parent->dbi_state[dbi] & ~(DBI_FRESH | DBI_CREAT | DBI_DIRTY);
@@ -17577,15 +17573,15 @@ int dbi_bind(MDBX_txn *txn, const size_t dbi, unsigned user_flags,
 
   /* Если dbi уже использовался, то корректными считаем четыре варианта:
    * 1) user_flags равны MDBX_DB_ACCEDE
-   *   = предполагаем что пользователь открывает существующую subDb,
+   *   = предполагаем что пользователь открывает существующую table,
    *     при этом код проверки не позволит установить другие компараторы.
    * 2) user_flags нулевые, а оба компаратора пустые/нулевые или равны текущим
-   *   = предполагаем что пользователь открывает существующую subDb
+   *   = предполагаем что пользователь открывает существующую table
    *     старым способом с нулевыми с флагами по-умолчанию.
    * 3) user_flags совпадают, а компараторы не заданы или те же
-   *    = предполагаем что пользователь открывает subDb указывая все параметры;
-   * 4) user_flags отличаются, но subDb пустая и задан флаг MDBX_CREATE
-   *    = предполагаем что пользователь пересоздает subDb;
+   *    = предполагаем что пользователь открывает table указывая все параметры;
+   * 4) user_flags отличаются, но table пустая и задан флаг MDBX_CREATE
+   *    = предполагаем что пользователь пересоздает table;
    */
   if ((user_flags & ~MDBX_CREATE) !=
       (unsigned)(env->dbs_flags[dbi] & DB_PERSISTENT_FLAGS)) {
@@ -17599,7 +17595,7 @@ int dbi_bind(MDBX_txn *txn, const size_t dbi, unsigned user_flags,
     else {
       eASSERT(env, env->dbs_flags[dbi] & DB_VALID);
       if (txn->dbi_state[dbi] & DBI_STALE) {
-        int err = sdb_fetch(txn, dbi);
+        int err = tbl_fetch(txn, dbi);
         if (unlikely(err == MDBX_SUCCESS))
           return err;
       }
@@ -17609,7 +17605,7 @@ int dbi_bind(MDBX_txn *txn, const size_t dbi, unsigned user_flags,
       if (unlikely(txn->dbs[dbi].leaf_pages))
         return /* FIXME: return extended info */ MDBX_INCOMPATIBLE;
 
-      /* Пересоздаём subDB если там пусто */
+      /* Пересоздаём table если там пусто */
       if (unlikely(txn->cursors[dbi]))
         return MDBX_DANGLING_DBI;
       env->dbs_flags[dbi] = DB_POISON;
@@ -17624,7 +17620,7 @@ int dbi_bind(MDBX_txn *txn, const size_t dbi, unsigned user_flags,
       env->kvs[dbi].clc.v.cmp = datacmp ? datacmp : builtin_datacmp(user_flags);
       txn->dbs[dbi].flags = db_flags;
       txn->dbs[dbi].dupfix_size = 0;
-      if (unlikely(sdb_setup(env, &env->kvs[dbi], &txn->dbs[dbi]))) {
+      if (unlikely(tbl_setup(env, &env->kvs[dbi], &txn->dbs[dbi]))) {
         txn->dbi_state[dbi] = DBI_LINDO;
         txn->flags |= MDBX_TXN_ERROR;
         return MDBX_PROBLEM;
@@ -17697,7 +17693,7 @@ static int dbi_open_locked(MDBX_txn *txn, unsigned user_flags, MDBX_dbi *dbi,
     env->kvs[MAIN_DBI].clc.v.cmp = builtin_datacmp(main_flags);
     txn->dbs[MAIN_DBI].flags = main_flags;
     txn->dbs[MAIN_DBI].dupfix_size = 0;
-    int err = sdb_setup(env, &env->kvs[MAIN_DBI], &txn->dbs[MAIN_DBI]);
+    int err = tbl_setup(env, &env->kvs[MAIN_DBI], &txn->dbs[MAIN_DBI]);
     if (unlikely(err != MDBX_SUCCESS)) {
       txn->dbi_state[MAIN_DBI] = DBI_LINDO;
       txn->flags |= MDBX_TXN_ERROR;
@@ -17777,11 +17773,11 @@ static int dbi_open_locked(MDBX_txn *txn, unsigned user_flags, MDBX_dbi *dbi,
     /* make sure this is actually a table */
     node_t *node =
         page_node(cx.outer.pg[cx.outer.top], cx.outer.ki[cx.outer.top]);
-    if (unlikely((node_flags(node) & (N_DUPDATA | N_SUBDATA)) != N_SUBDATA))
+    if (unlikely((node_flags(node) & (N_DUP | N_TREE)) != N_TREE))
       return MDBX_INCOMPATIBLE;
     if (!MDBX_DISABLE_VALIDATION && unlikely(body.iov_len != sizeof(tree_t))) {
       ERROR("%s/%d: %s %zu", "MDBX_CORRUPTED", MDBX_CORRUPTED,
-            "invalid subDb node size", body.iov_len);
+            "invalid table node size", body.iov_len);
       return MDBX_CORRUPTED;
     }
     memcpy(&txn->dbs[slot], body.iov_base, sizeof(tree_t));
@@ -17807,8 +17803,8 @@ static int dbi_open_locked(MDBX_txn *txn, unsigned user_flags, MDBX_dbi *dbi,
     txn->dbs[slot].flags = user_flags & DB_PERSISTENT_FLAGS;
     cx.outer.next = txn->cursors[MAIN_DBI];
     txn->cursors[MAIN_DBI] = &cx.outer;
-    rc = cursor_put_checklen(&cx.outer, &name, &body,
-                             N_SUBDATA | MDBX_NOOVERWRITE);
+    rc =
+        cursor_put_checklen(&cx.outer, &name, &body, N_TREE | MDBX_NOOVERWRITE);
     txn->cursors[MAIN_DBI] = cx.outer.next;
     if (unlikely(rc != MDBX_SUCCESS))
       goto bailout;
@@ -17859,7 +17855,7 @@ int dbi_open(MDBX_txn *txn, const MDBX_val *const name, unsigned user_flags,
   *dbi = 0;
 
   if (user_flags != MDBX_ACCEDE &&
-      unlikely(!check_sdb_flags(user_flags & ~MDBX_CREATE)))
+      unlikely(!check_table_flags(user_flags & ~MDBX_CREATE)))
     return MDBX_EINVAL;
 
   int rc = check_txn(txn, MDBX_TXN_BLOCKED);
@@ -18013,11 +18009,11 @@ dbi_rename_locked(MDBX_txn *txn, MDBX_dbi dbi, MDBX_val new_name) {
 
   MDBX_val data = {&txn->dbs[dbi], sizeof(tree_t)};
   pair.err = cursor_put_checklen(&cx.outer, &new_name, &data,
-                                 N_SUBDATA | MDBX_NOOVERWRITE);
+                                 N_TREE | MDBX_NOOVERWRITE);
   if (likely(pair.err == MDBX_SUCCESS)) {
     pair.err = cursor_seek(&cx.outer, &old_name, nullptr, MDBX_SET).err;
     if (likely(pair.err == MDBX_SUCCESS))
-      pair.err = cursor_del(&cx.outer, N_SUBDATA);
+      pair.err = cursor_del(&cx.outer, N_TREE);
     if (likely(pair.err == MDBX_SUCCESS)) {
       pair.defer = env->kvs[dbi].name.iov_base;
       env->kvs[dbi].name = new_name;
@@ -18131,7 +18127,7 @@ __cold int mdbx_drop(MDBX_txn *txn, MDBX_dbi dbi, bool del) {
     if (likely(rc == MDBX_SUCCESS)) {
       cx.outer.next = txn->cursors[MAIN_DBI];
       txn->cursors[MAIN_DBI] = &cx.outer;
-      rc = cursor_del(&cx.outer, N_SUBDATA);
+      rc = cursor_del(&cx.outer, N_TREE);
       txn->cursors[MAIN_DBI] = cx.outer.next;
       if (likely(rc == MDBX_SUCCESS)) {
         tASSERT(txn, txn->dbi_state[MAIN_DBI] & DBI_DIRTY);
@@ -18261,7 +18257,7 @@ __cold int mdbx_dbi_stat(const MDBX_txn *txn, MDBX_dbi dbi, MDBX_stat *dest,
     return MDBX_BAD_TXN;
 
   if (unlikely(txn->dbi_state[dbi] & DBI_STALE)) {
-    rc = sdb_fetch((MDBX_txn *)txn, dbi);
+    rc = tbl_fetch((MDBX_txn *)txn, dbi);
     if (unlikely(rc != MDBX_SUCCESS))
       return rc;
   }
@@ -18295,8 +18291,8 @@ __cold const tree_t *dbi_dig(const MDBX_txn *txn, const size_t dbi,
   return fallback;
 }
 
-__cold int mdbx_enumerate_subdb(const MDBX_txn *txn, MDBX_subdb_enum_func *func,
-                                void *ctx) {
+__cold int mdbx_enumerate_tables(const MDBX_txn *txn,
+                                 MDBX_table_enum_func *func, void *ctx) {
   if (unlikely(!func))
     return MDBX_EINVAL;
 
@@ -18315,7 +18311,7 @@ __cold int mdbx_enumerate_subdb(const MDBX_txn *txn, MDBX_subdb_enum_func *func,
        rc = outer_next(&cx.outer, nullptr, nullptr, MDBX_NEXT_NODUP)) {
     node_t *node =
         page_node(cx.outer.pg[cx.outer.top], cx.outer.ki[cx.outer.top]);
-    if (node_flags(node) != N_SUBDATA)
+    if (node_flags(node) != N_TREE)
       continue;
     if (unlikely(node_ds(node) != sizeof(tree_t))) {
       ERROR("%s/%d: %s %u", "MDBX_CORRUPTED", MDBX_CORRUPTED,
@@ -20006,7 +20002,7 @@ int dxb_sync_locked(MDBX_env *env, unsigned flags, meta_t *const pending,
                     troika_t *const troika) {
   eASSERT(env, ((env->flags ^ flags) & MDBX_WRITEMAP) == 0);
   eASSERT(env, pending->trees.gc.flags == MDBX_INTEGERKEY);
-  eASSERT(env, check_sdb_flags(pending->trees.main.flags));
+  eASSERT(env, check_table_flags(pending->trees.main.flags));
   const meta_t *const meta0 = METAPAGE(env, 0);
   const meta_t *const meta1 = METAPAGE(env, 1);
   const meta_t *const meta2 = METAPAGE(env, 2);
@@ -20305,7 +20301,7 @@ int dxb_sync_locked(MDBX_env *env, unsigned flags, meta_t *const pending,
       target->trees.gc = pending->trees.gc;
       target->trees.main = pending->trees.main;
       eASSERT(env, target->trees.gc.flags == MDBX_INTEGERKEY);
-      eASSERT(env, check_sdb_flags(target->trees.main.flags));
+      eASSERT(env, check_table_flags(target->trees.main.flags));
       target->canary = pending->canary;
       memcpy(target->pages_retired, pending->pages_retired, 8);
       jitter4testing(true);
@@ -20360,7 +20356,7 @@ int dxb_sync_locked(MDBX_env *env, unsigned flags, meta_t *const pending,
 #endif /* MDBX_ENABLE_PGOP_STAT */
     const meta_t undo_meta = *target;
     eASSERT(env, pending->trees.gc.flags == MDBX_INTEGERKEY);
-    eASSERT(env, check_sdb_flags(pending->trees.main.flags));
+    eASSERT(env, check_table_flags(pending->trees.main.flags));
     rc = osal_pwrite(env->fd4meta, pending, sizeof(meta_t),
                      ptr_dist(target, env->dxb_mmap.base));
     if (unlikely(rc != MDBX_SUCCESS)) {
@@ -26567,9 +26563,9 @@ __cold const char *pagetype_caption(const uint8_t type, char buf4unknown[16]) {
 __cold static const char *leafnode_type(node_t *n) {
   static const char *const tp[2][2] = {{"", ": DB"},
                                        {": sub-page", ": sub-DB"}};
-  return (node_flags(n) & N_BIGDATA)
+  return (node_flags(n) & N_BIG)
              ? ": large page"
-             : tp[!!(node_flags(n) & N_DUPDATA)][!!(node_flags(n) & N_SUBDATA)];
+             : tp[!!(node_flags(n) & N_DUP)][!!(node_flags(n) & N_TREE)];
 }
 
 /* Display all the keys in the page. */
@@ -26629,7 +26625,7 @@ __cold void page_list(page_t *mp) {
               DKEY(&key));
       total += nsize;
     } else {
-      if (node_flags(node) & N_BIGDATA)
+      if (node_flags(node) & N_BIG)
         nsize += sizeof(pgno_t);
       else
         nsize += node_ds(node);
@@ -27241,7 +27237,7 @@ __cold int meta_validate(MDBX_env *env, meta_t *const meta,
     return MDBX_INCOMPATIBLE;
   }
 
-  if (unlikely(!check_sdb_flags(meta->trees.main.flags))) {
+  if (unlikely(!check_table_flags(meta->trees.main.flags))) {
     WARNING("meta[%u] has invalid %s flags 0x%x, skip it", meta_number,
             "MainDB", meta->trees.main.flags);
     return MDBX_INCOMPATIBLE;
@@ -27487,7 +27483,7 @@ int mdbx_dbi_sequence(MDBX_txn *txn, MDBX_dbi dbi, uint64_t *result,
     return rc;
 
   if (unlikely(txn->dbi_state[dbi] & DBI_STALE)) {
-    rc = sdb_fetch(txn, dbi);
+    rc = tbl_fetch(txn, dbi);
     if (unlikely(rc != MDBX_SUCCESS))
       return rc;
   }
@@ -27529,9 +27525,9 @@ int mdbx_dbi_sequence(MDBX_txn *txn, MDBX_dbi dbi, uint64_t *result,
          *  - изменить семантику установки/обновления mod_txnid, привязав его
          *    строго к изменению b-tree, но не атрибутов;
          *  - обновлять mod_txnid при фиксации вложенных транзакций;
-         *  - для dbi-хендлов пользовательских subDb (видимо) можно оставить
+         *  - для dbi-хендлов пользовательских table (видимо) можно оставить
          *    DBI_DIRTY в качестве признака необходимости обновления записи
-         *    subDb в MainDB, при этом взводить DBI_DIRTY вместе с обновлением
+         *    table в MainDB, при этом взводить DBI_DIRTY вместе с обновлением
          *    mod_txnid, в том числе при обновлении sequence.
          *  - для MAIN_DBI при обновлении sequence не следует взводить DBI_DIRTY
          *    и/или обновлять mod_txnid, а только взводить MDBX_TXN_DIRTY.
@@ -27608,7 +27604,7 @@ __cold const char *mdbx_liberr2str(int errnum) {
       "MDBX_BAD_TXN: Transaction is not valid for requested operation,"
       " e.g. had errored and be must aborted, has a child, or is invalid",
       "MDBX_BAD_VALSIZE: Invalid size or alignment of key or data"
-      " for target database, either invalid subDB name",
+      " for target database, either invalid table name",
       "MDBX_BAD_DBI: The specified DBI-handle is invalid"
       " or changed by another thread/transaction",
       "MDBX_PROBLEM: Unexpected internal error, transaction should be aborted",
@@ -27651,7 +27647,7 @@ __cold const char *mdbx_liberr2str(int errnum) {
            " please keep one and remove unused other";
   case MDBX_DANGLING_DBI:
     return "MDBX_DANGLING_DBI: Some cursors and/or other resources should be"
-           " closed before subDb or corresponding DBI-handle could be (re)used";
+           " closed before table or corresponding DBI-handle could be (re)used";
   case MDBX_OUSTED:
     return "MDBX_OUSTED: The parked read transaction was outed for the sake"
            " of recycling old MVCC snapshots";
@@ -28443,7 +28439,7 @@ __hot int __must_check_result node_add_leaf(MDBX_cursor *mc, size_t indx,
   page_t *largepage = nullptr;
 
   size_t node_bytes;
-  if (unlikely(flags & N_BIGDATA)) {
+  if (unlikely(flags & N_BIG)) {
     /* Data already on large/overflow page. */
     STATIC_ASSERT(sizeof(pgno_t) % 2 == 0);
     node_bytes =
@@ -28456,7 +28452,7 @@ __hot int __must_check_result node_add_leaf(MDBX_cursor *mc, size_t indx,
             mc->tree->flags);
       return MDBX_PROBLEM;
     }
-    if (unlikely(flags & (N_DUPDATA | N_SUBDATA))) {
+    if (unlikely(flags & (N_DUP | N_TREE))) {
       ERROR("Unexpected target %s flags 0x%x for large data-item", "node",
             flags);
       return MDBX_PROBLEM;
@@ -28470,7 +28466,7 @@ __hot int __must_check_result node_add_leaf(MDBX_cursor *mc, size_t indx,
     DEBUG("allocated %u large/overflow page(s) %" PRIaPGNO "for %" PRIuPTR
           " data bytes",
           largepage->pages, largepage->pgno, data->iov_len);
-    flags |= N_BIGDATA;
+    flags |= N_BIG;
     node_bytes =
         node_size_len(key->iov_len, 0) + sizeof(pgno_t) + sizeof(indx_t);
     cASSERT(mc, node_bytes == leaf_size(mc->txn->env, key, data));
@@ -28506,7 +28502,7 @@ __hot int __must_check_result node_add_leaf(MDBX_cursor *mc, size_t indx,
 
   void *nodedata = node_data(node);
   if (likely(largepage == nullptr)) {
-    if (unlikely(flags & N_BIGDATA)) {
+    if (unlikely(flags & N_BIG)) {
       memcpy(nodedata, data->iov_base, sizeof(pgno_t));
       return MDBX_SUCCESS;
     }
@@ -28548,8 +28544,7 @@ __hot void node_del(MDBX_cursor *mc, size_t ksize) {
   cASSERT(mc, !is_branch(mp) || hole || node_ks(node) == 0);
   size_t hole_size = NODESIZE + node_ks(node);
   if (is_leaf(mp))
-    hole_size +=
-        (node_flags(node) & N_BIGDATA) ? sizeof(pgno_t) : node_ds(node);
+    hole_size += (node_flags(node) & N_BIG) ? sizeof(pgno_t) : node_ds(node);
   hole_size = EVEN_CEIL(hole_size);
 
   const indx_t hole_offset = mp->entries[hole];
@@ -28579,7 +28574,7 @@ __hot void node_del(MDBX_cursor *mc, size_t ksize) {
 
 __noinline int node_read_bigdata(MDBX_cursor *mc, const node_t *node,
                                  MDBX_val *data, const page_t *mp) {
-  cASSERT(mc, node_flags(node) == N_BIGDATA && data->iov_len == node_ds(node));
+  cASSERT(mc, node_flags(node) == N_BIG && data->iov_len == node_ds(node));
 
   pgr_t lp = page_get_large(mc, node_largedata_pgno(node), mp->txnid);
   if (unlikely((lp.err != MDBX_SUCCESS))) {
@@ -32637,17 +32632,17 @@ __cold int page_check(const MDBX_cursor *const mc, const page_t *const mp) {
         rc =
             bad_page(mp, "invalid node[%zu] flags (%u)\n", i, node_flags(node));
         break;
-      case N_BIGDATA /* data on large-page */:
+      case N_BIG /* data on large-page */:
       case 0 /* usual */:
-      case N_SUBDATA /* sub-db */:
-      case N_SUBDATA | N_DUPDATA /* dupsorted sub-tree */:
-      case N_DUPDATA /* short sub-page */:
+      case N_TREE /* sub-db */:
+      case N_TREE | N_DUP /* dupsorted sub-tree */:
+      case N_DUP /* short sub-page */:
         break;
       }
 
       const size_t dsize = node_ds(node);
       const char *const data = node_data(node);
-      if (node_flags(node) & N_BIGDATA) {
+      if (node_flags(node) & N_BIG) {
         if (unlikely(end_of_page < data + sizeof(pgno_t))) {
           rc = bad_page(
               mp, "node-%s(%zu of %zu, %zu bytes) beyond (%zu) page-end\n",
@@ -32704,20 +32699,20 @@ __cold int page_check(const MDBX_cursor *const mc, const page_t *const mp) {
           continue;
         }
         break;
-      case N_SUBDATA /* sub-db */:
+      case N_TREE /* sub-db */:
         if (unlikely(dsize != sizeof(tree_t))) {
           rc = bad_page(mp, "invalid sub-db record size (%zu)\n", dsize);
           continue;
         }
         break;
-      case N_SUBDATA | N_DUPDATA /* dupsorted sub-tree */:
+      case N_TREE | N_DUP /* dupsorted sub-tree */:
         if (unlikely(dsize != sizeof(tree_t))) {
           rc = bad_page(mp, "invalid nested-db record size (%zu, expect %zu)\n",
                         dsize, sizeof(tree_t));
           continue;
         }
         break;
-      case N_DUPDATA /* short sub-page */:
+      case N_DUP /* short sub-page */:
         if (unlikely(dsize <= PAGEHDRSZ)) {
           rc = bad_page(mp, "invalid nested/sub-page record size (%zu)\n",
                         dsize);
@@ -34001,7 +33996,7 @@ __hot int tree_search(MDBX_cursor *mc, const MDBX_val *key, int flags) {
 
   const size_t dbi = cursor_dbi(mc);
   if (unlikely(*cursor_dbi_state(mc) & DBI_STALE)) {
-    err = sdb_fetch(mc->txn, dbi);
+    err = tbl_fetch(mc->txn, dbi);
     if (unlikely(err != MDBX_SUCCESS))
       goto bailout;
   }
@@ -35081,7 +35076,7 @@ static size_t spill_cursor_keep(const MDBX_txn *const txn,
     tASSERT(txn, is_leaf(mp));
     if (!mc->subcur || mc->ki[mc->top] >= page_numkeys(mp))
       break;
-    if (!(node_flags(page_node(mp, mc->ki[mc->top])) & N_SUBDATA))
+    if (!(node_flags(page_node(mp, mc->ki[mc->top])) & N_TREE))
       break;
     mc = &mc->subcur->cursor;
   }
@@ -35468,8 +35463,8 @@ done:
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
 
-int sdb_setup(const MDBX_env *env, kvx_t *const kvx, const tree_t *const db) {
-  if (unlikely(!check_sdb_flags(db->flags))) {
+int tbl_setup(const MDBX_env *env, kvx_t *const kvx, const tree_t *const db) {
+  if (unlikely(!check_table_flags(db->flags))) {
     ERROR("incompatible or invalid db.flags (0x%x) ", db->flags);
     return MDBX_INCOMPATIBLE;
   }
@@ -35496,7 +35491,7 @@ int sdb_setup(const MDBX_env *env, kvx_t *const kvx, const tree_t *const db) {
   return MDBX_SUCCESS;
 }
 
-int sdb_fetch(MDBX_txn *txn, size_t dbi) {
+int tbl_fetch(MDBX_txn *txn, size_t dbi) {
   cursor_couple_t couple;
   int rc = cursor_init(&couple.outer, txn, MAIN_DBI);
   if (unlikely(rc != MDBX_SUCCESS))
@@ -35506,7 +35501,7 @@ int sdb_fetch(MDBX_txn *txn, size_t dbi) {
   rc = tree_search(&couple.outer, &kvx->name, 0);
   if (unlikely(rc != MDBX_SUCCESS)) {
   bailout:
-    NOTICE("dbi %zu refs to inaccessible subDB `%*s` for txn %" PRIaTXN
+    NOTICE("dbi %zu refs to inaccessible table `%*s` for txn %" PRIaTXN
            " (err %d)",
            dbi, (int)kvx->name.iov_len, (const char *)kvx->name.iov_base,
            txn->txnid, rc);
@@ -35519,8 +35514,8 @@ int sdb_fetch(MDBX_txn *txn, size_t dbi) {
     rc = MDBX_NOTFOUND;
     goto bailout;
   }
-  if (unlikely((node_flags(nsr.node) & (N_DUPDATA | N_SUBDATA)) != N_SUBDATA)) {
-    NOTICE("dbi %zu refs to not a named subDB `%*s` for txn %" PRIaTXN " (%s)",
+  if (unlikely((node_flags(nsr.node) & (N_DUP | N_TREE)) != N_TREE)) {
+    NOTICE("dbi %zu refs to not a named table `%*s` for txn %" PRIaTXN " (%s)",
            dbi, (int)kvx->name.iov_len, (const char *)kvx->name.iov_base,
            txn->txnid, "wrong flags");
     return MDBX_INCOMPATIBLE; /* not a named DB */
@@ -35532,7 +35527,7 @@ int sdb_fetch(MDBX_txn *txn, size_t dbi) {
     return rc;
 
   if (unlikely(data.iov_len != sizeof(tree_t))) {
-    NOTICE("dbi %zu refs to not a named subDB `%*s` for txn %" PRIaTXN " (%s)",
+    NOTICE("dbi %zu refs to not a named table `%*s` for txn %" PRIaTXN " (%s)",
            dbi, (int)kvx->name.iov_len, (const char *)kvx->name.iov_base,
            txn->txnid, "wrong rec-size");
     return MDBX_INCOMPATIBLE; /* not a named DB */
@@ -35543,7 +35538,7 @@ int sdb_fetch(MDBX_txn *txn, size_t dbi) {
    * have dropped and recreated the DB with other flags. */
   tree_t *const db = &txn->dbs[dbi];
   if (unlikely((db->flags & DB_PERSISTENT_FLAGS) != flags)) {
-    NOTICE("dbi %zu refs to the re-created subDB `%*s` for txn %" PRIaTXN
+    NOTICE("dbi %zu refs to the re-created table `%*s` for txn %" PRIaTXN
            " with different flags (present 0x%X != wanna 0x%X)",
            dbi, (int)kvx->name.iov_len, (const char *)kvx->name.iov_base,
            txn->txnid, db->flags & DB_PERSISTENT_FLAGS, flags);
@@ -35560,7 +35555,7 @@ int sdb_fetch(MDBX_txn *txn, size_t dbi) {
     return MDBX_CORRUPTED;
   }
 #endif /* !MDBX_DISABLE_VALIDATION */
-  rc = sdb_setup(txn->env, kvx, db);
+  rc = tbl_setup(txn->env, kvx, db);
   if (unlikely(rc != MDBX_SUCCESS))
     return rc;
 
@@ -36226,15 +36221,15 @@ void recalculate_merge_thresholds(MDBX_env *env) {
                               : bytes / 4 /* 25 % */));
 }
 
-int tree_drop(MDBX_cursor *mc, const bool may_have_subDBs) {
+int tree_drop(MDBX_cursor *mc, const bool may_have_tables) {
   MDBX_txn *txn = mc->txn;
   int rc = tree_search(mc, nullptr, Z_FIRST);
   if (likely(rc == MDBX_SUCCESS)) {
-    /* DUPSORT sub-DBs have no large-pages/subDBs. Omit scanning leaves.
+    /* DUPSORT sub-DBs have no large-pages/tables. Omit scanning leaves.
      * This also avoids any P_DUPFIX pages, which have no nodes.
      * Also if the DB doesn't have sub-DBs and has no large/overflow
      * pages, omit scanning leaves. */
-    if (!(may_have_subDBs | mc->tree->large_pages))
+    if (!(may_have_tables | mc->tree->large_pages))
       cursor_pop(mc);
 
     rc = pnl_need(&txn->tw.retired_pages, (size_t)mc->tree->branch_pages +
@@ -36254,15 +36249,15 @@ int tree_drop(MDBX_cursor *mc, const bool may_have_subDBs) {
         cASSERT(mc, mc->top + 1 == mc->tree->height);
         for (size_t i = 0; i < nkeys; i++) {
           node_t *node = page_node(mp, i);
-          if (node_flags(node) & N_BIGDATA) {
+          if (node_flags(node) & N_BIG) {
             rc = page_retire_ex(mc, node_largedata_pgno(node), nullptr, 0);
             if (unlikely(rc != MDBX_SUCCESS))
               goto bailout;
-            if (!(may_have_subDBs | mc->tree->large_pages))
+            if (!(may_have_tables | mc->tree->large_pages))
               goto pop;
-          } else if (node_flags(node) & N_SUBDATA) {
-            if (unlikely((node_flags(node) & N_DUPDATA) == 0)) {
-              rc = /* disallowing implicit subDB deletion */ MDBX_INCOMPATIBLE;
+          } else if (node_flags(node) & N_TREE) {
+            if (unlikely((node_flags(node) & N_DUP) == 0)) {
+              rc = /* disallowing implicit table deletion */ MDBX_INCOMPATIBLE;
               goto bailout;
             }
             rc = cursor_dupsort_setup(mc, node, mp);
@@ -36282,8 +36277,7 @@ int tree_drop(MDBX_cursor *mc, const bool may_have_subDBs) {
                                        : P_BRANCH);
         for (size_t i = 0; i < nkeys; i++) {
           node_t *node = page_node(mp, i);
-          tASSERT(txn, (node_flags(node) &
-                        (N_BIGDATA | N_SUBDATA | N_DUPDATA)) == 0);
+          tASSERT(txn, (node_flags(node) & (N_BIG | N_TREE | N_DUP)) == 0);
           const pgno_t pgno = node_pgno(node);
           rc = page_retire_ex(mc, pgno, nullptr, pagetype);
           if (unlikely(rc != MDBX_SUCCESS))
@@ -37417,8 +37411,8 @@ int page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
             node_t *node = ptr_disp(mp, tmp_ki_copy->entries[i] + PAGEHDRSZ);
             size = NODESIZE + node_ks(node) + sizeof(indx_t);
             if (is_leaf(mp))
-              size += (node_flags(node) & N_BIGDATA) ? sizeof(pgno_t)
-                                                     : node_ds(node);
+              size +=
+                  (node_flags(node) & N_BIG) ? sizeof(pgno_t) : node_ds(node);
             size = EVEN_CEIL(size);
           }
 
@@ -37562,7 +37556,7 @@ int page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
       rc = node_add_leaf(mc, 0, newkey, newdata, naf);
     } break;
     case P_LEAF | P_DUPFIX: {
-      cASSERT(mc, (naf & (N_BIGDATA | N_SUBDATA | N_DUPDATA)) == 0);
+      cASSERT(mc, (naf & (N_BIG | N_TREE | N_DUP)) == 0);
       cASSERT(mc, newpgno == 0 || newpgno == P_INVALID);
       rc = node_add_dupfix(mc, 0, newkey);
     } break;
@@ -37633,7 +37627,7 @@ int page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
         rc = node_add_leaf(mc, n, &rkey, rdata, flags);
       } break;
       /* case P_LEAF | P_DUPFIX: {
-        cASSERT(mc, (nflags & (N_BIGDATA | N_SUBDATA | N_DUPDATA)) == 0);
+        cASSERT(mc, (nflags & (N_BIG | N_TREE | N_DUP)) == 0);
         cASSERT(mc, gno == 0);
         rc = mdbx_node_add_dupfix(mc, n, &rkey);
       } break; */
@@ -37745,7 +37739,7 @@ done:
       rc = cursor_check_updating(mc);
     if (unlikely(naf & MDBX_RESERVE)) {
       node_t *node = page_node(mc->pg[mc->top], mc->ki[mc->top]);
-      if (!(node_flags(node) & N_BIGDATA))
+      if (!(node_flags(node) & N_BIG))
         newdata->iov_base = node_data(node);
     }
 #if MDBX_ENABLE_PGOP_STAT
@@ -38607,7 +38601,7 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
         txn->dbs[FREE_DBI].root);
 
   if (txn->n_dbi > CORE_DBS) {
-    /* Update subDB root pointers */
+    /* Update table root pointers */
     cursor_couple_t cx;
     rc = cursor_init(&cx.outer, txn, MAIN_DBI);
     if (unlikely(rc != MDBX_SUCCESS))
@@ -38624,7 +38618,7 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
       /* Может быть mod_txnid > front после коммита вложенных тразакций */
       db->mod_txnid = txn->txnid;
       MDBX_val data = {db, sizeof(tree_t)};
-      rc = cursor_put(&cx.outer, &env->kvs[i].name, &data, N_SUBDATA);
+      rc = cursor_put(&cx.outer, &env->kvs[i].name, &data, N_TREE);
       if (unlikely(rc != MDBX_SUCCESS)) {
         txn->cursors[MAIN_DBI] = cx.outer.next;
         goto fail;
@@ -38971,7 +38965,7 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
            txn->txnid >=
                /* paranoia is appropriate here */ env->lck->cached_oldest.weak);
     tASSERT(txn, txn->dbs[FREE_DBI].flags == MDBX_INTEGERKEY);
-    tASSERT(txn, check_sdb_flags(txn->dbs[MAIN_DBI].flags));
+    tASSERT(txn, check_table_flags(txn->dbs[MAIN_DBI].flags));
   } else {
     eASSERT(env, (flags & ~(txn_rw_begin_flags | MDBX_TXN_SPILLS |
                             MDBX_WRITEMAP | MDBX_NOSTICKYTHREADS)) == 0);
@@ -39029,7 +39023,7 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
     }
 
     tASSERT(txn, txn->dbs[FREE_DBI].flags == MDBX_INTEGERKEY);
-    tASSERT(txn, check_sdb_flags(txn->dbs[MAIN_DBI].flags));
+    tASSERT(txn, check_table_flags(txn->dbs[MAIN_DBI].flags));
     txn->flags = flags;
     txn->nested = nullptr;
     txn->tw.loose_pages = nullptr;
@@ -39067,7 +39061,7 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
 
   /* Setup db info */
   tASSERT(txn, txn->dbs[FREE_DBI].flags == MDBX_INTEGERKEY);
-  tASSERT(txn, check_sdb_flags(txn->dbs[MAIN_DBI].flags));
+  tASSERT(txn, check_table_flags(txn->dbs[MAIN_DBI].flags));
   VALGRIND_MAKE_MEM_UNDEFINED(txn->dbi_state, env->max_dbi);
 #if MDBX_ENABLE_DBI_SPARSE
   txn->n_dbi = CORE_DBS;
@@ -39118,7 +39112,7 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
                    txn->dbs[MAIN_DBI].flags);
           env->dbs_flags[MAIN_DBI] = DB_POISON;
           atomic_store32(&env->dbi_seqs[MAIN_DBI], seq, mo_AcquireRelease);
-          rc = sdb_setup(env, &env->kvs[MAIN_DBI], &txn->dbs[MAIN_DBI]);
+          rc = tbl_setup(env, &env->kvs[MAIN_DBI], &txn->dbs[MAIN_DBI]);
           if (likely(rc == MDBX_SUCCESS)) {
             seq = dbi_seq_next(env, MAIN_DBI);
             env->dbs_flags[MAIN_DBI] = DB_VALID | txn->dbs[MAIN_DBI].flags;
@@ -39151,7 +39145,7 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
   }
 
   tASSERT(txn, txn->dbs[FREE_DBI].flags == MDBX_INTEGERKEY);
-  tASSERT(txn, check_sdb_flags(txn->dbs[MAIN_DBI].flags));
+  tASSERT(txn, check_table_flags(txn->dbs[MAIN_DBI].flags));
   if (unlikely(env->flags & ENV_FATAL_ERROR)) {
     WARNING("%s", "environment had fatal error, must shutdown!");
     rc = MDBX_PANIC;
@@ -39992,7 +39986,7 @@ typedef struct walk_ctx {
   MDBX_cursor *cursor;
 } walk_ctx_t;
 
-__cold static int walk_sdb(walk_ctx_t *ctx, walk_sdb_t *sdb);
+__cold static int walk_tbl(walk_ctx_t *ctx, walk_tbl_t *tbl);
 
 static page_type_t walk_page_type(const page_t *mp) {
   if (mp)
@@ -40021,7 +40015,7 @@ static page_type_t walk_subpage_type(const page_t *sp) {
 }
 
 /* Depth-first tree traversal. */
-__cold static int walk_pgno(walk_ctx_t *ctx, walk_sdb_t *sdb, const pgno_t pgno,
+__cold static int walk_pgno(walk_ctx_t *ctx, walk_tbl_t *tbl, const pgno_t pgno,
                             txnid_t parent_txnid) {
   assert(pgno != P_INVALID);
   page_t *mp = nullptr;
@@ -40062,7 +40056,7 @@ __cold static int walk_pgno(walk_ctx_t *ctx, walk_sdb_t *sdb, const pgno_t pgno,
       align_bytes += (node_key_size + node_data_size) & 1;
       break;
 
-    case N_BIGDATA /* long data on the large/overflow page */: {
+    case N_BIG /* long data on the large/overflow page */: {
       const pgno_t large_pgno = node_largedata_pgno(node);
       const size_t over_payload = node_data_size;
       const size_t over_header = PAGEHDRSZ;
@@ -40074,7 +40068,7 @@ __cold static int walk_pgno(walk_ctx_t *ctx, walk_sdb_t *sdb, const pgno_t pgno,
       const size_t pagesize = pgno2bytes(ctx->txn->env, npages);
       const size_t over_unused = pagesize - over_payload - over_header;
       const int rc = ctx->visitor(large_pgno, npages, ctx->userctx, ctx->deep,
-                                  sdb, pagesize, page_large, err, 1,
+                                  tbl, pagesize, page_large, err, 1,
                                   over_payload, over_header, over_unused);
       if (unlikely(rc != MDBX_SUCCESS))
         return (rc == MDBX_RESULT_TRUE) ? MDBX_SUCCESS : rc;
@@ -40082,10 +40076,10 @@ __cold static int walk_pgno(walk_ctx_t *ctx, walk_sdb_t *sdb, const pgno_t pgno,
       align_bytes += node_key_size & 1;
     } break;
 
-    case N_SUBDATA /* sub-db */: {
+    case N_TREE /* sub-db */: {
       if (unlikely(node_data_size != sizeof(tree_t))) {
         ERROR("%s/%d: %s %u", "MDBX_CORRUPTED", MDBX_CORRUPTED,
-              "invalid subDb node size", (unsigned)node_data_size);
+              "invalid table node size", (unsigned)node_data_size);
         assert(err == MDBX_CORRUPTED);
         err = MDBX_CORRUPTED;
       }
@@ -40093,7 +40087,7 @@ __cold static int walk_pgno(walk_ctx_t *ctx, walk_sdb_t *sdb, const pgno_t pgno,
       align_bytes += (node_key_size + node_data_size) & 1;
     } break;
 
-    case N_SUBDATA | N_DUPDATA /* dupsorted sub-tree */:
+    case N_TREE | N_DUP /* dupsorted sub-tree */:
       if (unlikely(node_data_size != sizeof(tree_t))) {
         ERROR("%s/%d: %s %u", "MDBX_CORRUPTED", MDBX_CORRUPTED,
               "invalid sub-tree node size", (unsigned)node_data_size);
@@ -40104,7 +40098,7 @@ __cold static int walk_pgno(walk_ctx_t *ctx, walk_sdb_t *sdb, const pgno_t pgno,
       align_bytes += (node_key_size + node_data_size) & 1;
       break;
 
-    case N_DUPDATA /* short sub-page */: {
+    case N_DUP /* short sub-page */: {
       if (unlikely(node_data_size <= PAGEHDRSZ || (node_data_size & 1))) {
         ERROR("%s/%d: %s %u", "MDBX_CORRUPTED", MDBX_CORRUPTED,
               "invalid sub-page node size", (unsigned)node_data_size);
@@ -40150,7 +40144,7 @@ __cold static int walk_pgno(walk_ctx_t *ctx, walk_sdb_t *sdb, const pgno_t pgno,
       }
 
       const int rc =
-          ctx->visitor(pgno, 0, ctx->userctx, ctx->deep + 1, sdb,
+          ctx->visitor(pgno, 0, ctx->userctx, ctx->deep + 1, tbl,
                        node_data_size, subtype, err, nsubkeys, subpayload_size,
                        subheader_size, subunused_size + subalign_bytes);
       if (unlikely(rc != MDBX_SUCCESS))
@@ -40170,7 +40164,7 @@ __cold static int walk_pgno(walk_ctx_t *ctx, walk_sdb_t *sdb, const pgno_t pgno,
   }
 
   const int rc = ctx->visitor(
-      pgno, 1, ctx->userctx, ctx->deep, sdb, ctx->txn->env->ps, type, err,
+      pgno, 1, ctx->userctx, ctx->deep, tbl, ctx->txn->env->ps, type, err,
       nentries, payload_size, header_size, unused_size + align_bytes);
   if (unlikely(rc != MDBX_SUCCESS))
     return (rc == MDBX_RESULT_TRUE) ? MDBX_SUCCESS : rc;
@@ -40183,7 +40177,7 @@ __cold static int walk_pgno(walk_ctx_t *ctx, walk_sdb_t *sdb, const pgno_t pgno,
     if (type == page_branch) {
       assert(err == MDBX_SUCCESS);
       ctx->deep += 1;
-      err = walk_pgno(ctx, sdb, node_pgno(node), mp->txnid);
+      err = walk_pgno(ctx, tbl, node_pgno(node), mp->txnid);
       ctx->deep -= 1;
       if (unlikely(err != MDBX_SUCCESS)) {
         if (err == MDBX_RESULT_TRUE)
@@ -40198,7 +40192,7 @@ __cold static int walk_pgno(walk_ctx_t *ctx, walk_sdb_t *sdb, const pgno_t pgno,
     default:
       continue;
 
-    case N_SUBDATA /* sub-db */:
+    case N_TREE /* sub-db */:
       if (unlikely(node_ds(node) != sizeof(tree_t))) {
         ERROR("%s/%d: %s %u", "MDBX_CORRUPTED", MDBX_CORRUPTED,
               "invalid sub-tree node size", (unsigned)node_ds(node));
@@ -40207,16 +40201,16 @@ __cold static int walk_pgno(walk_ctx_t *ctx, walk_sdb_t *sdb, const pgno_t pgno,
       } else {
         tree_t aligned_db;
         memcpy(&aligned_db, node_data(node), sizeof(aligned_db));
-        walk_sdb_t subdb = {{node_key(node), node_ks(node)}, nullptr, nullptr};
-        subdb.internal = &aligned_db;
+        walk_tbl_t table = {{node_key(node), node_ks(node)}, nullptr, nullptr};
+        table.internal = &aligned_db;
         assert(err == MDBX_SUCCESS);
         ctx->deep += 1;
-        err = walk_sdb(ctx, &subdb);
+        err = walk_tbl(ctx, &table);
         ctx->deep -= 1;
       }
       break;
 
-    case N_SUBDATA | N_DUPDATA /* dupsorted sub-tree */:
+    case N_TREE | N_DUP /* dupsorted sub-tree */:
       if (unlikely(node_ds(node) != sizeof(tree_t))) {
         ERROR("%s/%d: %s %u", "MDBX_CORRUPTED", MDBX_CORRUPTED,
               "invalid dupsort sub-tree node size", (unsigned)node_ds(node));
@@ -40232,9 +40226,9 @@ __cold static int walk_pgno(walk_ctx_t *ctx, walk_sdb_t *sdb, const pgno_t pgno,
                  &container_of(ctx->cursor, cursor_couple_t, outer)->inner);
           ctx->cursor = &ctx->cursor->subcur->cursor;
           ctx->deep += 1;
-          sdb->nested = &aligned_db;
-          err = walk_pgno(ctx, sdb, aligned_db.root, mp->txnid);
-          sdb->nested = nullptr;
+          tbl->nested = &aligned_db;
+          err = walk_pgno(ctx, tbl, aligned_db.root, mp->txnid);
+          tbl->nested = nullptr;
           ctx->deep -= 1;
           subcur_t *inner_xcursor = container_of(ctx->cursor, subcur_t, cursor);
           cursor_couple_t *couple =
@@ -40249,8 +40243,8 @@ __cold static int walk_pgno(walk_ctx_t *ctx, walk_sdb_t *sdb, const pgno_t pgno,
   return MDBX_SUCCESS;
 }
 
-__cold static int walk_sdb(walk_ctx_t *ctx, walk_sdb_t *sdb) {
-  tree_t *const db = sdb->internal;
+__cold static int walk_tbl(walk_ctx_t *ctx, walk_tbl_t *tbl) {
+  tree_t *const db = tbl->internal;
   if (unlikely(db->root == P_INVALID))
     return MDBX_SUCCESS; /* empty db */
 
@@ -40268,7 +40262,7 @@ __cold static int walk_sdb(walk_ctx_t *ctx, walk_sdb_t *sdb) {
   couple.outer.next = ctx->cursor;
   couple.outer.top_and_flags = z_disable_tree_search_fastpath;
   ctx->cursor = &couple.outer;
-  rc = walk_pgno(ctx, sdb, db->root,
+  rc = walk_pgno(ctx, tbl, db->root,
                  db->mod_txnid ? db->mod_txnid : ctx->txn->txnid);
   ctx->cursor = couple.outer.next;
   return rc;
@@ -40282,13 +40276,13 @@ __cold int walk_pages(MDBX_txn *txn, walk_func *visitor, void *user,
 
   walk_ctx_t ctx = {
       .txn = txn, .userctx = user, .visitor = visitor, .options = options};
-  walk_sdb_t sdb = {.name = {.iov_base = MDBX_CHK_GC},
+  walk_tbl_t tbl = {.name = {.iov_base = MDBX_CHK_GC},
                     .internal = &txn->dbs[FREE_DBI]};
-  rc = walk_sdb(&ctx, &sdb);
+  rc = walk_tbl(&ctx, &tbl);
   if (!MDBX_IS_ERROR(rc)) {
-    sdb.name.iov_base = MDBX_CHK_MAIN;
-    sdb.internal = &txn->dbs[MAIN_DBI];
-    rc = walk_sdb(&ctx, &sdb);
+    tbl.name.iov_base = MDBX_CHK_MAIN;
+    tbl.internal = &txn->dbs[MAIN_DBI];
+    rc = walk_tbl(&ctx, &tbl);
   }
   return rc;
 }
@@ -40481,9 +40475,9 @@ __dll_export
         0,
         13,
         0,
-        110,
-        {"2024-08-03T00:30:06+03:00", "0a032f804b7a1d447beb7394173f09fde8697a41", "dd0ee3f278552424190f2f0bf1e63779a10dece6",
-         "v0.13.0-110-gdd0ee3f2"},
+        115,
+        {"2024-08-03T15:14:23+03:00", "7a23f6614a32db727acc8a29d774445e47d31f3f", "7bff3b3df699ca761c79c7350808fc1fb7f1216d",
+         "v0.13.0-115-g7bff3b3d"},
         sourcery};
 
 __dll_export

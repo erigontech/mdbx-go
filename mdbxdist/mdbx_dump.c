@@ -18,7 +18,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
 
-#define MDBX_BUILD_SOURCERY 8f23af99dc8a425935da3f9fbc044a565c83f49f124f885acceba17444721dde_v0_13_0_110_gdd0ee3f2
+#define MDBX_BUILD_SOURCERY 40a5b5a8cb0aa52b17df5a541e416ef747538cfa71b8010c27e9010b9a079946_v0_13_0_115_g7bff3b3d
 
 
 #define LIBMDBX_INTERNALS
@@ -2535,11 +2535,11 @@ typedef enum page_type {
  * omit entries and pack sorted MDBX_DUPFIXED values after the page header.
  *
  * P_LARGE records occupy one or more contiguous pages where only the
- * first has a page header. They hold the real data of N_BIGDATA nodes.
+ * first has a page header. They hold the real data of N_BIG nodes.
  *
  * P_SUBP sub-pages are small leaf "pages" with duplicate data.
- * A node with flag N_DUPDATA but not N_SUBDATA contains a sub-page.
- * (Duplicate data can also go in sub-databases, which use normal pages.)
+ * A node with flag N_DUP but not N_TREE contains a sub-page.
+ * (Duplicate data can also go in tables, which use normal pages.)
  *
  * P_META pages contain meta_t, the start point of an MDBX snapshot.
  *
@@ -2570,10 +2570,10 @@ typedef struct page {
  * Used in pages of type P_BRANCH and P_LEAF without P_DUPFIX.
  * We guarantee 2-byte alignment for 'node_t's.
  *
- * Leaf node flags describe node contents.  N_BIGDATA says the node's
+ * Leaf node flags describe node contents.  N_BIG says the node's
  * data part is the page number of an overflow page with actual data.
- * N_DUPDATA and N_SUBDATA can be combined giving duplicate data in
- * a sub-page/sub-database, and named databases (just N_SUBDATA). */
+ * N_DUP and N_TREE can be combined giving duplicate data in
+ * a sub-page/table, and named databases (just N_TREE). */
 typedef struct node {
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
   union {
@@ -2602,9 +2602,9 @@ typedef struct node {
 #define NODESIZE 8u
 
 typedef enum node_flags {
-  N_BIGDATA = 0x01 /* data put on large page */,
-  N_SUBDATA = 0x02 /* data is a sub-database */,
-  N_DUPDATA = 0x04 /* data has duplicates */
+  N_BIG = 0x01 /* data put on large page */,
+  N_TREE = 0x02 /* data is a b-tree */,
+  N_DUP = 0x04 /* data has duplicates */
 } node_flags_t;
 
 #pragma pack(pop)
@@ -3588,7 +3588,7 @@ static void error(const char *func, int rc) {
 }
 
 /* Dump in BDB-compatible format */
-static int dump_sdb(MDBX_txn *txn, MDBX_dbi dbi, char *name) {
+static int dump_tbl(MDBX_txn *txn, MDBX_dbi dbi, char *name) {
   unsigned flags;
   int rc = mdbx_dbi_flags(txn, dbi, &flags);
   if (unlikely(rc != MDBX_SUCCESS)) {
@@ -3703,16 +3703,16 @@ static void usage(void) {
   fprintf(
       stderr,
       "usage: %s "
-      "[-V] [-q] [-f file] [-l] [-p] [-r] [-a|-s subdb] [-u|U] "
+      "[-V] [-q] [-f file] [-l] [-p] [-r] [-a|-s table] [-u|U] "
       "dbpath\n"
       "  -V\t\tprint version and exit\n"
       "  -q\t\tbe quiet\n"
       "  -f\t\twrite to file instead of stdout\n"
-      "  -l\t\tlist subDBs and exit\n"
+      "  -l\t\tlist tables and exit\n"
       "  -p\t\tuse printable characters\n"
       "  -r\t\trescue mode (ignore errors to dump corrupted DB)\n"
-      "  -a\t\tdump main DB and all subDBs\n"
-      "  -s name\tdump only the specified named subDB\n"
+      "  -a\t\tdump main DB and all tables\n"
+      "  -s name\tdump only the specified named table\n"
       "  -u\t\twarmup database before dumping\n"
       "  -U\t\twarmup and try lock database pages in memory before dumping\n"
       "  \t\tby default dump only the main DB\n",
@@ -3938,7 +3938,7 @@ int main(int argc, char *argv[]) {
         if (list) {
           printf("%s\n", subname);
         } else {
-          err = dump_sdb(txn, sub_dbi, subname);
+          err = dump_tbl(txn, sub_dbi, subname);
           if (unlikely(err != MDBX_SUCCESS)) {
             if (!rescue)
               break;
@@ -3976,7 +3976,7 @@ int main(int argc, char *argv[]) {
     cursor = nullptr;
 
     if (have_raw && (!count /* || rescue */))
-      err = dump_sdb(txn, MAIN_DBI, nullptr);
+      err = dump_tbl(txn, MAIN_DBI, nullptr);
     else if (!count) {
       if (!quiet)
         fprintf(stderr, "%s: %s does not contain multiple databases\n", prog,
@@ -3984,7 +3984,7 @@ int main(int argc, char *argv[]) {
       err = MDBX_NOTFOUND;
     }
   } else {
-    err = dump_sdb(txn, dbi, subname);
+    err = dump_tbl(txn, dbi, subname);
   }
 
   switch (err) {

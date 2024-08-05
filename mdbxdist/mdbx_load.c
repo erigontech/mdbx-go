@@ -18,7 +18,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
 
-#define MDBX_BUILD_SOURCERY 8f23af99dc8a425935da3f9fbc044a565c83f49f124f885acceba17444721dde_v0_13_0_110_gdd0ee3f2
+#define MDBX_BUILD_SOURCERY 40a5b5a8cb0aa52b17df5a541e416ef747538cfa71b8010c27e9010b9a079946_v0_13_0_115_g7bff3b3d
 
 
 #define LIBMDBX_INTERNALS
@@ -2535,11 +2535,11 @@ typedef enum page_type {
  * omit entries and pack sorted MDBX_DUPFIXED values after the page header.
  *
  * P_LARGE records occupy one or more contiguous pages where only the
- * first has a page header. They hold the real data of N_BIGDATA nodes.
+ * first has a page header. They hold the real data of N_BIG nodes.
  *
  * P_SUBP sub-pages are small leaf "pages" with duplicate data.
- * A node with flag N_DUPDATA but not N_SUBDATA contains a sub-page.
- * (Duplicate data can also go in sub-databases, which use normal pages.)
+ * A node with flag N_DUP but not N_TREE contains a sub-page.
+ * (Duplicate data can also go in tables, which use normal pages.)
  *
  * P_META pages contain meta_t, the start point of an MDBX snapshot.
  *
@@ -2570,10 +2570,10 @@ typedef struct page {
  * Used in pages of type P_BRANCH and P_LEAF without P_DUPFIX.
  * We guarantee 2-byte alignment for 'node_t's.
  *
- * Leaf node flags describe node contents.  N_BIGDATA says the node's
+ * Leaf node flags describe node contents.  N_BIG says the node's
  * data part is the page number of an overflow page with actual data.
- * N_DUPDATA and N_SUBDATA can be combined giving duplicate data in
- * a sub-page/sub-database, and named databases (just N_SUBDATA). */
+ * N_DUP and N_TREE can be combined giving duplicate data in
+ * a sub-page/table, and named databases (just N_TREE). */
 typedef struct node {
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
   union {
@@ -2602,9 +2602,9 @@ typedef struct node {
 #define NODESIZE 8u
 
 typedef enum node_flags {
-  N_BIGDATA = 0x01 /* data put on large page */,
-  N_SUBDATA = 0x02 /* data is a sub-database */,
-  N_DUPDATA = 0x04 /* data has duplicates */
+  N_BIG = 0x01 /* data put on large page */,
+  N_TREE = 0x02 /* data is a b-tree */,
+  N_DUP = 0x04 /* data has duplicates */
 } node_flags_t;
 
 #pragma pack(pop)
@@ -3965,10 +3965,10 @@ static void usage(void) {
           "  -a\t\tappend records in input order (required for custom "
           "comparators)\n"
           "  -f file\tread from file instead of stdin\n"
-          "  -s name\tload into specified named subDB\n"
+          "  -s name\tload into specified named table\n"
           "  -N\t\tdon't overwrite existing records when loading, just skip "
           "ones\n"
-          "  -p\t\tpurge subDB before loading\n"
+          "  -p\t\tpurge table before loading\n"
           "  -T\t\tread plaintext\n"
           "  -r\t\trescue mode (ignore errors to load corrupted DB dump)\n"
           "  -n\t\tdon't use subdirectory for newly created database "

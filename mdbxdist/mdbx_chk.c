@@ -16,7 +16,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
 
-#define MDBX_BUILD_SOURCERY 8f23af99dc8a425935da3f9fbc044a565c83f49f124f885acceba17444721dde_v0_13_0_110_gdd0ee3f2
+#define MDBX_BUILD_SOURCERY 40a5b5a8cb0aa52b17df5a541e416ef747538cfa71b8010c27e9010b9a079946_v0_13_0_115_g7bff3b3d
 
 
 #define LIBMDBX_INTERNALS
@@ -2533,11 +2533,11 @@ typedef enum page_type {
  * omit entries and pack sorted MDBX_DUPFIXED values after the page header.
  *
  * P_LARGE records occupy one or more contiguous pages where only the
- * first has a page header. They hold the real data of N_BIGDATA nodes.
+ * first has a page header. They hold the real data of N_BIG nodes.
  *
  * P_SUBP sub-pages are small leaf "pages" with duplicate data.
- * A node with flag N_DUPDATA but not N_SUBDATA contains a sub-page.
- * (Duplicate data can also go in sub-databases, which use normal pages.)
+ * A node with flag N_DUP but not N_TREE contains a sub-page.
+ * (Duplicate data can also go in tables, which use normal pages.)
  *
  * P_META pages contain meta_t, the start point of an MDBX snapshot.
  *
@@ -2568,10 +2568,10 @@ typedef struct page {
  * Used in pages of type P_BRANCH and P_LEAF without P_DUPFIX.
  * We guarantee 2-byte alignment for 'node_t's.
  *
- * Leaf node flags describe node contents.  N_BIGDATA says the node's
+ * Leaf node flags describe node contents.  N_BIG says the node's
  * data part is the page number of an overflow page with actual data.
- * N_DUPDATA and N_SUBDATA can be combined giving duplicate data in
- * a sub-page/sub-database, and named databases (just N_SUBDATA). */
+ * N_DUP and N_TREE can be combined giving duplicate data in
+ * a sub-page/table, and named databases (just N_TREE). */
 typedef struct node {
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
   union {
@@ -2600,9 +2600,9 @@ typedef struct node {
 #define NODESIZE 8u
 
 typedef enum node_flags {
-  N_BIGDATA = 0x01 /* data put on large page */,
-  N_SUBDATA = 0x02 /* data is a sub-database */,
-  N_DUPDATA = 0x04 /* data has duplicates */
+  N_BIG = 0x01 /* data put on large page */,
+  N_TREE = 0x02 /* data is a b-tree */,
+  N_DUP = 0x04 /* data has duplicates */
 } node_flags_t;
 
 #pragma pack(pop)
@@ -3543,7 +3543,7 @@ MDBX_env *env;
 MDBX_txn *txn;
 unsigned verbose = 0;
 bool quiet;
-MDBX_val only_subdb;
+MDBX_val only_table;
 int stuck_meta = -1;
 MDBX_chk_context_t chk;
 bool turn_meta = false;
@@ -3583,7 +3583,7 @@ static bool silently(enum MDBX_chk_severity severity) {
       chk.scope ? chk.scope->verbosity >> MDBX_chk_severity_prio_shift
                 : verbose + (MDBX_chk_result >> MDBX_chk_severity_prio_shift);
   int prio = (severity >> MDBX_chk_severity_prio_shift);
-  if (chk.scope && chk.scope->stage == MDBX_chk_subdbs && verbose < 2)
+  if (chk.scope && chk.scope->stage == MDBX_chk_tables && verbose < 2)
     prio += 1;
   return quiet || cutoff < ((prio > 0) ? prio : 0);
 }
@@ -3758,14 +3758,14 @@ static void scope_pop(MDBX_chk_context_t *ctx, MDBX_chk_scope_t *scope,
   flush();
 }
 
-static MDBX_chk_user_subdb_cookie_t *subdb_filter(MDBX_chk_context_t *ctx,
+static MDBX_chk_user_table_cookie_t *table_filter(MDBX_chk_context_t *ctx,
                                                   const MDBX_val *name,
                                                   MDBX_db_flags_t flags) {
   (void)ctx;
   (void)flags;
-  return (!only_subdb.iov_base ||
-          (only_subdb.iov_len == name->iov_len &&
-           memcmp(only_subdb.iov_base, name->iov_base, name->iov_len) == 0))
+  return (!only_table.iov_base ||
+          (only_table.iov_len == name->iov_len &&
+           memcmp(only_table.iov_base, name->iov_base, name->iov_len) == 0))
              ? (void *)(intptr_t)-1
              : nullptr;
 }
@@ -3832,7 +3832,7 @@ static void print_format(MDBX_chk_line_t *line, const char *fmt, va_list args) {
 static const MDBX_chk_callbacks_t cb = {.check_break = check_break,
                                         .scope_push = scope_push,
                                         .scope_pop = scope_pop,
-                                        .subdb_filter = subdb_filter,
+                                        .table_filter = table_filter,
                                         .stage_begin = stage_begin,
                                         .stage_end = stage_end,
                                         .print_begin = print_begin,
@@ -3845,7 +3845,7 @@ static void usage(char *prog) {
   fprintf(
       stderr,
       "usage: %s "
-      "[-V] [-v] [-q] [-c] [-0|1|2] [-w] [-d] [-i] [-s subdb] [-u|U] dbpath\n"
+      "[-V] [-v] [-q] [-c] [-0|1|2] [-w] [-d] [-i] [-s table] [-u|U] dbpath\n"
       "  -V\t\tprint version and exit\n"
       "  -v\t\tmore verbose, could be repeated upto 9 times for extra details\n"
       "  -q\t\tbe quiet\n"
@@ -3853,7 +3853,7 @@ static void usage(char *prog) {
       "  -w\t\twrite-mode checking\n"
       "  -d\t\tdisable page-by-page traversal of B-tree\n"
       "  -i\t\tignore wrong order errors (for custom comparators case)\n"
-      "  -s subdb\tprocess a specific subdatabase only\n"
+      "  -s table\tprocess a specific subdatabase only\n"
       "  -u\t\twarmup database before checking\n"
       "  -U\t\twarmup and try lock database pages in memory before checking\n"
       "  -0|1|2\tforce using specific meta-page 0, or 2 for checking\n"
@@ -3868,7 +3868,7 @@ static int conclude(MDBX_chk_context_t *ctx) {
   if (ctx->result.total_problems == 1 && ctx->result.problems_meta == 1 &&
       (chk_flags &
        (MDBX_CHK_SKIP_BTREE_TRAVERSAL | MDBX_CHK_SKIP_KV_TRAVERSAL)) == 0 &&
-      (env_flags & MDBX_RDONLY) == 0 && !only_subdb.iov_base &&
+      (env_flags & MDBX_RDONLY) == 0 && !only_table.iov_base &&
       stuck_meta < 0 && ctx->result.steady_txnid < ctx->result.recent_txnid) {
     const size_t step_lineno =
         print(MDBX_chk_resolution,
@@ -3887,7 +3887,7 @@ static int conclude(MDBX_chk_context_t *ctx) {
   if (turn_meta && stuck_meta >= 0 &&
       (chk_flags &
        (MDBX_CHK_SKIP_BTREE_TRAVERSAL | MDBX_CHK_SKIP_KV_TRAVERSAL)) == 0 &&
-      !only_subdb.iov_base &&
+      !only_table.iov_base &&
       (env_flags & (MDBX_RDONLY | MDBX_EXCLUSIVE)) == MDBX_EXCLUSIVE) {
     const bool successful_check =
         (err | ctx->result.total_problems | ctx->result.problems_meta) == 0;
@@ -4017,11 +4017,11 @@ int main(int argc, char *argv[]) {
       chk_flags |= MDBX_CHK_SKIP_BTREE_TRAVERSAL;
       break;
     case 's':
-      if (only_subdb.iov_base && strcmp(only_subdb.iov_base, optarg))
+      if (only_table.iov_base && strcmp(only_table.iov_base, optarg))
         usage(prog);
       else {
-        only_subdb.iov_base = optarg;
-        only_subdb.iov_len = strlen(optarg);
+        only_table.iov_base = optarg;
+        only_table.iov_len = strlen(optarg);
       }
       break;
     case 'i':
@@ -4062,7 +4062,7 @@ int main(int argc, char *argv[]) {
           "write-mode must be enabled to turn to the specified meta-page.");
       rc = EXIT_INTERRUPTED;
     }
-    if (only_subdb.iov_base || (chk_flags & (MDBX_CHK_SKIP_BTREE_TRAVERSAL |
+    if (only_table.iov_base || (chk_flags & (MDBX_CHK_SKIP_BTREE_TRAVERSAL |
                                              MDBX_CHK_SKIP_KV_TRAVERSAL))) {
       error_fmt(
           "whole database checking with b-tree traversal are required to turn "
