@@ -16,7 +16,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
 
-#define MDBX_BUILD_SOURCERY 40a5b5a8cb0aa52b17df5a541e416ef747538cfa71b8010c27e9010b9a079946_v0_13_0_115_g7bff3b3d
+#define MDBX_BUILD_SOURCERY be1c8ae5abf4d763d126e385dfe4dd124539606917b893521bb6daa41631df33_v0_13_0_123_g77a35608
 
 
 #define LIBMDBX_INTERNALS
