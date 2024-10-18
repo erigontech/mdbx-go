@@ -3,7 +3,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY be1c8ae5abf4d763d126e385dfe4dd124539606917b893521bb6daa41631df33_v0_13_0_123_g77a35608
+#define MDBX_BUILD_SOURCERY 4ef6bfc2012bedf4af0bcd644ec87ace207f395c5d5e103573649032ec2cb6e8_v0_13_1_0_g5fc7a6b1
 
 
 #define LIBMDBX_INTERNALS
@@ -17603,12 +17603,14 @@ int dbi_bind(MDBX_txn *txn, const size_t dbi, unsigned user_flags,
     } else if ((user_flags & MDBX_CREATE) == 0)
       return /* FIXME: return extended info */ MDBX_INCOMPATIBLE;
     else {
-      eASSERT(env, env->dbs_flags[dbi] & DB_VALID);
       if (txn->dbi_state[dbi] & DBI_STALE) {
+        eASSERT(env, env->dbs_flags[dbi] & DB_VALID);
         int err = tbl_fetch(txn, dbi);
         if (unlikely(err == MDBX_SUCCESS))
           return err;
       }
+      eASSERT(env, ((env->dbs_flags[dbi] ^ txn->dbs[dbi].flags) &
+                    DB_PERSISTENT_FLAGS) == 0);
       eASSERT(env,
               (txn->dbi_state[dbi] & (DBI_LINDO | DBI_VALID | DBI_STALE)) ==
                   (DBI_LINDO | DBI_VALID));
@@ -17619,7 +17621,7 @@ int dbi_bind(MDBX_txn *txn, const size_t dbi, unsigned user_flags,
       if (unlikely(txn->cursors[dbi]))
         return MDBX_DANGLING_DBI;
       env->dbs_flags[dbi] = DB_POISON;
-      atomic_store32(&env->dbi_seqs[dbi], dbi_seq_next(env, MAIN_DBI),
+      atomic_store32(&env->dbi_seqs[dbi], dbi_seq_next(env, dbi),
                      mo_AcquireRelease);
 
       const uint32_t seq = dbi_seq_next(env, dbi);
@@ -23690,7 +23692,8 @@ retry:
                                                        MDBX_ENABLE_REFUND));
   tASSERT(txn, dpl_check(txn));
   if (unlikely(/* paranoia */ ctx->loop > ((MDBX_DEBUG > 0) ? 12 : 42))) {
-    ERROR("too more loops %u, bailout", ctx->loop);
+    ERROR("txn #%" PRIaTXN " too more loops %u, bailout", txn->txnid,
+          ctx->loop);
     rc = MDBX_PROBLEM;
     goto bailout;
   }
@@ -40495,10 +40498,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         13,
+        1,
         0,
-        123,
-        {"2024-08-13T23:17:19+03:00", "b3f1f0a857e023f4f120a468518e229ffae370e5", "77a35608f6139d4ea2d872371631e796dd65334d",
-         "v0.13.0-123-g77a35608"},
+        {"2024-08-30T00:01:07+03:00", "4ad05c5f867a963162def46b68eff5f7130b81ca", "5fc7a6b1077794789b97bb2a56f5a4eb541a0bc0",
+         "v0.13.1-0-g5fc7a6b1"},
         sourcery};
 
 __dll_export

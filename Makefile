@@ -4,7 +4,7 @@
 MASTER_COMMIT=`git rev-parse --short origin/master`
 
 deps: lintci-deps
-	go get -d ./...
+	go get ./...
 
 all: deps
 
