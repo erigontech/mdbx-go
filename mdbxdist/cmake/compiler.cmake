@@ -368,13 +368,15 @@ else()
   set(CMAKE_REQUIRED_FLAGS "-fopenmp -Werror")
   if(CMAKE_CXX_COMPILER_LOADED)
     check_cxx_source_compiles("int main(void) {
-      #pragma omp parallel
-      return 0;
+      #pragma omp for
+      for(int i = 0, j = 0; i != 42; i = 1 + i * 12345) j += i % 43;
+      return j;
       }" HAVE_OPENMP)
   else()
     check_c_source_compiles("int main(void) {
-      #pragma omp parallel
-      return 0;
+      #pragma omp for
+      for(int i = 0, j = 0; i != 42; i = 1 + i * 12345) j += i % 43;
+      return j;
       }" HAVE_OPENMP)
   endif()
   set(CMAKE_REQUIRED_FLAGS "")
@@ -384,9 +386,13 @@ endif()
 if(CMAKE_CXX_COMPILER_LOADED)
   list(FIND CMAKE_CXX_COMPILE_FEATURES cxx_std_11 HAS_CXX11)
   if(HAS_CXX11 LESS 0)
-    check_cxx_compiler_flag("-std=gnu++11" CXX_FALLBACK_GNU11)
-    if(NOT CXX_FALLBACK_GNU11)
-      check_cxx_compiler_flag("-std=c++11" CXX_FALLBACK_11)
+    if (MSVC)
+      check_cxx_compiler_flag("/std:c++11" CXX_FALLBACK_11)
+    else()
+      check_cxx_compiler_flag("-std=gnu++11" CXX_FALLBACK_GNU11)
+      if(NOT CXX_FALLBACK_GNU11)
+        check_cxx_compiler_flag("-std=c++11" CXX_FALLBACK_11)
+      endif()
     endif()
   endif()
 endif()

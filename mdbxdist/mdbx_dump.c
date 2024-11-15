@@ -18,7 +18,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
 
-#define MDBX_BUILD_SOURCERY 4ef6bfc2012bedf4af0bcd644ec87ace207f395c5d5e103573649032ec2cb6e8_v0_13_1_0_g5fc7a6b1
+#define MDBX_BUILD_SOURCERY 7a087912ed373fb7f849bc0a5b72a7d3cbdca30796a95e27dc05c7118e47dde9_v0_13_1_56_g10a93f4b
 
 
 #define LIBMDBX_INTERNALS
@@ -34,6 +34,10 @@
 #if (defined(MDBX_DEBUG) && MDBX_DEBUG > 0) ||                                 \
     (defined(MDBX_FORCE_ASSERTIONS) && MDBX_FORCE_ASSERTIONS)
 #undef NDEBUG
+#ifndef MDBX_DEBUG
+/* Чтобы избежать включения отладки только из-за включения assert-проверок */
+#define MDBX_DEBUG 0
+#endif
 #endif
 
 /*----------------------------------------------------------------------------*/
@@ -1819,11 +1823,7 @@ osal_bswap32(uint32_t v) {
 /** Enables chunking long list of retired pages during huge transactions commit
  * to avoid use sequences of pages. */
 #ifndef MDBX_ENABLE_BIGFOOT
-#if MDBX_WORDBITS >= 64 || defined(DOXYGEN)
 #define MDBX_ENABLE_BIGFOOT 1
-#else
-#define MDBX_ENABLE_BIGFOOT 0
-#endif
 #elif !(MDBX_ENABLE_BIGFOOT == 0 || MDBX_ENABLE_BIGFOOT == 1)
 #error MDBX_ENABLE_BIGFOOT must be defined as 0 or 1
 #endif /* MDBX_ENABLE_BIGFOOT */

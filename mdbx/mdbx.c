@@ -3,7 +3,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 4ef6bfc2012bedf4af0bcd644ec87ace207f395c5d5e103573649032ec2cb6e8_v0_13_1_0_g5fc7a6b1
+#define MDBX_BUILD_SOURCERY 7a087912ed373fb7f849bc0a5b72a7d3cbdca30796a95e27dc05c7118e47dde9_v0_13_1_56_g10a93f4b
 
 
 #define LIBMDBX_INTERNALS
@@ -19,6 +19,10 @@
 #if (defined(MDBX_DEBUG) && MDBX_DEBUG > 0) ||                                 \
     (defined(MDBX_FORCE_ASSERTIONS) && MDBX_FORCE_ASSERTIONS)
 #undef NDEBUG
+#ifndef MDBX_DEBUG
+/* Чтобы избежать включения отладки только из-за включения assert-проверок */
+#define MDBX_DEBUG 0
+#endif
 #endif
 
 /*----------------------------------------------------------------------------*/
@@ -1804,11 +1808,7 @@ osal_bswap32(uint32_t v) {
 /** Enables chunking long list of retired pages during huge transactions commit
  * to avoid use sequences of pages. */
 #ifndef MDBX_ENABLE_BIGFOOT
-#if MDBX_WORDBITS >= 64 || defined(DOXYGEN)
 #define MDBX_ENABLE_BIGFOOT 1
-#else
-#define MDBX_ENABLE_BIGFOOT 0
-#endif
 #elif !(MDBX_ENABLE_BIGFOOT == 0 || MDBX_ENABLE_BIGFOOT == 1)
 #error MDBX_ENABLE_BIGFOOT must be defined as 0 or 1
 #endif /* MDBX_ENABLE_BIGFOOT */
@@ -6224,19 +6224,11 @@ MDBX_INTERNAL void dpl_release_shadows(MDBX_txn *txn);
 
 
 
-#ifndef MDBX_ENABLE_GC_EXPERIMENTAL
-#define MDBX_ENABLE_GC_EXPERIMENTAL 0
-#elif !(MDBX_ENABLE_GC_EXPERIMENTAL == 0 || MDBX_ENABLE_GC_EXPERIMENTAL == 1)
-#error MDBX_ENABLE_GC_EXPERIMENTAL must be defined as 0 or 1
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
-
 typedef struct gc_update_context {
   unsigned loop;
   pgno_t prev_first_unallocated;
   bool dense;
-#if MDBX_ENABLE_GC_EXPERIMENTAL
-  intptr_t reserve_adj;
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
+  size_t reserve_adj;
   size_t retired_stored;
   size_t amount, reserved, cleaned_slot, reused_slot, fill_idx;
   txnid_t cleaned_id, rid;
@@ -6251,7 +6243,7 @@ typedef struct gc_update_context {
 
 static inline int gc_update_init(MDBX_txn *txn, gcu_t *ctx) {
   memset(ctx, 0, offsetof(gcu_t, cursor));
-  ctx->dense = txn->txnid < MIN_TXNID;
+  ctx->dense = txn->txnid <= MIN_TXNID;
 #if MDBX_ENABLE_BIGFOOT
   ctx->bigfoot = txn->txnid;
 #endif /* MDBX_ENABLE_BIGFOOT */
@@ -16442,12 +16434,19 @@ __hot int cursor_put_checklen(MDBX_cursor *mc, const MDBX_val *key,
   if (mc->tree->flags & MDBX_INTEGERDUP) {
     if (data->iov_len == 8) {
       if (unlikely(7 & (uintptr_t)data->iov_base)) {
-        if (unlikely(flags & MDBX_MULTIPLE))
-          return MDBX_BAD_VALSIZE;
-        /* copy instead of return error to avoid break compatibility */
-        aligned_data.iov_base = bcopy_8(&aligned_databytes, data->iov_base);
-        aligned_data.iov_len = data->iov_len;
-        data = &aligned_data;
+        if (unlikely(flags & MDBX_MULTIPLE)) {
+          /* LY: использование alignof(uint64_t) тут не подходил из-за ошибок
+           * MSVC и некоторых других компиляторов, когда для элементов
+           * массивов/векторов обеспечивает выравнивание только на 4-х байтовых
+           * границу и одновременно alignof(uint64_t) == 8. */
+          if (MDBX_WORDBITS > 32 || (3 & (uintptr_t)data->iov_base) != 0)
+            return MDBX_BAD_VALSIZE;
+        } else {
+          /* copy instead of return error to avoid break compatibility */
+          aligned_data.iov_base = bcopy_8(&aligned_databytes, data->iov_base);
+          aligned_data.iov_len = data->iov_len;
+          data = &aligned_data;
+        }
       }
     } else if (data->iov_len == 4) {
       if (unlikely(3 & (uintptr_t)data->iov_base)) {
@@ -17049,9 +17048,16 @@ __hot int cursor_ops(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
       rc = cursor_seek(mc, key, data, MDBX_SET).err;
       if (unlikely(rc != MDBX_SUCCESS))
         return rc;
+    } else {
+      if (unlikely(is_eof(mc) || !inner_filled(mc)))
+        return MDBX_ENODATA;
+      cASSERT(mc, is_filled(mc));
+      if (key) {
+        const page_t *mp = mc->pg[mc->top];
+        const node_t *node = page_node(mp, mc->ki[mc->top]);
+        *key = get_key(node);
+      }
     }
-    if (unlikely(is_eof(mc) || !inner_filled(mc)))
-      return MDBX_ENODATA;
     goto fetch_multiple;
 
   case MDBX_NEXT_MULTIPLE:
@@ -17064,7 +17070,7 @@ __hot int cursor_ops(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
       return rc;
     else {
     fetch_multiple:
-      cASSERT(mc, is_filled(mc) && !inner_filled(mc));
+      cASSERT(mc, is_filled(mc) && inner_filled(mc));
       MDBX_cursor *mx = &mc->subcur->cursor;
       data->iov_len = page_numkeys(mx->pg[mx->top]) * mx->tree->dupfix_size;
       data->iov_base = page_data(mx->pg[mx->top]);
@@ -17796,14 +17802,11 @@ static int dbi_open_locked(MDBX_txn *txn, unsigned user_flags, MDBX_dbi *dbi,
   }
 
   /* Done here so we cannot fail after creating a new DB */
-  void *clone = nullptr;
-  if (name.iov_len) {
-    clone = osal_malloc(dbi_namelen(name));
-    if (unlikely(!clone))
-      return MDBX_ENOMEM;
-    name.iov_base = memcpy(clone, name.iov_base, name.iov_len);
-  } else
-    name.iov_base = "";
+  defer_free_item_t *const clone = osal_malloc(dbi_namelen(name));
+  if (unlikely(!clone))
+    return MDBX_ENOMEM;
+  memcpy(clone, name.iov_base, name.iov_len);
+  name.iov_base = clone;
 
   uint8_t dbi_state = DBI_LINDO | DBI_VALID | DBI_FRESH;
   if (unlikely(rc)) {
@@ -18183,8 +18186,53 @@ int mdbx_dbi_close(MDBX_env *env, MDBX_dbi dbi) {
     return MDBX_BAD_DBI;
 
   rc = osal_fastmutex_acquire(&env->dbi_lock);
-  if (likely(rc == MDBX_SUCCESS))
+  if (likely(rc == MDBX_SUCCESS && dbi < env->n_dbi)) {
+  retry:
+    if (env->basal_txn && (env->dbs_flags[dbi] & DB_VALID) &&
+        (env->basal_txn->flags & MDBX_TXN_FINISHED) == 0) {
+      /* LY: Опасный код, так как env->txn может быть изменено в другом потоке.
+       * К сожалению тут нет надежного решения и может быть падение при неверном
+       * использовании API (вызове mdbx_dbi_close конкурентно с завершением
+       * пишущей транзакции).
+       *
+       * Для минимизации вероятности падения сначала проверяем dbi-флаги
+       * в basal_txn, а уже после в env->txn. Таким образом, падение может быть
+       * только при коллизии с завершением вложенной транзакции.
+       *
+       * Альтернативно можно попробовать выполнять обновление/put записи в
+       * mainDb соответствующей таблице закрываемого хендла. Семантически это
+       * верный путь, но проблема в текущем API, в котором исторически dbi-хендл
+       * живет и закрывается вне транзакции. Причем проблема не только в том,
+       * что нет указателя на текущую пишущую транзакцию, а в том что
+       * пользователь точно не ожидает что закрытие хендла приведет к
+       * скрытой/непрозрачной активности внутри транзакции потенциально
+       * выполняемой в другом потоке. Другими словами, проблема может быть
+       * только при неверном использовании API и если пользователь это
+       * допускает, то точно не будет ожидать скрытых действий внутри
+       * транзакции, и поэтому этот путь потенциально более опасен. */
+      const MDBX_txn *const hazard = env->txn;
+      osal_compiler_barrier();
+      if ((dbi_state(env->basal_txn, dbi) &
+           (DBI_LINDO | DBI_DIRTY | DBI_CREAT)) > DBI_LINDO) {
+      bailout_dirty_dbi:
+        osal_fastmutex_release(&env->dbi_lock);
+        return MDBX_DANGLING_DBI;
+      }
+      osal_memory_barrier();
+      if (unlikely(hazard != env->txn))
+        goto retry;
+      if (hazard != env->basal_txn && hazard &&
+          (hazard->flags & MDBX_TXN_FINISHED) == 0 &&
+          hazard->signature == txn_signature &&
+          (dbi_state(hazard, dbi) & (DBI_LINDO | DBI_DIRTY | DBI_CREAT)) >
+              DBI_LINDO)
+        goto bailout_dirty_dbi;
+      osal_compiler_barrier();
+      if (unlikely(hazard != env->txn))
+        goto retry;
+    }
     rc = defer_and_release(env, dbi_close_locked(env, dbi));
+  }
   return rc;
 }
 
@@ -19037,10 +19085,10 @@ __cold int dxb_resize(MDBX_env *const env, const pgno_t used_pgno,
   const void *const prev_map = env->dxb_mmap.base;
 #endif /* MDBX_ENABLE_MADVISE || ENABLE_MEMCHECK */
 
-  VERBOSE("resize/%d datafile/mapping: "
+  VERBOSE("resize(env-flags 0x%x, mode %d) datafile/mapping: "
           "present %" PRIuPTR " -> %" PRIuPTR ", "
           "limit %" PRIuPTR " -> %" PRIuPTR,
-          mode, prev_size, size_bytes, prev_limit, limit_bytes);
+          env->flags, mode, prev_size, size_bytes, prev_limit, limit_bytes);
 
   eASSERT(env, limit_bytes >= size_bytes);
   eASSERT(env, bytes2pgno(env, size_bytes) >= size_pgno);
@@ -23535,6 +23583,7 @@ static rid_t get_rid_for_reclaimed(MDBX_txn *txn, gcu_t *ctx,
                  (MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) - ctx->reused_slot) *
                      txn->env->maxgc_large1page) {
         if (unlikely(ctx->rid <= MIN_TXNID)) {
+          ctx->dense = true;
           if (unlikely(MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) <=
                        ctx->reused_slot)) {
             NOTICE("** restart: reserve depleted (reused_gc_slot %zu >= "
@@ -23561,10 +23610,10 @@ static rid_t get_rid_for_reclaimed(MDBX_txn *txn, gcu_t *ctx,
             goto return_error;
           }
           const txnid_t gc_first = unaligned_peek_u64(4, key.iov_base);
-          if (unlikely(gc_first <= MIN_TXNID)) {
-            DEBUG("%s: no free GC's id(s) less than %" PRIaTXN
-                  " (going dense-mode)",
-                  dbg_prefix(ctx), ctx->rid);
+          if (unlikely(gc_first <= INITIAL_TXNID)) {
+            NOTICE("%s: no free GC's id(s) less than %" PRIaTXN
+                   " (going dense-mode)",
+                   dbg_prefix(ctx), ctx->rid);
             ctx->dense = true;
             goto return_restart;
           }
@@ -23671,19 +23720,11 @@ int gc_update(MDBX_txn *txn, gcu_t *ctx) {
   txn->cursors[FREE_DBI] = &ctx->cursor;
   int rc;
 
-  // tASSERT(txn, MDBX_PNL_GETSIZE(txn->tw.retired_pages) ||
-  //         ctx->cleaned_slot <
-  //                   (txn->tw.gc.reclaimed ?
-  //                   MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) : 0)
-  //         || ctx->cleaned_id < txn->tw.gc.last_reclaimed);
-
   /* txn->tw.relist[] can grow and shrink during this call.
    * txn->tw.gc.last_reclaimed and txn->tw.retired_pages[] can only grow.
    * But page numbers cannot disappear from txn->tw.retired_pages[]. */
-#if MDBX_ENABLE_GC_EXPERIMENTAL
 retry_clean_adj:
   ctx->reserve_adj = 0;
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
 retry:
   ctx->loop += ctx->prev_first_unallocated == txn->geo.first_unallocated;
   TRACE(">> restart, loop %u", ctx->loop);
@@ -23710,7 +23751,8 @@ retry:
   ctx->reserved = 0;
   ctx->cleaned_slot = 0;
   ctx->reused_slot = 0;
-  ctx->amount = ctx->fill_idx = ~0u;
+  ctx->amount = 0;
+  ctx->fill_idx = ~0u;
   ctx->cleaned_id = 0;
   ctx->rid = txn->tw.gc.last_reclaimed;
   while (true) {
@@ -23827,9 +23869,7 @@ retry:
                               env->maxgc_large1page / 2)) {
       TRACE("%s: reclaimed-list changed %zu -> %zu, retry", dbg_prefix(ctx),
             ctx->amount, MDBX_PNL_GETSIZE(txn->tw.relist));
-#if MDBX_ENABLE_GC_EXPERIMENTAL
       ctx->reserve_adj += ctx->reserved - MDBX_PNL_GETSIZE(txn->tw.relist);
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
       goto retry;
     }
     ctx->amount = MDBX_PNL_GETSIZE(txn->tw.relist);
@@ -23853,7 +23893,6 @@ retry:
       if (unlikely(rc != MDBX_SUCCESS))
         goto bailout;
     }
-#if MDBX_ENABLE_GC_EXPERIMENTAL
     const size_t left = ctx->amount - ctx->reserved - ctx->reserve_adj;
     TRACE("%s: amount %zu, reserved %zd, reserve_adj %zu, left %zd, "
           "lifo-reclaimed-slots %zu, "
@@ -23861,15 +23900,6 @@ retry:
           dbg_prefix(ctx), ctx->amount, ctx->reserved, ctx->reserve_adj, left,
           txn->tw.gc.reclaimed ? MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) : 0,
           ctx->reused_slot);
-#else
-    const size_t left = ctx->amount - ctx->reserved;
-    TRACE("%s: amount %zu, reserved %zd, left %zd, "
-          "lifo-reclaimed-slots %zu, "
-          "reused-gc-slots %zu",
-          dbg_prefix(ctx), ctx->amount, ctx->reserved, left,
-          txn->tw.gc.reclaimed ? MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) : 0,
-          ctx->reused_slot);
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
     if (0 >= (intptr_t)left)
       break;
 
@@ -23992,9 +24022,7 @@ retry:
 
   TRACE("%s", " >> filling");
   /* Fill in the reserved records */
-#if MDBX_ENABLE_GC_EXPERIMENTAL
   size_t excess_slots = 0;
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
   ctx->fill_idx =
       txn->tw.gc.reclaimed
           ? MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) - ctx->reused_slot
@@ -24005,15 +24033,17 @@ retry:
   tASSERT(txn, dpl_check(txn));
   if (ctx->amount) {
     MDBX_val key, data;
-    key.iov_len = data.iov_len = 0; /* avoid MSVC warning */
+    key.iov_len = data.iov_len = 0;
     key.iov_base = data.iov_base = nullptr;
 
     size_t left = ctx->amount, excess = 0;
     if (txn->tw.gc.reclaimed == nullptr) {
       tASSERT(txn, is_lifo(txn) == 0);
       rc = outer_first(&ctx->cursor, &key, &data);
-      if (unlikely(rc != MDBX_SUCCESS))
-        goto bailout;
+      if (unlikely(rc != MDBX_SUCCESS)) {
+        if (rc != MDBX_NOTFOUND)
+          goto bailout;
+      }
     } else {
       tASSERT(txn, is_lifo(txn) != 0);
     }
@@ -24024,36 +24054,29 @@ retry:
             MDBX_PNL_GETSIZE(txn->tw.relist));
       if (txn->tw.gc.reclaimed == nullptr) {
         tASSERT(txn, is_lifo(txn) == 0);
-        fill_gc_id = unaligned_peek_u64(4, key.iov_base);
+        fill_gc_id =
+            key.iov_base ? unaligned_peek_u64(4, key.iov_base) : MIN_TXNID;
         if (ctx->fill_idx == 0 || fill_gc_id > txn->tw.gc.last_reclaimed) {
-#if MDBX_ENABLE_GC_EXPERIMENTAL
           if (!left)
             break;
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
           NOTICE("** restart: reserve depleted (fill_idx %zu, fill_id %" PRIaTXN
                  " > last_reclaimed %" PRIaTXN ", left %zu",
                  ctx->fill_idx, fill_gc_id, txn->tw.gc.last_reclaimed, left);
-#if MDBX_ENABLE_GC_EXPERIMENTAL
           ctx->reserve_adj =
               (ctx->reserve_adj > left) ? ctx->reserve_adj - left : 0;
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
           goto retry;
         }
         ctx->fill_idx -= 1;
       } else {
         tASSERT(txn, is_lifo(txn) != 0);
         if (ctx->fill_idx >= MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed)) {
-#if MDBX_ENABLE_GC_EXPERIMENTAL
           if (!left)
             break;
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
           NOTICE("** restart: reserve depleted (fill_idx %zu >= "
                  "gc.reclaimed %zu, left %zu",
                  ctx->fill_idx, MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed), left);
-#if MDBX_ENABLE_GC_EXPERIMENTAL
           ctx->reserve_adj =
               (ctx->reserve_adj > left) ? ctx->reserve_adj - left : 0;
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
           goto retry;
         }
         ctx->fill_idx += 1;
@@ -24082,12 +24105,10 @@ retry:
         excess += delta;
         TRACE("%s: chunk %zu > left %zu, @%" PRIaTXN, dbg_prefix(ctx), chunk,
               left, fill_gc_id);
-#if MDBX_ENABLE_GC_EXPERIMENTAL
         if (!left) {
           excess_slots += 1;
           goto next;
         }
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
         if ((ctx->loop < 5 && delta > (ctx->loop / 2)) ||
             delta > env->maxgc_large1page)
           data.iov_len = (left + 1) * sizeof(pgno_t);
@@ -24103,10 +24124,8 @@ retry:
         NOTICE("** restart: reclaimed-list changed (%zu -> %zu, loose +%zu)",
                ctx->amount, MDBX_PNL_GETSIZE(txn->tw.relist),
                txn->tw.loose_count);
-#if MDBX_ENABLE_GC_EXPERIMENTAL
         if (ctx->loop < 5 || (ctx->loop > 10 && (ctx->loop & 1)))
           goto retry_clean_adj;
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
         goto retry;
       }
 
@@ -24142,23 +24161,16 @@ retry:
           goto bailout;
       }
 
-#if MDBX_ENABLE_GC_EXPERIMENTAL
     next:
-#else
-      if (left == 0)
-        break;
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
 
       if (txn->tw.gc.reclaimed == nullptr) {
         tASSERT(txn, is_lifo(txn) == 0);
         rc = outer_next(&ctx->cursor, &key, &data, MDBX_NEXT);
         if (unlikely(rc != MDBX_SUCCESS)) {
-#if MDBX_ENABLE_GC_EXPERIMENTAL
           if (rc == MDBX_NOTFOUND && !left) {
             rc = MDBX_SUCCESS;
             break;
           }
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
           goto bailout;
         }
       } else {
@@ -24167,14 +24179,12 @@ retry:
     }
 
     if (excess) {
-#if MDBX_ENABLE_GC_EXPERIMENTAL
       size_t n = excess, adj = excess;
       while (n >= env->maxgc_large1page)
         adj -= n /= env->maxgc_large1page;
       ctx->reserve_adj += adj;
       TRACE("%s: extra %zu reserved space, adj +%zu (%zu)", dbg_prefix(ctx),
             excess, adj, ctx->reserve_adj);
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
     }
   }
 
@@ -24186,27 +24196,15 @@ retry:
     goto retry;
   }
 
-#if MDBX_ENABLE_GC_EXPERIMENTAL
   if (unlikely(excess_slots)) {
     const bool will_retry = ctx->loop < 5 || excess_slots > 1;
     NOTICE("** %s: reserve excess (excess-slots %zu, filled-slot %zu, adj %zu, "
-           "loop %zu)",
+           "loop %u)",
            will_retry ? "restart" : "ignore", excess_slots, ctx->fill_idx,
            ctx->reserve_adj, ctx->loop);
     if (will_retry)
       goto retry;
   }
-#else
-  if (unlikely(ctx->fill_idx != (txn->tw.gc.reclaimed
-                                     ? MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed)
-                                     : 0))) {
-    const bool will_retry = ctx->loop < 9;
-    NOTICE("** %s: reserve excess (filled-idx %zu, loop %u)",
-           will_retry ? "restart" : "ignore", ctx->fill_idx, ctx->loop);
-    if (will_retry)
-      goto retry;
-  }
-#endif /* MDBX_ENABLE_GC_EXPERIMENTAL */
 
   tASSERT(txn, txn->tw.gc.reclaimed == nullptr ||
                    ctx->cleaned_slot == MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed));
@@ -28888,13 +28886,14 @@ __extern_C void __assert2(const char *file, int line, const char *function,
   __assert2(file, line, function, assertion)
 
 #elif defined(__UCLIBC__)
-__extern_C void __assert(const char *, const char *, unsigned, const char *)
+MDBX_NORETURN __extern_C void __assert(const char *, const char *, unsigned,
+                                       const char *)
 #ifdef __THROW
     __THROW
 #else
     __nothrow
 #endif /* __THROW */
-    MDBX_NORETURN;
+    ;
 #define __assert_fail(assertion, file, line, function)                         \
   __assert(assertion, file, line, function)
 
@@ -28902,14 +28901,15 @@ __extern_C void __assert(const char *, const char *, unsigned, const char *)
     /* workaround for avoid musl libc wrong prototype */ (                     \
         defined(__GLIBC__) || defined(__GNU_LIBRARY__))
 /* Prototype should match libc runtime. ISO POSIX (2003) & LSB 1.x-3.x */
-__extern_C void __assert_fail(const char *assertion, const char *file,
-                              unsigned line, const char *function)
+MDBX_NORETURN __extern_C void __assert_fail(const char *assertion,
+                                            const char *file, unsigned line,
+                                            const char *function)
 #ifdef __THROW
     __THROW
 #else
     __nothrow
 #endif /* __THROW */
-    MDBX_NORETURN;
+    ;
 
 #elif defined(__APPLE__) || defined(__MACH__)
 __extern_C void __assert_rtn(const char *function, const char *file, int line,
@@ -28927,8 +28927,9 @@ __extern_C void __assert_rtn(const char *function, const char *file, int line,
 #define __assert_fail(assertion, file, line, function)                         \
   __assert_rtn(function, file, line, assertion)
 #elif defined(__sun) || defined(__SVR4) || defined(__svr4__)
-__extern_C void __assert_c99(const char *assection, const char *file, int line,
-                             const char *function) MDBX_NORETURN;
+MDBX_NORETURN __extern_C void __assert_c99(const char *assection,
+                                           const char *file, int line,
+                                           const char *function);
 #define __assert_fail(assertion, file, line, function)                         \
   __assert_c99(assertion, file, line, function)
 #elif defined(__OpenBSD__)
@@ -31503,7 +31504,9 @@ __cold MDBX_INTERNAL void osal_jitter(bool tiny) {
   for (;;) {
 #if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) ||                \
     defined(__x86_64__)
-    const unsigned salt = 277u * (unsigned)__rdtsc();
+    unsigned salt = 5296013u * (unsigned)__rdtsc();
+    salt ^= salt >> 11;
+    salt *= 25810541u;
 #elif (defined(_WIN32) || defined(_WIN64)) && MDBX_WITHOUT_MSVC_CRT
     static ULONG state;
     const unsigned salt = (unsigned)RtlRandomEx(&state);
@@ -31511,13 +31514,26 @@ __cold MDBX_INTERNAL void osal_jitter(bool tiny) {
     const unsigned salt = rand();
 #endif
 
-    const unsigned coin = salt % (tiny ? 29u : 43u);
+    const int coin = salt % (tiny ? 29u : 43u);
     if (coin < 43 / 3)
       break;
 #if defined(_WIN32) || defined(_WIN64)
-    SwitchToThread();
-    if (coin > 43 * 2 / 3)
-      Sleep(1);
+    if (coin < 43 * 2 / 3)
+      SwitchToThread();
+    else {
+      static HANDLE timer;
+      if (!timer)
+        timer = CreateWaitableTimer(NULL, TRUE, NULL);
+
+      LARGE_INTEGER ft;
+      ft.QuadPart =
+          coin * (int64_t)-10; // Convert to 100 nanosecond interval,
+                               // negative value indicates relative time.
+      SetWaitableTimer(timer, &ft, 0, NULL, NULL, 0);
+      WaitForSingleObject(timer, INFINITE);
+      // CloseHandle(timer);
+      break;
+    }
 #else
     sched_yield();
     if (coin > 43 * 2 / 3)
@@ -32251,7 +32267,9 @@ __cold int mdbx_get_sysraminfo(intptr_t *page_size, intptr_t *total_pages,
 #include <sys/uuid.h>
 #endif /* FreeBSD */
 
-#if __GLIBC_PREREQ(2, 25) || defined(__FreeBSD__) || defined(__NetBSD__) ||    \
+#ifdef __IPHONE_OS_VERSION_MIN_REQUIRED
+#include <CommonCrypto/CommonRandom.h>
+#elif __GLIBC_PREREQ(2, 25) || defined(__FreeBSD__) || defined(__NetBSD__) ||  \
     defined(__BSD__) || defined(__bsdi__) || defined(__DragonFly__) ||         \
     defined(__APPLE__) || __has_include(<sys/random.h>)
 #include <sys/random.h>
@@ -40499,9 +40517,9 @@ __dll_export
         0,
         13,
         1,
-        0,
-        {"2024-08-30T00:01:07+03:00", "4ad05c5f867a963162def46b68eff5f7130b81ca", "5fc7a6b1077794789b97bb2a56f5a4eb541a0bc0",
-         "v0.13.1-0-g5fc7a6b1"},
+        56,
+        {"2024-11-07T11:40:16+03:00", "b2d74d5eb64fcb73b35ed64508c8fcaeb3f513e1", "10a93f4b9f485e8f71592f4ec9016a69faa209c8",
+         "v0.13.1-56-g10a93f4b"},
         sourcery};
 
 __dll_export

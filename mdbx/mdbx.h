@@ -189,16 +189,43 @@ typedef mode_t mdbx_mode_t;
 #define __has_attribute(x) (0)
 #endif /* __has_attribute */
 
+#ifndef __has_c_attribute
+#define __has_c_attribute(x) (0)
+#endif /* __has_c_attribute */
+
 #ifndef __has_cpp_attribute
 #define __has_cpp_attribute(x) 0
 #endif /* __has_cpp_attribute */
 
+#ifndef __has_CXX_attribute
+#if defined(__cplusplus) &&                                                    \
+    (!defined(_MSC_VER) || defined(__clang__) || _MSC_VER >= 1942)
+#define __has_CXX_attribute(x) __has_cpp_attribute(x)
+#else
+#define __has_CXX_attribute(x) 0
+#endif
+#endif /* __has_CXX_attribute */
+
+#ifndef __has_C23_or_CXX_attribute
+#if defined(__cplusplus)
+#define __has_C23_or_CXX_attribute(x) __has_CXX_attribute(x)
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ > 202311L
+#define __has_C23_or_CXX_attribute(x) __has_c_attribute(x)
+#else
+#define __has_C23_or_CXX_attribute(x) 0
+#endif
+#endif /* __has_C23_or_CXX_attribute */
+
 #ifndef __has_feature
 #define __has_feature(x) (0)
+#define __has_exceptions_disabled (0)
+#else
+#define __has_exceptions_disabled                                              \
+  (__has_feature(cxx_noexcept) && !__has_feature(cxx_exceptions))
 #endif /* __has_feature */
 
 #ifndef __has_extension
-#define __has_extension(x) (0)
+#define __has_extension(x) __has_feature(x)
 #endif /* __has_extension */
 
 #ifndef __has_builtin
@@ -213,15 +240,14 @@ typedef mode_t mdbx_mode_t;
  * These functions should be declared with the attribute pure. */
 #if defined(DOXYGEN)
 #define MDBX_PURE_FUNCTION [[gnu::pure]]
-#elif (defined(__GNUC__) || __has_attribute(__pure__)) &&                      \
-    (!defined(__clang__) /* https://bugs.llvm.org/show_bug.cgi?id=43275 */     \
-     || !defined(__cplusplus) || !__has_feature(cxx_exceptions))
-#define MDBX_PURE_FUNCTION __attribute__((__pure__))
-#elif defined(_MSC_VER) && !defined(__clang__) && _MSC_VER >= 1920
-#define MDBX_PURE_FUNCTION
-#elif defined(__cplusplus) && __has_cpp_attribute(gnu::pure) &&                \
-    (!defined(__clang__) || !__has_feature(cxx_exceptions))
+#elif __has_C23_or_CXX_attribute(gnu::pure) &&                                 \
+    (!defined(__apple_build_version__) || !defined(__clang_major__) ||         \
+     __clang_major__ > 17)
 #define MDBX_PURE_FUNCTION [[gnu::pure]]
+#elif (defined(__GNUC__) || __has_attribute(__pure__)) &&                      \
+    (!defined(__clang__) /* https://bugs.llvm.org/show_bug.cgi?id=43275 */ ||  \
+     !defined(__cplusplus) || __has_exceptions_disabled)
+#define MDBX_PURE_FUNCTION __attribute__((__pure__))
 #else
 #define MDBX_PURE_FUNCTION
 #endif /* MDBX_PURE_FUNCTION */
@@ -231,22 +257,16 @@ typedef mode_t mdbx_mode_t;
  * that is compatible to CLANG and proposed [[pure]]. */
 #if defined(DOXYGEN)
 #define MDBX_NOTHROW_PURE_FUNCTION [[gnu::pure, gnu::nothrow]]
-#elif defined(__GNUC__) ||                                                     \
-    (__has_attribute(__pure__) && __has_attribute(__nothrow__))
-#define MDBX_NOTHROW_PURE_FUNCTION __attribute__((__pure__, __nothrow__))
-#elif defined(_MSC_VER) && !defined(__clang__) && _MSC_VER >= 1920
-#if __has_cpp_attribute(pure)
-#define MDBX_NOTHROW_PURE_FUNCTION [[pure]]
-#else
-#define MDBX_NOTHROW_PURE_FUNCTION
-#endif
-#elif defined(__cplusplus) && __has_cpp_attribute(gnu::pure)
-#if __has_cpp_attribute(gnu::nothrow)
+#elif __has_C23_or_CXX_attribute(gnu::pure)
+#if __has_C23_or_CXX_attribute(gnu::nothrow)
 #define MDBX_NOTHROW_PURE_FUNCTION [[gnu::pure, gnu::nothrow]]
 #else
 #define MDBX_NOTHROW_PURE_FUNCTION [[gnu::pure]]
 #endif
-#elif defined(__cplusplus) && __has_cpp_attribute(pure)
+#elif defined(__GNUC__) ||                                                     \
+    (__has_attribute(__pure__) && __has_attribute(__nothrow__))
+#define MDBX_NOTHROW_PURE_FUNCTION __attribute__((__pure__, __nothrow__))
+#elif __has_CXX_attribute(pure)
 #define MDBX_NOTHROW_PURE_FUNCTION [[pure]]
 #else
 #define MDBX_NOTHROW_PURE_FUNCTION
@@ -264,15 +284,14 @@ typedef mode_t mdbx_mode_t;
  * It does not make sense for a const function to return void. */
 #if defined(DOXYGEN)
 #define MDBX_CONST_FUNCTION [[gnu::const]]
-#elif (defined(__GNUC__) || __has_attribute(__pure__)) &&                      \
-    (!defined(__clang__) /* https://bugs.llvm.org/show_bug.cgi?id=43275 */     \
-     || !defined(__cplusplus) || !__has_feature(cxx_exceptions))
-#define MDBX_CONST_FUNCTION __attribute__((__const__))
-#elif defined(_MSC_VER) && !defined(__clang__) && _MSC_VER >= 1920
-#define MDBX_CONST_FUNCTION MDBX_PURE_FUNCTION
-#elif defined(__cplusplus) && __has_cpp_attribute(gnu::const) &&               \
-    (!defined(__clang__) || !__has_feature(cxx_exceptions))
+#elif __has_C23_or_CXX_attribute(gnu::const) &&                                \
+    (!defined(__apple_build_version__) || !defined(__clang_major__) ||         \
+     __clang_major__ > 17)
 #define MDBX_CONST_FUNCTION [[gnu::const]]
+#elif (defined(__GNUC__) || __has_attribute(__const__)) &&                     \
+    (!defined(__clang__) /* https://bugs.llvm.org/show_bug.cgi?id=43275 */ ||  \
+     !defined(__cplusplus) || __has_exceptions_disabled)
+#define MDBX_CONST_FUNCTION __attribute__((__const__))
 #else
 #define MDBX_CONST_FUNCTION MDBX_PURE_FUNCTION
 #endif /* MDBX_CONST_FUNCTION */
@@ -282,18 +301,16 @@ typedef mode_t mdbx_mode_t;
  * that is compatible to CLANG and future [[const]]. */
 #if defined(DOXYGEN)
 #define MDBX_NOTHROW_CONST_FUNCTION [[gnu::const, gnu::nothrow]]
+#elif __has_C23_or_CXX_attribute(gnu::const)
+#if __has_C23_or_CXX_attribute(gnu::nothrow)
+#define MDBX_NOTHROW_CONST_FUNCTION [[gnu::const, gnu::nothrow]]
+#else
+#define MDBX_NOTHROW_CONST_FUNCTION [[gnu::const]]
+#endif
 #elif defined(__GNUC__) ||                                                     \
     (__has_attribute(__const__) && __has_attribute(__nothrow__))
 #define MDBX_NOTHROW_CONST_FUNCTION __attribute__((__const__, __nothrow__))
-#elif defined(_MSC_VER) && !defined(__clang__) && _MSC_VER >= 1920
-#define MDBX_NOTHROW_CONST_FUNCTION MDBX_NOTHROW_PURE_FUNCTION
-#elif defined(__cplusplus) && __has_cpp_attribute(gnu::const)
-#if __has_cpp_attribute(gnu::nothrow)
-#define MDBX_NOTHROW_PURE_FUNCTION [[gnu::const, gnu::nothrow]]
-#else
-#define MDBX_NOTHROW_PURE_FUNCTION [[gnu::const]]
-#endif
-#elif defined(__cplusplus) && __has_cpp_attribute(const)
+#elif __has_CXX_attribute(const)
 #define MDBX_NOTHROW_CONST_FUNCTION [[const]]
 #else
 #define MDBX_NOTHROW_CONST_FUNCTION MDBX_NOTHROW_PURE_FUNCTION
@@ -612,7 +629,7 @@ extern "C" {
 #define MDBX_VERSION_MINOR 13
 
 #ifndef LIBMDBX_API
-#if defined(LIBMDBX_EXPORTS)
+#if defined(LIBMDBX_EXPORTS) || defined(DOXYGEN)
 #define LIBMDBX_API __dll_export
 #elif defined(LIBMDBX_IMPORTS)
 #define LIBMDBX_API __dll_import
@@ -622,7 +639,7 @@ extern "C" {
 #endif /* LIBMDBX_API */
 
 #ifdef __cplusplus
-#if defined(__clang__) || __has_attribute(type_visibility)
+#if defined(__clang__) || __has_attribute(type_visibility) || defined(DOXYGEN)
 #define LIBMDBX_API_TYPE LIBMDBX_API __attribute__((type_visibility("default")))
 #else
 #define LIBMDBX_API_TYPE LIBMDBX_API
@@ -1996,7 +2013,7 @@ typedef enum MDBX_error {
   MDBX_DUPLICATED_CLK = -30413,
 
   /** Some cursors and/or other resources should be closed before table or
-   *  corresponding DBI-handle could be (re)used */
+   *  corresponding DBI-handle could be (re)used and/or closed. */
   MDBX_DANGLING_DBI = -30412,
 
   /** The parked read transaction was outed for the sake of
@@ -2542,6 +2559,11 @@ LIBMDBX_API int mdbx_env_open(MDBX_env *env, const char *pathname,
  * \see mdbx_env_open() */
 LIBMDBX_API int mdbx_env_openW(MDBX_env *env, const wchar_t *pathname,
                                MDBX_env_flags_t flags, mdbx_mode_t mode);
+#define mdbx_env_openT(env, pathname, flags, mode)                             \
+  mdbx_env_openW(env, pathname, flags, mode)
+#else
+#define mdbx_env_openT(env, pathname, flags, mode)                             \
+  mdbx_env_open(env, pathname, flags, mode)
 #endif /* Windows */
 
 /** \brief Deletion modes for \ref mdbx_env_delete().
@@ -2592,6 +2614,9 @@ LIBMDBX_API int mdbx_env_delete(const char *pathname,
  * \see mdbx_env_delete() */
 LIBMDBX_API int mdbx_env_deleteW(const wchar_t *pathname,
                                  MDBX_env_delete_mode_t mode);
+#define mdbx_env_deleteT(pathname, mode) mdbx_env_deleteW(pathname, mode)
+#else
+#define mdbx_env_deleteT(pathname, mode) mdbx_env_delete(pathname, mode)
 #endif /* Windows */
 
 /** \brief Copy an MDBX environment to the specified path, with options.
@@ -2713,6 +2738,7 @@ LIBMDBX_API int mdbx_txn_copy2pathname(MDBX_txn *txn, const char *dest,
  * \see mdbx_env_copy() */
 LIBMDBX_API int mdbx_env_copyW(MDBX_env *env, const wchar_t *dest,
                                MDBX_copy_flags_t flags);
+#define mdbx_env_copyT(env, dest, flags) mdbx_env_copyW(env, dest, flags)
 
 /** \copydoc mdbx_txn_copy2pathname()
  * \ingroup c_extra
@@ -2720,6 +2746,12 @@ LIBMDBX_API int mdbx_env_copyW(MDBX_env *env, const wchar_t *dest,
  * \see mdbx_txn_copy2pathname() */
 LIBMDBX_API int mdbx_txn_copy2pathnameW(MDBX_txn *txn, const wchar_t *dest,
                                         MDBX_copy_flags_t flags);
+#define mdbx_txn_copy2pathnameT(txn, dest, flags)                              \
+  mdbx_txn_copy2pathnameW(txn, dest, path)
+#else
+#define mdbx_env_copyT(env, dest, flags) mdbx_env_copy(env, dest, flags)
+#define mdbx_txn_copy2pathnameT(txn, dest, flags)                              \
+  mdbx_txn_copy2pathname(txn, dest, path)
 #endif /* Windows */
 
 /** \brief Copy an environment to the specified file descriptor, with
@@ -3386,6 +3418,9 @@ LIBMDBX_API int mdbx_env_get_path(const MDBX_env *env, const char **dest);
  * \note Available only on Windows.
  * \see mdbx_env_get_path() */
 LIBMDBX_API int mdbx_env_get_pathW(const MDBX_env *env, const wchar_t **dest);
+#define mdbx_env_get_pathT(env, dest) mdbx_env_get_pathW(env, dest)
+#else
+#define mdbx_env_get_pathT(env, dest) mdbx_env_get_path(env, dest)
 #endif /* Windows */
 
 /** \brief Return the file descriptor for the given environment.
@@ -3848,7 +3883,7 @@ mdbx_env_get_maxvalsize_ex(const MDBX_env *env, MDBX_db_flags_t flags);
 /** \deprecated Please use \ref mdbx_env_get_maxkeysize_ex()
  *              and/or \ref mdbx_env_get_maxvalsize_ex()
  * \ingroup c_statinfo */
-MDBX_DEPRECATED MDBX_NOTHROW_PURE_FUNCTION LIBMDBX_API int
+MDBX_NOTHROW_PURE_FUNCTION MDBX_DEPRECATED LIBMDBX_API int
 mdbx_env_get_maxkeysize(const MDBX_env *env);
 
 /** \brief Returns maximal size of key-value pair to fit in a single page
@@ -4887,9 +4922,12 @@ LIBMDBX_INLINE_API(int, mdbx_dbi_flags,
  * \ref mdbx_env_set_maxdbs(), unless that value would be large.
  *
  * \note Use with care.
- * This call is synchronized via mutex with \ref mdbx_dbi_close(), but NOT with
- * other transactions running by other threads. The "next" version of libmdbx
- * (\ref MithrilDB) will solve this issue.
+ * This call is synchronized via mutex with \ref mdbx_dbi_open(), but NOT with
+ * any transaction(s) running by other thread(s).
+ * So the `mdbx_dbi_close()` MUST NOT be called in-parallel/concurrently
+ * with any transactions using the closing dbi-handle, nor during other thread
+ * commit/abort a write transacton(s). The "next" version of libmdbx (\ref
+ * MithrilDB) will solve this issue.
  *
  * Handles should only be closed if no other threads are going to reference
  * the table handle or one of its cursors any further. Do not close a handle
@@ -6406,6 +6444,11 @@ LIBMDBX_API int mdbx_env_open_for_recoveryW(MDBX_env *env,
                                             const wchar_t *pathname,
                                             unsigned target_meta,
                                             bool writeable);
+#define mdbx_env_open_for_recoveryT(env, pathname, target_mets, writeable)     \
+  mdbx_env_open_for_recoveryW(env, pathname, target_mets, writeable)
+#else
+#define mdbx_env_open_for_recoveryT(env, pathname, target_mets, writeable)     \
+  mdbx_env_open_for_recovery(env, pathname, target_mets, writeable)
 #endif /* Windows */
 
 /** \brief Turn database to the specified meta-page.
@@ -6455,6 +6498,11 @@ LIBMDBX_API int mdbx_preopen_snapinfo(const char *pathname, MDBX_envinfo *info,
  * \see mdbx_preopen_snapinfo() */
 LIBMDBX_API int mdbx_preopen_snapinfoW(const wchar_t *pathname,
                                        MDBX_envinfo *info, size_t bytes);
+#define mdbx_preopen_snapinfoT(pathname, info, bytes)                          \
+  mdbx_preopen_snapinfoW(pathname, info, bytes)
+#else
+#define mdbx_preopen_snapinfoT(pathname, info, bytes)                          \
+  mdbx_preopen_snapinfo(pathname, info, bytes)
 #endif /* Windows */
 
 /** \brief Флаги/опции для проверки целостности базы данных.

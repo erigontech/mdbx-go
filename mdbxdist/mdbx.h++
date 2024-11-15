@@ -924,7 +924,7 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
   /// \param [in] ignore_spaces If `true` function will skips spaces surrounding
   /// (before, between and after) a encoded bytes. However, spaces should not
   /// break a pair of characters encoding a single byte.
-  inline MDBX_NOTHROW_PURE_FUNCTION bool
+  MDBX_NOTHROW_PURE_FUNCTION inline bool
   is_hex(bool ignore_spaces = false) const noexcept;
 
   /// \brief Checks whether the content of the slice is a
@@ -932,7 +932,7 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
   /// \param [in] ignore_spaces If `true` function will skips spaces surrounding
   /// (before, between and after) a encoded bytes. However, spaces should not
   /// break a code group of characters.
-  inline MDBX_NOTHROW_PURE_FUNCTION bool
+  MDBX_NOTHROW_PURE_FUNCTION inline bool
   is_base58(bool ignore_spaces = false) const noexcept;
 
   /// \brief Checks whether the content of the slice is a
@@ -940,7 +940,7 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
   /// \param [in] ignore_spaces If `true` function will skips spaces surrounding
   /// (before, between and after) a encoded bytes. However, spaces should not
   /// break a code group of characters.
-  inline MDBX_NOTHROW_PURE_FUNCTION bool
+  MDBX_NOTHROW_PURE_FUNCTION inline bool
   is_base64(bool ignore_spaces = false) const noexcept;
 
   inline void swap(slice &other) noexcept;
@@ -1736,17 +1736,17 @@ private:
         return capacity_bytes < sizeof(bin);
       }
 
-      enum : byte { lastbyte_inplace_signature = byte(~0u) };
+      enum : byte { lastbyte_inplace_signature = byte(~byte(0)) };
       enum : size_t {
         inplace_signature_limit =
             size_t(lastbyte_inplace_signature)
             << (sizeof(size_t /* allocated::capacity_bytes_ */) - 1) * CHAR_BIT
       };
 
-      constexpr byte lastbyte() const noexcept {
+      constexpr byte inplace_lastbyte() const noexcept {
         return inplace_[sizeof(bin) - 1];
       }
-      MDBX_CXX17_CONSTEXPR byte &lastbyte() noexcept {
+      MDBX_CXX17_CONSTEXPR byte &inplace_lastbyte() noexcept {
         return inplace_[sizeof(bin) - 1];
       }
 
@@ -1758,7 +1758,7 @@ private:
                     (std::numeric_limits<size_t>::max() >> CHAR_BIT) ==
                 inplace_signature_limit,
             "WTF?");
-        return lastbyte() == lastbyte_inplace_signature;
+        return inplace_lastbyte() == lastbyte_inplace_signature;
       }
       constexpr bool is_allocated() const noexcept { return !is_inplace(); }
 
@@ -1772,7 +1772,7 @@ private:
         if (::std::is_trivial<allocator_pointer>::value)
           /* workaround for "uninitialized" warning from some compilers */
           memset(&allocated_.ptr_, 0, sizeof(allocated_.ptr_));
-        lastbyte() = lastbyte_inplace_signature;
+        inplace_lastbyte() = lastbyte_inplace_signature;
         MDBX_CONSTEXPR_ASSERT(is_inplace() && address() == inplace_ &&
                               is_suitable_for_inplace(capacity()));
         return address();
@@ -3486,8 +3486,8 @@ MDBX_CXX01_CONSTEXPR_ENUM bool is_msgpack(value_mode mode) noexcept {
   return mode == value_mode::msgpack;
 }
 
-/// \brief A handle for an individual database (key-value spaces) in the
-/// environment.
+/// \brief A handle for an individual table (aka key-value space, maps or
+/// sub-database) in the environment.
 /// \see txn::open_map() \see txn::create_map()
 /// \see txn::clear_map() \see txn::drop_map()
 /// \see txn::get_handle_info() \see txn::get_map_stat()
@@ -3537,8 +3537,9 @@ enum put_mode {
 /// instances, but does not destroys the represented underlying object from the
 /// own class destructor.
 ///
-/// An environment supports multiple key-value tables (aka key-value
-/// maps, spaces or sub-databases), all residing in the same shared-memory map.
+/// An environment supports multiple key-value tables (aka key-value maps,
+/// spaces or sub-databases), all residing in the same shared-memory mapped
+/// file.
 class LIBMDBX_API_TYPE env {
   friend class txn;
 
@@ -3569,22 +3570,26 @@ public:
   /// create_parameters &, const operate_parameters &, bool accede)
 
   struct LIBMDBX_API_TYPE geometry {
-    enum : int64_t {
+    enum : intptr_t {
       default_value = -1,         ///< Means "keep current or use default"
       minimal_value = 0,          ///< Means "minimal acceptable"
       maximal_value = INTPTR_MAX, ///< Means "maximal acceptable"
-      kB = 1000,                  ///< \f$10^{3}\f$ bytes
-      MB = kB * 1000,             ///< \f$10^{6}\f$ bytes
-      GB = MB * 1000,             ///< \f$10^{9}\f$ bytes
-      TB = GB * 1000,             ///< \f$10^{12}\f$ bytes
-      PB = TB * 1000,             ///< \f$10^{15}\f$ bytes
-      EB = PB * 1000,             ///< \f$10^{18}\f$ bytes
-      KiB = 1024,                 ///< \f$2^{10}\f$ bytes
-      MiB = KiB << 10,            ///< \f$2^{20}\f$ bytes
-      GiB = MiB << 10,            ///< \f$2^{30}\f$ bytes
-      TiB = GiB << 10,            ///< \f$2^{40}\f$ bytes
-      PiB = TiB << 10,            ///< \f$2^{50}\f$ bytes
-      EiB = PiB << 10,            ///< \f$2^{60}\f$ bytes
+      kB = 1000,                  ///< \f$10^{3}\f$ bytes (0x03E8)
+      MB = kB * 1000,             ///< \f$10^{6}\f$ bytes (0x000F_4240)
+      GB = MB * 1000,             ///< \f$10^{9}\f$ bytes (0x3B9A_CA00)
+#if INTPTR_MAX > 0x7fffFFFFl
+      TB = GB * 1000,  ///< \f$10^{12}\f$ bytes (0x0000_00E8_D4A5_1000)
+      PB = TB * 1000,  ///< \f$10^{15}\f$ bytes (0x0003_8D7E_A4C6_8000)
+      EB = PB * 1000,  ///< \f$10^{18}\f$ bytes (0x0DE0_B6B3_A764_0000)
+#endif                 /* 64-bit intptr_t */
+      KiB = 1024,      ///< \f$2^{10}\f$ bytes (0x0400)
+      MiB = KiB << 10, ///< \f$2^{20}\f$ bytes (0x0010_0000)
+      GiB = MiB << 10, ///< \f$2^{30}\f$ bytes (0x4000_0000)
+#if INTPTR_MAX > 0x7fffFFFFl
+      TiB = GiB << 10, ///< \f$2^{40}\f$ bytes (0x0000_0100_0000_0000)
+      PiB = TiB << 10, ///< \f$2^{50}\f$ bytes (0x0004_0000_0000_0000)
+      EiB = PiB << 10, ///< \f$2^{60}\f$ bytes (0x1000_0000_0000_0000)
+#endif                 /* 64-bit intptr_t */
     };
 
     /// \brief Tagged type for output to std::ostream
@@ -3699,7 +3704,7 @@ public:
 
   /// \brief Operate parameters.
   struct LIBMDBX_API_TYPE operate_parameters {
-    /// \brief The maximum number of named databases for the environment.
+    /// \brief The maximum number of named tables/maps for the environment.
     /// Zero means default value.
     unsigned max_maps{0};
     /// \brief The maximum number of threads/reader slots for the environment.
@@ -3774,24 +3779,24 @@ public:
     /// \brief Returns the maximal database size in bytes for specified page
     /// size.
     static inline size_t dbsize_max(intptr_t pagesize);
-    /// \brief Returns the minimal key size in bytes for specified database
+    /// \brief Returns the minimal key size in bytes for specified table
     /// flags.
     static inline size_t key_min(MDBX_db_flags_t flags) noexcept;
     /// \brief Returns the minimal key size in bytes for specified keys mode.
     static inline size_t key_min(key_mode mode) noexcept;
     /// \brief Returns the maximal key size in bytes for specified page size and
-    /// database flags.
+    /// table flags.
     static inline size_t key_max(intptr_t pagesize, MDBX_db_flags_t flags);
     /// \brief Returns the maximal key size in bytes for specified page size and
     /// keys mode.
     static inline size_t key_max(intptr_t pagesize, key_mode mode);
     /// \brief Returns the maximal key size in bytes for given environment and
-    /// database flags.
+    /// table flags.
     static inline size_t key_max(const env &, MDBX_db_flags_t flags);
     /// \brief Returns the maximal key size in bytes for given environment and
     /// keys mode.
     static inline size_t key_max(const env &, key_mode mode);
-    /// \brief Returns the minimal values size in bytes for specified database
+    /// \brief Returns the minimal values size in bytes for specified table
     /// flags.
     static inline size_t value_min(MDBX_db_flags_t flags) noexcept;
     /// \brief Returns the minimal values size in bytes for specified values
@@ -3799,41 +3804,41 @@ public:
     static inline size_t value_min(value_mode) noexcept;
 
     /// \brief Returns the maximal value size in bytes for specified page size
-    /// and database flags.
+    /// and table flags.
     static inline size_t value_max(intptr_t pagesize, MDBX_db_flags_t flags);
     /// \brief Returns the maximal value size in bytes for specified page size
     /// and values mode.
     static inline size_t value_max(intptr_t pagesize, value_mode);
     /// \brief Returns the maximal value size in bytes for given environment and
-    /// database flags.
+    /// table flags.
     static inline size_t value_max(const env &, MDBX_db_flags_t flags);
     /// \brief Returns the maximal value size in bytes for specified page size
     /// and values mode.
     static inline size_t value_max(const env &, value_mode);
 
     /// \brief Returns maximal size of key-value pair to fit in a single page
-    /// for specified size and database flags.
+    /// for specified size and table flags.
     static inline size_t pairsize4page_max(intptr_t pagesize,
                                            MDBX_db_flags_t flags);
     /// \brief Returns maximal size of key-value pair to fit in a single page
     /// for specified page size and values mode.
     static inline size_t pairsize4page_max(intptr_t pagesize, value_mode);
     /// \brief Returns maximal size of key-value pair to fit in a single page
-    /// for given environment and database flags.
+    /// for given environment and table flags.
     static inline size_t pairsize4page_max(const env &, MDBX_db_flags_t flags);
     /// \brief Returns maximal size of key-value pair to fit in a single page
     /// for specified page size and values mode.
     static inline size_t pairsize4page_max(const env &, value_mode);
 
     /// \brief Returns maximal data size in bytes to fit in a leaf-page or
-    /// single large/overflow-page for specified size and database flags.
+    /// single large/overflow-page for specified size and table flags.
     static inline size_t valsize4page_max(intptr_t pagesize,
                                           MDBX_db_flags_t flags);
     /// \brief Returns maximal data size in bytes to fit in a leaf-page or
     /// single large/overflow-page for specified page size and values mode.
     static inline size_t valsize4page_max(intptr_t pagesize, value_mode);
     /// \brief Returns maximal data size in bytes to fit in a leaf-page or
-    /// single large/overflow-page for given environment and database flags.
+    /// single large/overflow-page for given environment and table flags.
     static inline size_t valsize4page_max(const env &, MDBX_db_flags_t flags);
     /// \brief Returns maximal data size in bytes to fit in a leaf-page or
     /// single large/overflow-page for specified page size and values mode.
@@ -3960,7 +3965,7 @@ public:
   /// \see extra_runtime_option::max_readers
   inline unsigned max_readers() const;
 
-  /// \brief Returns the maximum number of named databases for the environment.
+  /// \brief Returns the maximum number of named tables for the environment.
   /// \see extra_runtime_option::max_maps
   inline unsigned max_maps() const;
 
@@ -4104,7 +4109,7 @@ public:
   /// \brief Close a key-value map (aka table) handle. Normally
   /// unnecessary.
   ///
-  /// Closing a database handle is not necessary, but lets \ref txn::open_map()
+  /// Closing a table handle is not necessary, but lets \ref txn::open_map()
   /// reuse the handle value. Usually it's better to set a bigger
   /// \ref env::operate_parameters::max_maps, unless that value would be
   /// large.
@@ -4115,8 +4120,8 @@ public:
   /// of libmdbx (\ref MithrilDB) will solve this issue.
   ///
   /// Handles should only be closed if no other threads are going to reference
-  /// the database handle or one of its cursors any further. Do not close a
-  /// handle if an existing transaction has modified its database. Doing so can
+  /// the table handle or one of its cursors any further. Do not close a
+  /// handle if an existing transaction has modified its table. Doing so can
   /// cause misbehavior from database corruption to errors like
   /// \ref MDBX_BAD_DBI (since the DB name is gone).
   inline void close_map(const map_handle &);
@@ -4205,8 +4210,8 @@ public:
 /// object from the own class destructor, but disallows copying and assignment
 /// for instances.
 ///
-/// An environment supports multiple key-value databases (aka key-value spaces
-/// or tables), all residing in the same shared-memory map.
+/// An environment supports multiple key-value tables (aka key-value spaces
+/// or maps), all residing in the same shared-memory mapped file.
 class LIBMDBX_API_TYPE env_managed : public env {
   using inherited = env;
   /// delegated constructor for RAII
@@ -4262,7 +4267,7 @@ public:
 
   /// \brief Explicitly closes the environment and release the memory map.
   ///
-  /// Only a single thread may call this function. All transactions, databases,
+  /// Only a single thread may call this function. All transactions, tables,
   /// and cursors must already be closed before calling this function. Attempts
   /// to use any such handles after calling this function will cause a
   /// `SIGSEGV`. The environment handle will be freed and must not be used again
@@ -4522,7 +4527,7 @@ public:
   /// \brief Returns statistics for a table.
   inline map_stat get_map_stat(map_handle map) const;
   /// \brief Returns depth (bitmask) information of nested dupsort (multi-value)
-  /// B+trees for given database.
+  /// B+trees for given table.
   inline uint32_t get_tree_deepmask(map_handle map) const;
   /// \brief Returns information about key-value map (aka table) handle.
   inline map_handle::info get_handle_info(map_handle map) const;
@@ -4571,11 +4576,11 @@ public:
   /// multimap (aka table).
   inline slice get(map_handle map, slice key, size_t &values_count,
                    const slice &value_at_absence) const;
-  /// \brief Get value for equal or great key from a database.
+  /// \brief Get value for equal or great key from a table.
   /// \return Bundle of key-value pair and boolean flag,
   /// which will be `true` if the exact key was found and `false` otherwise.
   inline pair_result get_equal_or_great(map_handle map, const slice &key) const;
-  /// \brief Get value for equal or great key from a database.
+  /// \brief Get value for equal or great key from a table.
   /// \return Bundle of key-value pair and boolean flag,
   /// which will be `true` if the exact key was found and `false` otherwise.
   inline pair_result get_equal_or_great(map_handle map, const slice &key,
@@ -4668,25 +4673,26 @@ public:
     return append(map, kv.key, kv.value, multivalue_order_preserved);
   }
 
-  size_t put_multiple(map_handle map, const slice &key,
-                      const size_t value_length, const void *values_array,
-                      size_t values_count, put_mode mode,
-                      bool allow_partial = false);
+  size_t put_multiple_samelength(map_handle map, const slice &key,
+                                 const size_t value_length,
+                                 const void *values_array, size_t values_count,
+                                 put_mode mode, bool allow_partial = false);
   template <typename VALUE>
-  size_t put_multiple(map_handle map, const slice &key,
-                      const VALUE *values_array, size_t values_count,
-                      put_mode mode, bool allow_partial = false) {
+  size_t put_multiple_samelength(map_handle map, const slice &key,
+                                 const VALUE *values_array, size_t values_count,
+                                 put_mode mode, bool allow_partial = false) {
     static_assert(::std::is_standard_layout<VALUE>::value &&
                       !::std::is_pointer<VALUE>::value &&
                       !::std::is_array<VALUE>::value,
                   "Must be a standard layout type!");
-    return put_multiple(map, key, sizeof(VALUE), values_array, values_count,
-                        mode, allow_partial);
+    return put_multiple_samelength(map, key, sizeof(VALUE), values_array,
+                                   values_count, mode, allow_partial);
   }
   template <typename VALUE>
-  void put_multiple(map_handle map, const slice &key,
-                    const ::std::vector<VALUE> &vector, put_mode mode) {
-    put_multiple(map, key, vector.data(), vector.size(), mode);
+  void put_multiple_samelength(map_handle map, const slice &key,
+                               const ::std::vector<VALUE> &vector,
+                               put_mode mode) {
+    put_multiple_samelength(map, key, vector.data(), vector.size(), mode);
   }
 
   inline ptrdiff_t estimate(map_handle map, const pair &from,
@@ -4866,6 +4872,10 @@ public:
     pair_exact = pair_equal,
     pair_greater_or_equal = MDBX_TO_PAIR_GREATER_OR_EQUAL,
     pair_greater_than = MDBX_TO_PAIR_GREATER_THAN,
+
+    batch_samelength = MDBX_GET_MULTIPLE,
+    batch_samelength_next = MDBX_NEXT_MULTIPLE,
+    batch_samelength_previous = MDBX_PREV_MULTIPLE
   };
 
   struct move_result : public pair_result {
@@ -5130,6 +5140,23 @@ public:
   inline move_result upper_bound_multivalue(const slice &key,
                                             const slice &value,
                                             bool throw_notfound = false);
+
+  inline move_result get_multiple_samelength(const slice &key,
+                                             bool throw_notfound = true) {
+    return move(batch_samelength, key, throw_notfound);
+  }
+
+  inline move_result get_multiple_samelength(bool throw_notfound = false) {
+    return move(batch_samelength, throw_notfound);
+  }
+
+  inline move_result next_multiple_samelength(bool throw_notfound = false) {
+    return move(batch_samelength_next, throw_notfound);
+  }
+
+  inline move_result previous_multiple_samelength(bool throw_notfound = false) {
+    return move(batch_samelength_previous, throw_notfound);
+  }
 
   inline bool eof() const;
   inline bool on_first() const;
@@ -5853,17 +5880,17 @@ slice::base64_decode(bool ignore_spaces, const ALLOCATOR &allocator) const {
       .as_buffer<ALLOCATOR, CAPACITY_POLICY>(allocator);
 }
 
-inline MDBX_NOTHROW_PURE_FUNCTION bool
+MDBX_NOTHROW_PURE_FUNCTION inline bool
 slice::is_hex(bool ignore_spaces) const noexcept {
   return !from_hex(*this, ignore_spaces).is_erroneous();
 }
 
-inline MDBX_NOTHROW_PURE_FUNCTION bool
+MDBX_NOTHROW_PURE_FUNCTION inline bool
 slice::is_base58(bool ignore_spaces) const noexcept {
   return !from_base58(*this, ignore_spaces).is_erroneous();
 }
 
-inline MDBX_NOTHROW_PURE_FUNCTION bool
+MDBX_NOTHROW_PURE_FUNCTION inline bool
 slice::is_base64(bool ignore_spaces) const noexcept {
   return !from_base64(*this, ignore_spaces).is_erroneous();
 }
@@ -6912,10 +6939,11 @@ inline void txn::append(map_handle map, const slice &key, const slice &value,
                                  : MDBX_APPEND));
 }
 
-inline size_t txn::put_multiple(map_handle map, const slice &key,
-                                const size_t value_length,
-                                const void *values_array, size_t values_count,
-                                put_mode mode, bool allow_partial) {
+inline size_t txn::put_multiple_samelength(map_handle map, const slice &key,
+                                           const size_t value_length,
+                                           const void *values_array,
+                                           size_t values_count, put_mode mode,
+                                           bool allow_partial) {
   MDBX_val args[2] = {{const_cast<void *>(values_array), value_length},
                       {nullptr, values_count}};
   const int err = ::mdbx_put(handle_, map.dbi, const_cast<slice *>(&key), args,
@@ -7099,6 +7127,11 @@ inline cursor::move_result cursor::lower_bound(const slice &key,
   return move(key_lowerbound, key, throw_notfound);
 }
 
+inline cursor::move_result cursor::upper_bound(const slice &key,
+                                               bool throw_notfound) {
+  return move(key_greater_than, key, throw_notfound);
+}
+
 inline cursor::move_result cursor::find_multivalue(const slice &key,
                                                    const slice &value,
                                                    bool throw_notfound) {
@@ -7109,6 +7142,12 @@ inline cursor::move_result cursor::lower_bound_multivalue(const slice &key,
                                                           const slice &value,
                                                           bool throw_notfound) {
   return move(multi_exactkey_lowerboundvalue, key, value, throw_notfound);
+}
+
+inline cursor::move_result cursor::upper_bound_multivalue(const slice &key,
+                                                          const slice &value,
+                                                          bool throw_notfound) {
+  return move(multi_exactkey_value_greater, key, value, throw_notfound);
 }
 
 inline bool cursor::seek(const slice &key) {
