@@ -592,7 +592,7 @@ func TestTxn_Flags(t *testing.T) {
 	env.Close()
 
 	// opening the database after it is created inherits the original flags.
-	env, err = NewEnv()
+	env, err = NewEnv(Default)
 	if err != nil {
 		t.Error(err)
 		return

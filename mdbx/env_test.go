@@ -45,7 +45,7 @@ import (
 //}
 
 func TestEnv_Open_notExist(t *testing.T) {
-	env, err := NewEnv()
+	env, err := NewEnv(Default)
 	if err != nil {
 		t.Fatalf("create: %s", err)
 	}
@@ -59,7 +59,7 @@ func TestEnv_Open_notExist(t *testing.T) {
 }
 
 func TestEnv_Open(t *testing.T) {
-	env, err1 := NewEnv()
+	env, err1 := NewEnv(Default)
 	if err1 != nil {
 		t.Error(err1)
 		return
@@ -154,7 +154,7 @@ func TestEnv_Flags(t *testing.T) {
 func TestEnv_SetMaxReader(t *testing.T) {
 	dir := t.TempDir()
 
-	env, err := NewEnv()
+	env, err := NewEnv(Default)
 	if err != nil {
 		t.Error(err)
 	}
@@ -193,7 +193,7 @@ func TestEnv_SetMaxReader(t *testing.T) {
 }
 
 func TestEnv_SetDebug(t *testing.T) {
-	env, err := NewEnv()
+	env, err := NewEnv(Default)
 	if err != nil {
 		t.Error(err)
 	}
@@ -493,7 +493,7 @@ func setup(t testing.TB) (*Env, string) {
 }
 
 func setupFlags(t testing.TB, flags uint) (env *Env, path string) {
-	env, err := NewEnv()
+	env, err := NewEnv(Default)
 	if err != nil {
 		t.Fatalf("env: %s", err)
 	}

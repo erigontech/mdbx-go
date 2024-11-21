@@ -115,6 +115,8 @@ var (
 // Label - will be added to error messages. For better understanding - which DB has problem.
 type Label string
 
+const Default Label = "default"
+
 // DBI is a handle for a database in an Env.
 //
 // See MDBX_dbi
@@ -136,8 +138,8 @@ type Env struct {
 // NewEnv allocates and initializes a new Env.
 //
 // See mdbx_env_create.
-func NewEnv() (*Env, error) {
-	env := new(Env)
+func NewEnv(label Label) (*Env, error) {
+	env := &Env{label: label}
 	ret := C.mdbx_env_create(&env._env)
 	if ret != success {
 		return nil, operrno("mdbx_env_create", ret)
