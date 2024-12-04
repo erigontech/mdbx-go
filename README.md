@@ -147,6 +147,12 @@ On FreeBSD 10, you must explicitly set `CC` (otherwise it will fail with a crypt
 
 In `libmdbx` repo: `make dist && cp -R ./dist/* ./../mdbx-go/mdbxdist/`. Then in mdbx-go repo: `make cp`
 
+On mac: 
+```
+brew install --default-names gnu-sed
+PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH" make cp
+```
+
 ## Build binaries
 
 In mdbx-go repo: `MDBX_BUILD_TIMESTAMP=unknown make tools`

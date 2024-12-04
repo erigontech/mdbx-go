@@ -6,6 +6,7 @@
 /// mdbx_dump.c - memory-mapped database dump tool
 ///
 
+/* clang-format off */
 #ifdef _MSC_VER
 #if _MSC_VER > 1800
 #pragma warning(disable : 4464) /* relative include path contains '..' */
@@ -17,9 +18,7 @@
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
-
-#define MDBX_BUILD_SOURCERY 7a087912ed373fb7f849bc0a5b72a7d3cbdca30796a95e27dc05c7118e47dde9_v0_13_1_56_g10a93f4b
-
+#define MDBX_BUILD_SOURCERY 7c8dd046d3e553a75fc332124a6cb412aa87282d924a679f2cc389ff84a1256a_v0_13_1_107_g367a118a
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -27,8 +26,6 @@
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
-
-
 
 /* Undefine the NDEBUG if debugging is enforced by MDBX_DEBUG */
 #if (defined(MDBX_DEBUG) && MDBX_DEBUG > 0) ||                                 \
@@ -185,7 +182,6 @@
 #if defined(__GNUC__) && __GNUC__ < 9
 #pragma GCC diagnostic ignored "-Wattributes"
 #endif /* GCC < 9 */
-
 
 /*----------------------------------------------------------------------------*/
 /* Microsoft compiler generates a lot of warning for self includes... */
@@ -1078,8 +1074,6 @@ template <typename T, size_t N> char (&__ArraySizeHelper(T (&array)[N]))[N];
 typedef struct iov_ctx iov_ctx_t;
 ///
 
-
-
 /*----------------------------------------------------------------------------*/
 /* Memory/Compiler barriers, cache coherence */
 
@@ -1702,7 +1696,6 @@ osal_bswap32(uint32_t v) {
 #define MDBX_WORDBITS 32
 #endif /* MDBX_WORDBITS */
 
-
 /*******************************************************************************
  *******************************************************************************
  *
@@ -1718,8 +1711,6 @@ osal_bswap32(uint32_t v) {
  *
  */
 
-
-
 /** \defgroup build_option Build options
  * The libmdbx build options.
  @{ */
@@ -1729,23 +1720,15 @@ osal_bswap32(uint32_t v) {
 /** Using fsync() with chance of data lost on power failure */
 #define MDBX_OSX_WANNA_SPEED 1
 
-#ifndef MDBX_OSX_SPEED_INSTEADOF_DURABILITY
+#ifndef MDBX_APPLE_SPEED_INSTEADOF_DURABILITY
 /** Choices \ref MDBX_OSX_WANNA_DURABILITY or \ref MDBX_OSX_WANNA_SPEED
  * for OSX & iOS */
-#define MDBX_OSX_SPEED_INSTEADOF_DURABILITY MDBX_OSX_WANNA_DURABILITY
-#endif /* MDBX_OSX_SPEED_INSTEADOF_DURABILITY */
-
-/** Controls using of POSIX' madvise() and/or similar hints. */
-#ifndef MDBX_ENABLE_MADVISE
-#define MDBX_ENABLE_MADVISE 1
-#elif !(MDBX_ENABLE_MADVISE == 0 || MDBX_ENABLE_MADVISE == 1)
-#error MDBX_ENABLE_MADVISE must be defined as 0 or 1
-#endif /* MDBX_ENABLE_MADVISE */
+#define MDBX_APPLE_SPEED_INSTEADOF_DURABILITY MDBX_OSX_WANNA_DURABILITY
+#endif /* MDBX_APPLE_SPEED_INSTEADOF_DURABILITY */
 
 /** Controls checking PID against reuse DB environment after the fork() */
 #ifndef MDBX_ENV_CHECKPID
-#if (defined(MADV_DONTFORK) && MDBX_ENABLE_MADVISE) || defined(_WIN32) ||      \
-    defined(_WIN64)
+#if defined(MADV_DONTFORK) || defined(_WIN32) || defined(_WIN64)
 /* PID check could be omitted:
  *  - on Linux when madvise(MADV_DONTFORK) is available, i.e. after the fork()
  *    mapped pages will not be available for child process.
@@ -1810,15 +1793,16 @@ osal_bswap32(uint32_t v) {
 
 /** Controls using Unix' mincore() to determine whether DB-pages
  * are resident in memory. */
-#ifndef MDBX_ENABLE_MINCORE
+#ifndef MDBX_USE_MINCORE
 #if defined(MINCORE_INCORE) || !(defined(_WIN32) || defined(_WIN64))
-#define MDBX_ENABLE_MINCORE 1
+#define MDBX_USE_MINCORE 1
 #else
-#define MDBX_ENABLE_MINCORE 0
+#define MDBX_USE_MINCORE 0
 #endif
-#elif !(MDBX_ENABLE_MINCORE == 0 || MDBX_ENABLE_MINCORE == 1)
-#error MDBX_ENABLE_MINCORE must be defined as 0 or 1
-#endif /* MDBX_ENABLE_MINCORE */
+#define MDBX_USE_MINCORE_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_USE_MINCORE)
+#elif !(MDBX_USE_MINCORE == 0 || MDBX_USE_MINCORE == 1)
+#error MDBX_USE_MINCORE must be defined as 0 or 1
+#endif /* MDBX_USE_MINCORE */
 
 /** Enables chunking long list of retired pages during huge transactions commit
  * to avoid use sequences of pages. */
@@ -1851,12 +1835,16 @@ osal_bswap32(uint32_t v) {
 #endif /* MDBX_DPL_PREALLOC_FOR_RADIXSORT */
 
 /** Controls dirty pages tracking, spilling and persisting in `MDBX_WRITEMAP`
- * mode. 0/OFF = Don't track dirty pages at all, don't spill ones, and use
- * msync() to persist data. This is by-default on Linux and other systems where
- * kernel provides properly LRU tracking and effective flushing on-demand. 1/ON
- * = Tracking of dirty pages but with LRU labels for spilling and explicit
- * persist ones by write(). This may be reasonable for systems which low
- * performance of msync() and/or LRU tracking. */
+ * mode, i.e. disables in-memory database updating with consequent
+ * flush-to-disk/msync syscall.
+ *
+ * 0/OFF = Don't track dirty pages at all, don't spill ones, and use msync() to
+ * persist data. This is by-default on Linux and other systems where kernel
+ * provides properly LRU tracking and effective flushing on-demand.
+ *
+ * 1/ON = Tracking of dirty pages but with LRU labels for spilling and explicit
+ * persist ones by write(). This may be reasonable for goofy systems (Windows)
+ * which low performance of msync() and/or zany LRU tracking. */
 #ifndef MDBX_AVOID_MSYNC
 #if defined(_WIN32) || defined(_WIN64)
 #define MDBX_AVOID_MSYNC 1
@@ -1895,7 +1883,7 @@ osal_bswap32(uint32_t v) {
 
 /** Avoid dependence from MSVC CRT and use ntdll.dll instead. */
 #ifndef MDBX_WITHOUT_MSVC_CRT
-#if !defined(MDBX_BUILD_CXX) || !MDBX_BUILD_CXX
+#if defined(MDBX_BUILD_CXX) && !MDBX_BUILD_CXX
 #define MDBX_WITHOUT_MSVC_CRT 1
 #else
 #define MDBX_WITHOUT_MSVC_CRT 0
@@ -1912,7 +1900,7 @@ osal_bswap32(uint32_t v) {
 #error MDBX_ENVCOPY_WRITEBUF must be defined in range 65536..1073741824 and be multiple of 65536
 #endif /* MDBX_ENVCOPY_WRITEBUF */
 
-/** Forces assertion checking */
+/** Forces assertion checking. */
 #ifndef MDBX_FORCE_ASSERTIONS
 #define MDBX_FORCE_ASSERTIONS 0
 #elif !(MDBX_FORCE_ASSERTIONS == 0 || MDBX_FORCE_ASSERTIONS == 1)
@@ -1983,9 +1971,6 @@ osal_bswap32(uint32_t v) {
 
 /** POSIX-2008 Robust Mutexes for \ref MDBX_LOCKING */
 #define MDBX_LOCKING_POSIX2008 2008
-
-/** BeOS Benaphores, aka Futexes for \ref MDBX_LOCKING */
-#define MDBX_LOCKING_BENAPHORE 1995
 
 /** Advanced: Choices the locking implementation (autodetection by default). */
 #if defined(_WIN32) || defined(_WIN64)
@@ -2063,19 +2048,6 @@ osal_bswap32(uint32_t v) {
 #error MDBX_USE_COPYFILERANGE must be defined as 0 or 1
 #endif /* MDBX_USE_COPYFILERANGE */
 
-/** Advanced: Using sync_file_range() syscall (autodetection by default). */
-#ifndef MDBX_USE_SYNCFILERANGE
-#if ((defined(__linux__) || defined(__gnu_linux__)) &&                         \
-     defined(SYNC_FILE_RANGE_WRITE) && !defined(__ANDROID_API__)) ||           \
-    (defined(__ANDROID_API__) && __ANDROID_API__ >= 26)
-#define MDBX_USE_SYNCFILERANGE 1
-#else
-#define MDBX_USE_SYNCFILERANGE 0
-#endif
-#elif !(MDBX_USE_SYNCFILERANGE == 0 || MDBX_USE_SYNCFILERANGE == 1)
-#error MDBX_USE_SYNCFILERANGE must be defined as 0 or 1
-#endif /* MDBX_USE_SYNCFILERANGE */
-
 //------------------------------------------------------------------------------
 
 #ifndef MDBX_CPU_WRITEBACK_INCOHERENT
@@ -2116,15 +2088,19 @@ osal_bswap32(uint32_t v) {
 #error MDBX_MMAP_INCOHERENT_CPU_CACHE must be defined as 0 or 1
 #endif /* MDBX_MMAP_INCOHERENT_CPU_CACHE */
 
-#ifndef MDBX_MMAP_USE_MS_ASYNC
-#if MDBX_MMAP_INCOHERENT_FILE_WRITE || MDBX_MMAP_INCOHERENT_CPU_CACHE
-#define MDBX_MMAP_USE_MS_ASYNC 1
+/** Assume system needs explicit syscall to sync/flush/write modified mapped
+ * memory. */
+#ifndef MDBX_MMAP_NEEDS_JOLT
+#if MDBX_MMAP_INCOHERENT_FILE_WRITE || MDBX_MMAP_INCOHERENT_CPU_CACHE ||       \
+    !(defined(__linux__) || defined(__gnu_linux__))
+#define MDBX_MMAP_NEEDS_JOLT 1
 #else
-#define MDBX_MMAP_USE_MS_ASYNC 0
+#define MDBX_MMAP_NEEDS_JOLT 0
 #endif
-#elif !(MDBX_MMAP_USE_MS_ASYNC == 0 || MDBX_MMAP_USE_MS_ASYNC == 1)
-#error MDBX_MMAP_USE_MS_ASYNC must be defined as 0 or 1
-#endif /* MDBX_MMAP_USE_MS_ASYNC */
+#define MDBX_MMAP_NEEDS_JOLT_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_MMAP_NEEDS_JOLT)
+#elif !(MDBX_MMAP_NEEDS_JOLT == 0 || MDBX_MMAP_NEEDS_JOLT == 1)
+#error MDBX_MMAP_NEEDS_JOLT must be defined as 0 or 1
+#endif /* MDBX_MMAP_NEEDS_JOLT */
 
 #ifndef MDBX_64BIT_ATOMIC
 #if MDBX_WORDBITS >= 64 || defined(DOXYGEN)
@@ -2207,12 +2183,18 @@ osal_bswap32(uint32_t v) {
 #endif /* MDBX_CACHELINE_SIZE */
 
 /* Max length of iov-vector passed to writev() call, used for auxilary writes */
+#ifndef MDBX_AUXILARY_IOV_MAX
 #define MDBX_AUXILARY_IOV_MAX 64
+#endif
 #if defined(IOV_MAX) && IOV_MAX < MDBX_AUXILARY_IOV_MAX
 #undef MDBX_AUXILARY_IOV_MAX
 #define MDBX_AUXILARY_IOV_MAX IOV_MAX
 #endif /* MDBX_AUXILARY_IOV_MAX */
 
+/* An extra/custom information provided during library build */
+#ifndef MDBX_BUILD_METADATA
+#define MDBX_BUILD_METADATA ""
+#endif /* MDBX_BUILD_METADATA */
 /** @} end of build options */
 /*******************************************************************************
  *******************************************************************************
@@ -2255,9 +2237,6 @@ osal_bswap32(uint32_t v) {
 #define MDBX_DISABLE_GNU_SOURCE 0 or 1
 
 #endif /* DOXYGEN */
-
-
-
 
 #ifndef MDBX_64BIT_ATOMIC
 #error "The MDBX_64BIT_ATOMIC must be defined before"
@@ -2351,9 +2330,6 @@ typedef union {
 #endif /* MDBX_HAVE_C11ATOMICS */
 
 #define SAFE64_INVALID_THRESHOLD UINT64_C(0xffffFFFF00000000)
-
-
-
 
 #pragma pack(push, 4)
 
@@ -2646,8 +2622,6 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool
 is_subpage(const page_t *mp) {
   return (mp->flags & P_SUBP) != 0;
 }
-
-
 
 /* The version number for a database's lockfile format. */
 #define MDBX_LOCK_VERSION 6
@@ -2986,9 +2960,6 @@ extern struct libmdbx_globals globals;
 extern struct libmdbx_imports imports;
 #endif /* Windows */
 
-
-
-
 #ifndef __Wpedantic_format_voidptr
 MDBX_MAYBE_UNUSED static inline const void *
 __Wpedantic_format_voidptr(const void *ptr) {
@@ -3143,7 +3114,31 @@ MDBX_INTERNAL const char *pagetype_caption(const uint8_t type,
 #define DVAL_DEBUG(x) ("-")
 #endif
 
+MDBX_INTERNAL int log_error(const int err, const char *func, unsigned line);
 
+MDBX_MAYBE_UNUSED static inline int
+log_if_error(const int err, const char *func, unsigned line) {
+  if (likely(err == MDBX_SUCCESS))
+    return err;
+  int rc = log_error(err, func, line);
+#if __has_c_attribute(assume)
+  [[assume(rc == err && rc != MDBX_SUCCESS)]];
+#endif
+#if defined(__clang__) || __has_builtin(assume)
+  __builtin_assume(rc == err && rc != MDBX_SUCCESS);
+#endif
+  if (rc != err || rc == MDBX_SUCCESS) {
+#if defined(__GNUC__)
+    __builtin_unreachable();
+#elif defined(_MSC_VER) && !defined(__clang__)
+    __assume(0);
+#endif
+    rc = err;
+  }
+  return rc;
+}
+
+#define LOG_IFERR(err) log_if_error((err), __func__, __LINE__)
 
 /* Test if the flags f are set in a flag word w. */
 #define F_ISSET(w, f) (((w) & (f)) == (f))
@@ -3183,7 +3178,7 @@ MDBX_INTERNAL const char *pagetype_caption(const uint8_t type,
     ASAN_UNPOISON_MEMORY_REGION(addr, size);                                   \
   } while (0)
 
-MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static inline size_t
+MDBX_NOTHROW_CONST_FUNCTION MDBX_MAYBE_UNUSED static inline size_t
 branchless_abs(intptr_t value) {
   assert(value > INT_MIN);
   const size_t expanded_sign =
@@ -3191,23 +3186,23 @@ branchless_abs(intptr_t value) {
   return ((size_t)value + expanded_sign) ^ expanded_sign;
 }
 
-MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static inline bool
+MDBX_NOTHROW_CONST_FUNCTION MDBX_MAYBE_UNUSED static inline bool
 is_powerof2(size_t x) {
   return (x & (x - 1)) == 0;
 }
 
-MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static inline size_t
+MDBX_NOTHROW_CONST_FUNCTION MDBX_MAYBE_UNUSED static inline size_t
 floor_powerof2(size_t value, size_t granularity) {
   assert(is_powerof2(granularity));
   return value & ~(granularity - 1);
 }
 
-MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static inline size_t
+MDBX_NOTHROW_CONST_FUNCTION MDBX_MAYBE_UNUSED static inline size_t
 ceil_powerof2(size_t value, size_t granularity) {
   return floor_powerof2(value + granularity - 1, granularity);
 }
 
-MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION MDBX_INTERNAL unsigned
+MDBX_NOTHROW_CONST_FUNCTION MDBX_MAYBE_UNUSED MDBX_INTERNAL unsigned
 log2n_powerof2(size_t value_uintptr);
 
 MDBX_NOTHROW_CONST_FUNCTION MDBX_INTERNAL uint64_t rrxmrrxmsx_0(uint64_t v);
@@ -3227,9 +3222,6 @@ monotime_since_cached(uint64_t begin_timestamp, struct monotime_cache *cache) {
   }
   return cache->value - begin_timestamp;
 }
-
-
-
 
 /* An PNL is an Page Number List, a sorted array of IDs.
  *
@@ -3398,20 +3390,20 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 /*----------------------------------------------------------------------------*/
 
-MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static inline pgno_t
+MDBX_NOTHROW_CONST_FUNCTION MDBX_MAYBE_UNUSED static inline pgno_t
 int64pgno(int64_t i64) {
   if (likely(i64 >= (int64_t)MIN_PAGENO && i64 <= (int64_t)MAX_PAGENO + 1))
     return (pgno_t)i64;
   return (i64 < (int64_t)MIN_PAGENO) ? MIN_PAGENO : MAX_PAGENO;
 }
 
-MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static inline pgno_t
+MDBX_NOTHROW_CONST_FUNCTION MDBX_MAYBE_UNUSED static inline pgno_t
 pgno_add(size_t base, size_t augend) {
   assert(base <= MAX_PAGENO + 1 && augend < MAX_PAGENO);
   return int64pgno((int64_t)base + (int64_t)augend);
 }
 
-MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static inline pgno_t
+MDBX_NOTHROW_CONST_FUNCTION MDBX_MAYBE_UNUSED static inline pgno_t
 pgno_sub(size_t base, size_t subtrahend) {
   assert(base >= MIN_PAGENO && base <= MAX_PAGENO + 1 &&
          subtrahend < MAX_PAGENO);
@@ -3762,8 +3754,8 @@ int main(int argc, char *argv[]) {
              " - build: %s for %s by %s\n"
              " - flags: %s\n"
              " - options: %s\n",
-             mdbx_version.major, mdbx_version.minor, mdbx_version.release,
-             mdbx_version.revision, mdbx_version.git.describe,
+             mdbx_version.major, mdbx_version.minor, mdbx_version.patch,
+             mdbx_version.tweak, mdbx_version.git.describe,
              mdbx_version.git.datetime, mdbx_version.git.commit,
              mdbx_version.git.tree, mdbx_sourcery_anchor, mdbx_build.datetime,
              mdbx_build.target, mdbx_build.compiler, mdbx_build.flags,

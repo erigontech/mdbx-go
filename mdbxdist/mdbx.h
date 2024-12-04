@@ -103,13 +103,11 @@ are only a few cases of changing data.
 |Delete at the current cursor position        |\ref mdbx_cursor_del() with \ref MDBX_CURRENT flag|Deletion|
 |Extract (read & delete) value by the key     |\ref mdbx_replace() with zero flag and parameter `new_data = NULL`|Returning a deleted value|
 
-
 ## Tables with NON-UNIQUE keys
 
 In tables created with the \ref MDBX_DUPSORT (Sorted Duplicates) option, keys
 may be non unique. Such non-unique keys in a key-value table may be treated
 as a duplicates or as like a multiple values corresponds to keys.
-
 
 | Case                                        | Flags to use        | Result                 |
 |---------------------------------------------|---------------------|------------------------|
@@ -191,35 +189,38 @@ typedef mode_t mdbx_mode_t;
 
 #ifndef __has_c_attribute
 #define __has_c_attribute(x) (0)
+#define __has_c_attribute_qualified(x) 0
+#elif !defined(__STDC_VERSION__) || __STDC_VERSION__ < 202311L
+#define __has_c_attribute_qualified(x) 0
+#elif defined(_MSC_VER)
+/* MSVC don't support `namespace::attr` syntax */
+#define __has_c_attribute_qualified(x) 0
+#else
+#define __has_c_attribute_qualified(x) __has_c_attribute(x)
 #endif /* __has_c_attribute */
 
 #ifndef __has_cpp_attribute
 #define __has_cpp_attribute(x) 0
-#endif /* __has_cpp_attribute */
-
-#ifndef __has_CXX_attribute
-#if defined(__cplusplus) &&                                                    \
-    (!defined(_MSC_VER) || defined(__clang__) || _MSC_VER >= 1942)
-#define __has_CXX_attribute(x) __has_cpp_attribute(x)
+#define __has_cpp_attribute_qualified(x) 0
+#elif defined(_MSC_VER)
+/* MSVC don't support `namespace::attr` syntax */
+#define __has_cpp_attribute_qualified(x) 0
 #else
-#define __has_CXX_attribute(x) 0
-#endif
-#endif /* __has_CXX_attribute */
+#define __has_cpp_attribute_qualified(x) __has_cpp_attribute(x)
+#endif /* __has_cpp_attribute */
 
 #ifndef __has_C23_or_CXX_attribute
 #if defined(__cplusplus)
-#define __has_C23_or_CXX_attribute(x) __has_CXX_attribute(x)
-#elif defined(__STDC_VERSION__) && __STDC_VERSION__ > 202311L
-#define __has_C23_or_CXX_attribute(x) __has_c_attribute(x)
+#define __has_C23_or_CXX_attribute(x) __has_cpp_attribute_qualified(x)
 #else
-#define __has_C23_or_CXX_attribute(x) 0
+#define __has_C23_or_CXX_attribute(x) __has_c_attribute_qualified(x)
 #endif
 #endif /* __has_C23_or_CXX_attribute */
 
 #ifndef __has_feature
 #define __has_feature(x) (0)
 #define __has_exceptions_disabled (0)
-#else
+#elif !defined(__has_exceptions_disabled)
 #define __has_exceptions_disabled                                              \
   (__has_feature(cxx_noexcept) && !__has_feature(cxx_exceptions))
 #endif /* __has_feature */
@@ -240,9 +241,7 @@ typedef mode_t mdbx_mode_t;
  * These functions should be declared with the attribute pure. */
 #if defined(DOXYGEN)
 #define MDBX_PURE_FUNCTION [[gnu::pure]]
-#elif __has_C23_or_CXX_attribute(gnu::pure) &&                                 \
-    (!defined(__apple_build_version__) || !defined(__clang_major__) ||         \
-     __clang_major__ > 17)
+#elif __has_C23_or_CXX_attribute(gnu::pure)
 #define MDBX_PURE_FUNCTION [[gnu::pure]]
 #elif (defined(__GNUC__) || __has_attribute(__pure__)) &&                      \
     (!defined(__clang__) /* https://bugs.llvm.org/show_bug.cgi?id=43275 */ ||  \
@@ -266,7 +265,7 @@ typedef mode_t mdbx_mode_t;
 #elif defined(__GNUC__) ||                                                     \
     (__has_attribute(__pure__) && __has_attribute(__nothrow__))
 #define MDBX_NOTHROW_PURE_FUNCTION __attribute__((__pure__, __nothrow__))
-#elif __has_CXX_attribute(pure)
+#elif __has_cpp_attribute(pure)
 #define MDBX_NOTHROW_PURE_FUNCTION [[pure]]
 #else
 #define MDBX_NOTHROW_PURE_FUNCTION
@@ -284,9 +283,7 @@ typedef mode_t mdbx_mode_t;
  * It does not make sense for a const function to return void. */
 #if defined(DOXYGEN)
 #define MDBX_CONST_FUNCTION [[gnu::const]]
-#elif __has_C23_or_CXX_attribute(gnu::const) &&                                \
-    (!defined(__apple_build_version__) || !defined(__clang_major__) ||         \
-     __clang_major__ > 17)
+#elif __has_C23_or_CXX_attribute(gnu::const)
 #define MDBX_CONST_FUNCTION [[gnu::const]]
 #elif (defined(__GNUC__) || __has_attribute(__const__)) &&                     \
     (!defined(__clang__) /* https://bugs.llvm.org/show_bug.cgi?id=43275 */ ||  \
@@ -310,7 +307,7 @@ typedef mode_t mdbx_mode_t;
 #elif defined(__GNUC__) ||                                                     \
     (__has_attribute(__const__) && __has_attribute(__nothrow__))
 #define MDBX_NOTHROW_CONST_FUNCTION __attribute__((__const__, __nothrow__))
-#elif __has_CXX_attribute(const)
+#elif __has_cpp_attribute_qualified(const)
 #define MDBX_NOTHROW_CONST_FUNCTION [[const]]
 #else
 #define MDBX_NOTHROW_CONST_FUNCTION MDBX_NOTHROW_PURE_FUNCTION
@@ -323,14 +320,16 @@ typedef mode_t mdbx_mode_t;
 #ifdef __deprecated
 #define MDBX_DEPRECATED __deprecated
 #elif defined(DOXYGEN) ||                                                      \
-    (defined(__cplusplus) && __cplusplus >= 201403L &&                         \
-     __has_cpp_attribute(deprecated) &&                                        \
-     __has_cpp_attribute(deprecated) >= 201309L) ||                            \
-    (!defined(__cplusplus) && defined(__STDC_VERSION__) &&                     \
-     __STDC_VERSION__ >= 202304L)
+    ((!defined(__GNUC__) || defined(__clang__) || __GNUC__ > 5) &&             \
+     ((defined(__cplusplus) && __cplusplus >= 201403L &&                       \
+       __has_cpp_attribute(deprecated) &&                                      \
+       __has_cpp_attribute(deprecated) >= 201309L) ||                          \
+      (!defined(__cplusplus) && defined(__STDC_VERSION__) &&                   \
+       __STDC_VERSION__ >= 202304L)))
 #define MDBX_DEPRECATED [[deprecated]]
 #elif (defined(__GNUC__) && __GNUC__ > 5) ||                                   \
-    (__has_attribute(__deprecated__) && !defined(__GNUC__))
+    (__has_attribute(__deprecated__) &&                                        \
+     (!defined(__GNUC__) || defined(__clang__) || __GNUC__ > 5))
 #define MDBX_DEPRECATED __attribute__((__deprecated__))
 #elif defined(_MSC_VER)
 #define MDBX_DEPRECATED __declspec(deprecated)
@@ -340,7 +339,12 @@ typedef mode_t mdbx_mode_t;
 #endif /* MDBX_DEPRECATED */
 
 #ifndef MDBX_DEPRECATED_ENUM
-#if !defined(DOXYGEN) && (!defined(_MSC_VER) || _MSC_VER >= 1930)
+#ifdef __deprecated_enum
+#define MDBX_DEPRECATED_ENUM __deprecated_enum
+#elif defined(DOXYGEN) ||                                                      \
+    (!defined(_MSC_VER) || (defined(__cplusplus) && __cplusplus >= 201403L &&  \
+                            __has_cpp_attribute(deprecated) &&                 \
+                            __has_cpp_attribute(deprecated) >= 201309L))
 #define MDBX_DEPRECATED_ENUM MDBX_DEPRECATED
 #else
 #define MDBX_DEPRECATED_ENUM /* avoid madness MSVC */
@@ -654,12 +658,13 @@ extern "C" {
 #define LIBMDBX_VERINFO_API __dll_export
 #endif /* LIBMDBX_VERINFO_API */
 
-/** \brief libmdbx version information */
+/** \brief libmdbx version information, \see https://semver.org/ */
 extern LIBMDBX_VERINFO_API const struct MDBX_version_info {
-  uint8_t major;     /**< Major version number */
-  uint8_t minor;     /**< Minor version number */
-  uint16_t release;  /**< Release number of Major.Minor */
-  uint32_t revision; /**< Revision number of Release */
+  uint16_t major;                /**< Major version number */
+  uint16_t minor;                /**< Minor version number */
+  uint16_t patch;                /**< Patch number */
+  uint16_t tweak;                /**< Tweak number */
+  const char *semver_prerelease; /**< Semantic Versioning `pre-release` */
   struct {
     const char *datetime; /**< committer date, strict ISO-8601 format */
     const char *tree;     /**< commit hash (hexadecimal digits) */
@@ -678,6 +683,9 @@ extern LIBMDBX_VERINFO_API const struct MDBX_build_info {
   const char *options;  /**< mdbx-related options */
   const char *compiler; /**< compiler */
   const char *flags;    /**< CFLAGS and CXXFLAGS */
+  const char *metadata; /**< an extra/custom information provided via
+                             the MDBX_BUILD_METADATA definition
+                             during library build */
 } /** \brief libmdbx build information */ mdbx_build;
 
 #if (defined(_WIN32) || defined(_WIN64)) && !MDBX_BUILD_SHARED_LIBRARY

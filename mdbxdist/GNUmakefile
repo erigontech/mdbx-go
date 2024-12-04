@@ -1,4 +1,4 @@
-# This makefile is for GNU Make 3.80 or above, and nowadays provided
+# This makefile is for GNU Make 3.81 or above, and nowadays provided
 # just for compatibility and preservation of traditions.
 #
 # Please use CMake in case of any difficulties or
@@ -16,6 +16,7 @@ ifneq ($(make_lt_3_81),0)
 $(error Please use GNU Make 3.81 or above)
 endif
 make_ge_4_1   := $(shell expr "$(MAKE_VERx3)" ">=" "  4  1")
+make_ge_4_4   := $(shell expr "$(MAKE_VERx3)" ">=" "  4  4")
 SRC_PROBE_C   := $(shell [ -f mdbx.c ] && echo mdbx.c || echo src/osal.c)
 SRC_PROBE_CXX := $(shell [ -f mdbx.c++ ] && echo mdbx.c++ || echo src/mdbx.c++)
 UNAME         := $(shell uname -s 2>/dev/null || echo Unknown)
@@ -51,11 +52,16 @@ CC      ?= gcc
 CXX     ?= g++
 CFLAGS_EXTRA ?=
 LD      ?= ld
+CMAKE	?= cmake
+CMAKE_OPT ?=
+# target directory for `make dist`
+DIST_DIR ?= dist
 
 # build options
 MDBX_BUILD_OPTIONS   ?=-DNDEBUG=1
-MDBX_BUILD_TIMESTAMP ?=$(shell date +%Y-%m-%dT%H:%M:%S%z)
-MDBX_BUILD_CXX       ?= YES
+MDBX_BUILD_TIMESTAMP ?=$(if $(SOURCE_DATE_EPOCH),$(SOURCE_DATE_EPOCH),$(shell date +%Y-%m-%dT%H:%M:%S%z))
+MDBX_BUILD_CXX       ?=YES
+MDBX_BUILD_METADATA  ?=
 
 # probe and compose common compiler flags with variable expansion trick (seems this work two times per session for GNU Make 3.81)
 CFLAGS       ?= $(strip $(eval CFLAGS := -std=gnu11 -O2 -g -Wall -Werror -Wextra -Wpedantic -ffunction-sections -fPIC -fvisibility=hidden -pthread -Wno-error=attributes $$(shell for opt in -fno-semantic-interposition -Wno-unused-command-line-argument -Wno-tautological-compare; do [ -z "$$$$($(CC) '-DMDBX_BUILD_FLAGS="probe"' $$$${opt} -c $(SRC_PROBE_C) -o /dev/null >/dev/null 2>&1 || echo failed)" ] && echo "$$$${opt} "; done)$(CFLAGS_EXTRA))$(CFLAGS))
@@ -76,6 +82,13 @@ else
 LIBS         ?= $(eval LIBS := $$(shell $$(uname2libs)))$(LIBS)
 LDFLAGS      ?= $(eval LDFLAGS := $$(shell $$(uname2ldflags)))$(LDFLAGS)
 LIB_STDCXXFS ?= $(eval LIB_STDCXXFS := $$(shell echo '$$(cxx_filesystem_probe)' | cat mdbx.h++ - | sed $$$$'1s/\xef\xbb\xbf//' | $(CXX) -x c++ $(CXXFLAGS) -Wno-error - -Wl,--allow-multiple-definition -lstdc++fs $(LIBS) $(LDFLAGS) $(EXE_LDFLAGS) -o /dev/null 2>probe4lstdfs.err >/dev/null && echo '-Wl,--allow-multiple-definition -lstdc++fs'))$(LIB_STDCXXFS)
+endif
+
+ifneq ($(make_ge_4_4),1)
+.NOTPARALLEL:
+WAIT         =
+else
+WAIT         = .WAIT
 endif
 
 ################################################################################
@@ -127,7 +140,7 @@ MANPAGES   := mdbx_stat.1 mdbx_copy.1 mdbx_dump.1 mdbx_load.1 mdbx_chk.1 mdbx_dr
 TIP        := // TIP:
 
 .PHONY: all help options lib libs tools clean install uninstall check_buildflags_tag tools-static
-.PHONY: install-strip install-no-strip strip libmdbx mdbx show-options lib-static lib-shared
+.PHONY: install-strip install-no-strip strip libmdbx mdbx show-options lib-static lib-shared cmake-build ninja
 
 boolean = $(if $(findstring $(strip $($1)),YES Yes yes y ON On on 1 true True TRUE),1,$(if $(findstring $(strip $($1)),NO No no n OFF Off off 0 false False FALSE),,$(error Wrong value `$($1)` of $1 for YES/NO option)))
 select_by = $(if $(call boolean,$(1)),$(2),$(3))
@@ -161,6 +174,7 @@ help:
 	@echo "  make clean               "
 	@echo "  make install             "
 	@echo "  make uninstall           "
+	@echo "  make cmake-build | ninja - build by CMake & Ninja"
 	@echo ""
 	@echo "  make strip               - strip debug symbols from binaries"
 	@echo "  make install-no-strip    - install explicitly without strip"
@@ -176,6 +190,7 @@ show-options:
 	@echo "  MDBX_BUILD_OPTIONS   = $(MDBX_BUILD_OPTIONS)"
 	@echo "  MDBX_BUILD_CXX       = $(MDBX_BUILD_CXX)"
 	@echo "  MDBX_BUILD_TIMESTAMP = $(MDBX_BUILD_TIMESTAMP)"
+	@echo "  MDBX_BUILD_METADATA  = $(MDBX_BUILD_METADATA)"
 	@echo '$(TIP) Use `make options` to listing available build options.'
 	@echo $(call select_by,MDBX_BUILD_CXX,"  CXX      =`which $(CXX)` | `$(CXX) --version | head -1`","  CC       =`which $(CC)` | `$(CC) --version | head -1`")
 	@echo $(call select_by,MDBX_BUILD_CXX,"  CXXFLAGS =$(CXXFLAGS)","  CFLAGS   =$(CFLAGS)")
@@ -203,6 +218,7 @@ options:
 	@echo ""
 	@echo "  MDBX_BUILD_OPTIONS   = $(MDBX_BUILD_OPTIONS)"
 	@echo "  MDBX_BUILD_TIMESTAMP = $(MDBX_BUILD_TIMESTAMP)"
+	@echo "  MDBX_BUILD_METADATA  = $(MDBX_BUILD_METADATA)"
 	@echo ""
 	@echo "## Assortment items for MDBX_BUILD_OPTIONS:"
 	@echo "##   Note that the defaults should already be correct for most platforms;"
@@ -222,19 +238,19 @@ strip: all
 clean:
 	@echo '  REMOVE ...'
 	$(QUIET)rm -rf $(MDBX_TOOLS) mdbx_test @* *.[ao] *.[ls]o *.$(SO_SUFFIX) *.dSYM *~ tmp.db/* \
-		*.gcov *.log *.err src/*.o test/*.o mdbx_example dist \
-		config.h src/config.h src/version.c *.tar* buildflags.tag \
-		mdbx_*.static mdbx_*.static-lto
+		*.gcov *.log *.err src/*.o test/*.o mdbx_example dist @dist-check \
+		config.h src/config.h src/version.c *.tar* @buildflags.tag @dist-checked.tag \
+		mdbx_*.static mdbx_*.static-lto CMakeFiles
 
 MDBX_BUILD_FLAGS =$(strip MDBX_BUILD_CXX=$(MDBX_BUILD_CXX) $(MDBX_BUILD_OPTIONS) $(call select_by,MDBX_BUILD_CXX,$(CXXFLAGS) $(LDFLAGS) $(LIB_STDCXXFS) $(LIBS),$(CFLAGS) $(LDFLAGS) $(LIBS)))
 check_buildflags_tag:
-	$(QUIET)if [ "$(MDBX_BUILD_FLAGS)" != "$$(cat buildflags.tag 2>&1)" ]; then \
+	$(QUIET)if [ "$(MDBX_BUILD_FLAGS)" != "$$(cat @buildflags.tag 2>&1)" ]; then \
 		echo -n "  CLEAN for build with specified flags..." && \
 		$(MAKE) IOARENA=false CXXSTD= -s clean >/dev/null && echo " Ok" && \
-		echo '$(MDBX_BUILD_FLAGS)' > buildflags.tag; \
+		echo '$(MDBX_BUILD_FLAGS)' > @buildflags.tag; \
 	fi
 
-buildflags.tag: check_buildflags_tag
+@buildflags.tag: check_buildflags_tag
 
 lib-static libmdbx.a: mdbx-static.o $(call select_by,MDBX_BUILD_CXX,mdbx++-static.o)
 	@echo '  AR $@'
@@ -244,18 +260,23 @@ lib-shared libmdbx.$(SO_SUFFIX): mdbx-dylib.o $(call select_by,MDBX_BUILD_CXX,md
 	@echo '  LD $@'
 	$(QUIET)$(call select_by,MDBX_BUILD_CXX,$(CXX) $(CXXFLAGS),$(CC) $(CFLAGS)) $^ -pthread -shared $(LDFLAGS) $(call select_by,MDBX_BUILD_CXX,$(LIB_STDCXXFS)) $(LIBS) -o $@
 
+ninja: cmake-build
+cmake-build:
+	@echo "-G Ninja . && cmake --build ."
+	$(QUIET)mkdir @cmake-ninja-build && $(CMAKE) $(CMAKE_OPT) -G Ninja -S . -B @cmake-ninja-build && $(CMAKE) --build @cmake-ninja-build
 
 ################################################################################
 # Amalgamated source code, i.e. distributed after `make dist`
 MAN_SRCDIR := man1/
 
-config.h: buildflags.tag mdbx.c $(lastword $(MAKEFILE_LIST)) LICENSE NOTICE
+config.h: @buildflags.tag $(WAIT) mdbx.c $(lastword $(MAKEFILE_LIST)) LICENSE NOTICE
 	@echo '  MAKE $@'
 	$(QUIET)(echo '#define MDBX_BUILD_TIMESTAMP "$(MDBX_BUILD_TIMESTAMP)"' \
-	&& echo "#define MDBX_BUILD_FLAGS \"$$(cat buildflags.tag)\"" \
+	&& echo "#define MDBX_BUILD_FLAGS \"$$(cat @buildflags.tag)\"" \
 	&& echo '#define MDBX_BUILD_COMPILER "$(shell (LC_ALL=C $(CC) --version || echo 'Please use GCC or CLANG compatible compiler') | head -1)"' \
 	&& echo '#define MDBX_BUILD_TARGET "$(shell set -o pipefail; (LC_ALL=C $(CC) -v 2>&1 | grep -i '^Target:' | cut -d ' ' -f 2- || (LC_ALL=C $(CC) --version | grep -qi e2k && echo E2K) || echo 'Please use GCC or CLANG compatible compiler') | head -1)"' \
 	&& echo '#define MDBX_BUILD_CXX $(call select_by,MDBX_BUILD_CXX,1,0)' \
+	&& echo '#define MDBX_BUILD_METADATA "$(MDBX_BUILD_METADATA)"' \
 	) >$@
 
 mdbx-dylib.o: config.h mdbx.c mdbx.h $(lastword $(MAKEFILE_LIST)) LICENSE NOTICE
@@ -286,7 +307,6 @@ mdbx_%.static-lto: mdbx_%.c config.h mdbx.c mdbx.h
 	@echo '  CC+LD $@'
 	$(QUIET)$(CC) $(CFLAGS) -Os -flto $(MDBX_BUILD_OPTIONS) '-DLIBMDBX_API=' '-DMDBX_CONFIG_H="config.h"' \
 		$< mdbx.c $(EXE_LDFLAGS) $(LIBS) -static -Wl,--strip-all -o $@
-
 
 install: $(LIBRARIES) $(MDBX_TOOLS) $(HEADERS)
 	@echo '  INSTALLING...'
@@ -359,7 +379,6 @@ bench-$(1)_$(2).txt: $(3) $(IOARENA) $(lastword $(MAKEFILE_LIST))
 	true) || mv -f $$@ $$@.error
 
 endef
-
 
 $(eval $(call bench-rule,mdbx,$(NN),libmdbx.$(SO_SUFFIX)))
 

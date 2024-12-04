@@ -11,7 +11,6 @@
 
 *The Future will (be) [Positive](https://www.ptsecurity.com). Всё будет хорошо.*
 
-
 libmdbx
 ========
 
@@ -390,7 +389,6 @@ For the same reason ~~Github~~ is blacklisted forever.
 Since May 2024 and version v0.13 _libmdbx_ was re-licensed under Apache-2.0 license.
 Please refer to the `COPYRIGHT` file for license change explanations.
 
-
 ## Acknowledgments
 Howard Chu <hyc@openldap.org> and Hallvard Furuseth
 <hallvard@openldap.org> are the authors of _LMDB_, from which _libmdbx_
@@ -430,8 +428,6 @@ _libmdbx_ provides two official ways for integration in source code form:
 
 _**Please, avoid using any other techniques.**_ Otherwise, at least
 don't ask for support and don't name such chimeras `libmdbx`.
-
-
 
 ## Building and Testing
 
@@ -485,7 +481,6 @@ Anyway, no matter how thoroughly the _libmdbx_ is tested, you should rely only o
 2. If there are problems, then your test on the one hand will help to verify whether you are using _libmdbx_ correctly,
    on the other hand it will allow to reproduce the problem and insure against regression in a future.
 3. Actually you should rely on than you checked by yourself or take a risk.
-
 
 ### Common important details
 
@@ -738,7 +733,6 @@ In the benchmark each transaction contains combined CRUD operations (2
 inserts, 1 read, 1 update, 1 delete). Benchmark starts on an empty database
 and after full run the database contains 100,000 small key-value
 records.
-
 
 ![Comparison #4: Lazy-write mode](https://libmdbx.dqdkfa.ru/img/perf-slide-4.png)
 
