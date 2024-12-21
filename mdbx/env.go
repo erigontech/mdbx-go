@@ -114,6 +114,11 @@ var (
 	LoggerDoNotChange = C.MDBX_LOGGER_DONTCHANGE
 )
 
+// Label - will be added to error messages. For better understanding - which DB has problem.
+type Label string
+
+const Default Label = "default"
+
 // DBI is a handle for a database in an Env.
 //
 // See MDBX_dbi
@@ -124,7 +129,8 @@ type DBI C.MDBX_dbi
 //
 // See MDBX_env.
 type Env struct {
-	_env *C.MDBX_env
+	_env  *C.MDBX_env
+	label Label
 
 	// closeLock is used to allow the Txn finalizer to check if the Env has
 	// been closed, so that it may know if it must abort.
@@ -134,8 +140,8 @@ type Env struct {
 // NewEnv allocates and initializes a new Env.
 //
 // See mdbx_env_create.
-func NewEnv() (*Env, error) {
-	env := new(Env)
+func NewEnv(label Label) (*Env, error) {
+	env := &Env{label: label}
 	ret := C.mdbx_env_create(&env._env)
 	if ret != success {
 		return nil, operrno("mdbx_env_create", ret)
@@ -153,6 +159,7 @@ func (env *Env) Open(path string, flags uint, mode os.FileMode) error {
 	ret := C.mdbx_env_open(env._env, cpath, C.MDBX_env_flags_t(NoTLS|flags), C.mdbx_mode_t(mode))
 	return operrno("mdbx_env_open", ret)
 }
+func (env *Env) Label() Label { return env.label }
 
 var errNotOpen = errors.New("enivornment is not open")
 
