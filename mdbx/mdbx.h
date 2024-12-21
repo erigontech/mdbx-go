@@ -1,3 +1,4 @@
+#define MDBX_BUILD_FLAGS "-std=gnu11 -fvisibility=hidden -ffast-math"
 /**
 
 _libmdbx_ (aka MDBX) is an extremely fast, compact, powerful, embeddable,
