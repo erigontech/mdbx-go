@@ -34,6 +34,6 @@ cp:
 	cp mdbxdist/mdbx.h mdbx/
 	cp mdbxdist/mdbx.c mdbx/
 	#add 1 line to mdbx.h about build flags which we have in `mdbx.go`
-	echo "$(echo '#ifndef MDBX_BUILD_FLAGS'; cat mdbx/mdbx.h)" > mdbx/mdbx.h
-	echo "$(echo '#define MDBX_BUILD_FLAGS "-std=gnu11 -fvisibility=hidden -ffast-math"'; cat mdbx/mdbx.h)" > mdbx/mdbx.h
-	echo "$(echo '#endif'; cat mdbx/mdbx.h)" > mdbx/mdbx.h
+	sed -i "" '1{h;s/.*/#endif/;G;}' mdbx/mdbx.h
+	sed -i "" '1{h;s/.*/#define MDBX_BUILD_FLAGS "-std=gnu11 -fvisibility=hidden -ffast-math"/;G;}' mdbx/mdbx.h
+	sed -i "" '1{h;s/.*/#ifndef MDBX_BUILD_FLAGS/;G;}' mdbx/mdbx.h
