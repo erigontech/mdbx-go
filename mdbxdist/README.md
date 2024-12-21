@@ -5,11 +5,10 @@
 > and pay attention to the [`C++` API](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h%2B%2B#line-num-1).
 
 > Questions, feedback and suggestions are welcome to the [Telegram' group](https://t.me/libmdbx).
+> See the [ChangeLog](https://gitflic.ru/project/erthink/libmdbx/blob?file=ChangeLog.md) for `NEWS` and latest updates.
 
-> For NEWS take a look to the [ChangeLog](https://gitflic.ru/project/erthink/libmdbx/blob?file=ChangeLog.md)
-> or the [TODO](https://gitflic.ru/project/erthink/libmdbx/blob?file=TODO.md).
-
-*The Future will (be) [Positive](https://www.ptsecurity.com). Всё будет хорошо.*
+> Donations are welcome to ETH `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`.
+> Всё будет хорошо!
 
 libmdbx
 ========
@@ -92,15 +91,15 @@ However, _MithrilDB_ will not be available for countries unfriendly to
 Russia (i.e. acceded the sanctions, devil adepts and/or NATO). But it is
 not yet known whether such restriction will be implemented only through
 a license and support, either the source code will not be open at all.
-Basically we are not inclined to allow our work to contribute to the
-profit that goes to weapons that kill our relatives and friends.
+Basically I am not inclined to allow my work to contribute to the
+profit that goes to weapons that kill my relatives and friends.
 NO OPTIONS.
 
 Nonetheless, I try not to make any promises regarding _MithrilDB_ until release.
 
 Contrary to _MithrilDB_, _libmdbx_ will forever free and open source.
 Moreover with high-quality support whenever possible. Tu deviens
-responsable pour toujours de ce que tu as apprivois. So we will continue
+responsable pour toujours de ce que tu as apprivois. So I will continue
 to comply with the original open license and the principles of
 constructive cooperation, in spite of outright Github sabotage and
 sanctions. I will also try to keep (not drop) Windows support, despite
@@ -230,7 +229,12 @@ On the other hand, if you make something suboptimally, you can notice detrimenta
 ## Comparison with other databases
 For now please refer to [chapter of "BoltDB comparison with other
 databases"](https://github.com/coreos/bbolt#comparison-with-other-databases)
-which is also (mostly) applicable to _libmdbx_.
+which is also (mostly) applicable to _libmdbx_ with minor clarification:
+ - a database could shared by multiple processes, i.e. no multi-process issues;
+ - no issues with moving a cursor(s) after the deletion;
+ - _libmdbx_ provides zero-overhead database compactification, so a database file could be shrinked/truncated in particular cases;
+ - excluding dist I/O time _libmdbx_ could be -3 times faster than BoltDB and up to 10-100K times faster than both BoltDB and LMDB in particular extreme cases;
+ - _libmdbx_ provides more features compared to BoltDB and/or LMDB.
 
 <!-- section-end -->
 
@@ -367,27 +371,20 @@ year later _libmdbx_ was separated into a standalone project, which was
 conference](http://www.highload.ru/2015/abstracts/1831.html).
 
 Since 2017 _libmdbx_ is used in [Fast Positive Tables](https://gitflic.ru/project/erthink/libfpta),
-and development is funded by [Positive Technologies](https://www.ptsecurity.com).
+and until 2025 development was funded by [Positive Technologies](https://www.ptsecurity.com).
+Since 2020 _libmdbx_ is used in Ethereum: [Erigon](https://github.com/erigontech/erigon), [Akula](https://github.com/akula-bft/akula),
+[Silkworm](https://github.com/erigontech/silkworm), [Reth](https://github.com/paradigmxyz/reth), etc.
 
 On 2022-04-15 the Github administration, without any warning nor
 explanation, deleted _libmdbx_ along with a lot of other projects,
 simultaneously blocking access for many developers. Therefore on
-2022-04-21 we have migrated to a reliable trusted infrastructure.
+2022-04-21 I have migrated to a reliable trusted infrastructure.
 The origin for now is at [GitFlic](https://gitflic.ru/project/erthink/libmdbx)
 with backup at [ABF by ROSA Лаб](https://abf.rosalinux.ru/erthink/libmdbx).
 For the same reason ~~Github~~ is blacklisted forever.
 
-Начиная с 2021 года наблюдаются устойчивые тенденции к распространению
-недостоверной информации о libmdbx в странах НАТО, политизированной
-критики, а также отказу от использования библиотеки в пользу LMDB,
-несмотря на явные проблемы с одной стороны и преимущества с другой.
-Поэтому, начиная с 17 марта 2024 года, прекращается документирование и
-сопровождение проекта на английском языке. Новая функциональность будет
-документироваться только на русском языке, однако, целенаправленного
-переписывания/перевода документации пока не планируется.
-
-Since May 2024 and version v0.13 _libmdbx_ was re-licensed under Apache-2.0 license.
-Please refer to the `COPYRIGHT` file for license change explanations.
+Since May 2024 and version 0.13 _libmdbx_ was re-licensed under Apache-2.0 license.
+Please refer to the [`COPYRIGHT` file](https://gitflic.ru/project/erthink/libmdbx/blob/raw?file=COPYRIGHT) for license change explanations.
 
 ## Acknowledgments
 Howard Chu <hyc@openldap.org> and Hallvard Furuseth
@@ -413,7 +410,7 @@ since release the version 1.0.
 
 ## Source code embedding
 
-_libmdbx_ provides two official ways for integration in source code form:
+_libmdbx_ provides three official ways for integration in source code form:
 
 1. Using an amalgamated source code which available in the [releases section](https://gitflic.ru/project/erthink/libmdbx/release) on GitFlic.
    > An amalgamated source code includes all files required to build and
@@ -422,7 +419,13 @@ _libmdbx_ provides two official ways for integration in source code form:
    > repository on Linux by executing `make dist`. As a result, the desired
    > set of files will be formed in the `dist` subdirectory.
 
-2. Adding the complete source code as a `git submodule` from the [origin git repository](https://gitflic.ru/project/erthink/libmdbx) on GitFlic.
+2. Using [Conan Package Manager](https://conan.io/):
+    - optional: Setup your own conan-server;
+    - Create conan-package by `conan create .` inside the _libmdbx_' repo subdirectory;
+    - optional: Upload created recipe and/or package to the conan-server by `conan upload -r SERVER 'mdbx/*'`;
+    - Consume libmdbx-package from the local conan-cache or from conan-server in accordance with the [Conan tutorial](https://docs.conan.io/2/tutorial/consuming_packages.html).
+
+3. Adding the complete source code as a `git submodule` from the [origin git repository](https://gitflic.ru/project/erthink/libmdbx) on GitFlic.
    > This allows you to build as _libmdbx_ and testing tool.
    >  On the other hand, this way requires you to pull git tags, and use C++11 compiler for test tool.
 
@@ -434,11 +437,14 @@ don't ask for support and don't name such chimeras `libmdbx`.
 Both amalgamated and original source code provides build through the use
 [CMake](https://cmake.org/) or [GNU
 Make](https://www.gnu.org/software/make/) with
-[bash](https://en.wikipedia.org/wiki/Bash_(Unix_shell)). All build ways
+[bash](https://en.wikipedia.org/wiki/Bash_(Unix_shell)).
+
+All build ways
 are completely traditional and have minimal prerequirements like
 `build-essential`, i.e. the non-obsolete C/C++ compiler and a
 [SDK](https://en.wikipedia.org/wiki/Software_development_kit) for the
-target platform. Obviously you need building tools itself, i.e. `git`,
+target platform.
+Obviously you need building tools itself, i.e. `git`,
 `cmake` or GNU `make` with `bash`. For your convenience, `make help`
 and `make options` are also available for listing existing targets
 and build options respectively.
@@ -467,7 +473,7 @@ Therefore, only basic information is provided:
      This is the `basic` test scenario.
    - The `Makefile` provide several self-described targets for testing: `smoke`, `test`, `check`, `memcheck`, `test-valgrind`,
      `test-asan`, `test-leak`, `test-ubsan`, `cross-gcc`, `cross-qemu`, `gcc-analyzer`, `smoke-fault`, `smoke-singleprocess`,
-     `test-singleprocess`, 'long-test'. Please run `make --help` if doubt.
+     `test-singleprocess`, `long-test`. Please run `make --help` if doubt.
    - In addition to the `mdbx_test` utility, there is the script [`stochastic.sh`](https://gitflic.ru/project/erthink/libmdbx/blob/master/test/stochastic.sh),
      which calls `mdbx_test` by going through set of modes and options, with gradually increasing the number of operations and the size of transactions.
      This script is used for mostly of all automatic testing, including `Makefile` targets and Continuous Integration.
@@ -576,9 +582,7 @@ runtime dependencies from CRT and other MSVC libraries.
 For this is enough to pass the `-DMDBX_WITHOUT_MSVC_CRT:BOOL=ON` option
 during configure by CMake.
 
-An example of running a basic test script can be found in the
-[CI-script](appveyor.yml) for [AppVeyor](https://www.appveyor.com/). To
-run the [long stochastic test scenario](test/stochastic.sh),
+To run the [long stochastic test scenario](test/stochastic.sh),
 [bash](https://en.wikipedia.org/wiki/Bash_(Unix_shell)) is required, and
 such testing is recommended with placing the test data on the
 [RAM-disk](https://en.wikipedia.org/wiki/RAM_drive).
@@ -600,16 +604,16 @@ tests. If something goes wrong, it is recommended to install
 
 To run the [long stochastic test scenario](test/stochastic.sh), you
 will need to install the current (not outdated) version of
-[Bash](https://en.wikipedia.org/wiki/Bash_(Unix_shell)). To do this, we
+[Bash](https://en.wikipedia.org/wiki/Bash_(Unix_shell)). To do this, I
 recommend that you install [Homebrew](https://brew.sh/) and then execute
 `brew install bash`.
 
 ### Android
-We recommend using CMake to build _libmdbx_ for Android.
+I recommend using CMake to build _libmdbx_ for Android.
 Please refer to the [official guide](https://developer.android.com/studio/projects/add-native-code).
 
 ### iOS
-To build _libmdbx_ for iOS, we recommend using CMake with the
+To build _libmdbx_ for iOS, I recommend using CMake with the
 ["toolchain file"](https://cmake.org/cmake/help/latest/variable/CMAKE_TOOLCHAIN_FILE.html)
 from the [ios-cmake](https://github.com/leetal/ios-cmake) project.
 
@@ -650,10 +654,17 @@ Bindings
 Performance comparison
 ======================
 
-All benchmarks were done in 2015 by [IOArena](https://abf.io/erthink/ioarena)
+Over the past 10 years, _libmdbx_ has had a lot of significant
+improvements and innovations. _libmdbx_ has become a slightly faster in
+simple cases and many times faster in complex scenarios, especially with
+a huge transactions in gigantic databases. Therefore, on the one hand,
+the results below are outdated. However, on the other hand, these simple
+benchmarks are evident, easy to reproduce, and are close to the most
+common use cases.
+
+The following all benchmark results were obtained in 2015 by [IOArena](https://abf.io/erthink/ioarena)
 and multiple [scripts](https://github.com/pmwkaa/ioarena/tree/HL%2B%2B2015)
-runs on Lenovo Carbon-2 laptop, i7-4600U 2.1 GHz (2 physical cores, 4 HyperThreading cores), 8 Gb RAM,
-SSD SAMSUNG MZNTD512HAGL-000L1 (DXT23L0Q) 512 Gb.
+runs on my laptop (i7-4600U 2.1 GHz, SSD MZNTD512HAGL-000L1).
 
 ## Integral performance
 
@@ -684,7 +695,8 @@ Here showed sum of performance metrics in 3 benchmarks:
 ## Read Scalability
 
 Summary performance with concurrent read/search queries in 1-2-4-8
-threads on the machine with 4 logical CPUs in HyperThreading mode (i.e. actually 2 physical CPU cores).
+threads on the machine with 4 logical CPUs in HyperThreading mode (i.e.
+actually 2 physical CPU cores).
 
 ![Comparison #2: Read Scalability](https://libmdbx.dqdkfa.ru/img/perf-slide-2.png)
 
@@ -748,10 +760,10 @@ records.
  execution time, cross marks standard deviation.
 
 **1,000,000 transactions in async-write mode**.
-In case of a crash all data is consistent and conforms to the one of last successful transactions,
-but lost transaction count is much higher than in
-lazy-write mode. All DB engines in this mode do as little writes as
-possible on persistent storage. _libmdbx_ uses
+In case of a crash all data is consistent and conforms to the one of
+last successful transactions, but lost transaction count is much higher
+than in lazy-write mode. All DB engines in this mode do as little writes
+as possible on persistent storage. _libmdbx_ uses
 [msync(MS_ASYNC)](https://linux.die.net/man/2/msync) in this mode.
 
 In the benchmark each transaction contains combined CRUD operations (2
