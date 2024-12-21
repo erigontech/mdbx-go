@@ -1,3 +1,7 @@
+#ifndef MDBX_BUILD_FLAGS
+#define MDBX_BUILD_FLAGS "-std=gnu11 -fvisibility=hidden -ffast-math"
+#endif
+
 /**
 
 _libmdbx_ (aka MDBX) is an extremely fast, compact, powerful, embeddable,
@@ -38,7 +42,6 @@ credits and acknowledgments.
 #pragma once
 #ifndef LIBMDBX_H
 #define LIBMDBX_H
-#define MDBX_BUILD_FLAGS "-std=gnu11 -fvisibility=hidden -ffast-math"
 
 #if defined(__riscv) || defined(__riscv__) || defined(__RISCV) || defined(__RISCV__)
 #warning "The RISC-V architecture is intentionally insecure by design. \
