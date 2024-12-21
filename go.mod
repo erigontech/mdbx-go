@@ -2,4 +2,4 @@ module github.com/erigontech/mdbx-go
 
 go 1.20
 
-require github.com/ianlancetaylor/cgosymbolizer v0.0.0-20240503222823-736c933a666d
+require github.com/ianlancetaylor/cgosymbolizer v0.0.0-20241129212102-9c50ad6b591e
