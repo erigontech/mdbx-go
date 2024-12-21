@@ -31,9 +31,3 @@ tools: clean
 cp:
 	#cd ../libmdbx && make dist
 	cp -R ./../libmdbx/dist/* ./mdbxdist/
-	cp mdbxdist/mdbx.h mdbx/
-	cp mdbxdist/mdbx.c mdbx/
-	#add 1 line to mdbx.h about build flags which we have in `mdbx.go`
-	sed -i "" '1{h;s/.*/#endif/;G;}' mdbx/mdbx.h
-	sed -i "" '1{h;s/.*/#define MDBX_BUILD_FLAGS "-std=gnu11 -fvisibility=hidden -ffast-math"/;G;}' mdbx/mdbx.h
-	sed -i "" '1{h;s/.*/#ifndef MDBX_BUILD_FLAGS/;G;}' mdbx/mdbx.h
