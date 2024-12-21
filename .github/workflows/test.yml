@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.20'
+          go-version: '1.21'
 
       - run: GODEBUG=cgocheck=2 make race
 
@@ -33,13 +33,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          choco upgrade mingw -y --no-progress --version 13.2.0
-          choco install cmake -y --no-progress --version 3.27.8
+          choco upgrade mingw -y --no-progress --version 13.2.0 --allow-downgrade
+          choco install cmake -y --no-progress --version 3.31.2 --allow-downgrade
 
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.20'
+          go-version: '1.21'
 
       - run: go test ./mdbx
       - run: go test ./exp/mdbxpool
