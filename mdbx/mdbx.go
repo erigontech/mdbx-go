@@ -137,6 +137,8 @@ package mdbx
 */
 import "C"
 
+import _ "runtime/cgo"
+
 /*
 to change build flags do:
 CGO_CFLAGS="${CGO_CFLAGS} -DMDBX_DEBUG=1" make erigon
