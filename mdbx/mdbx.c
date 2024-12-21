@@ -24064,7 +24064,7 @@ __dll_export
 #warning "Build flags undefined. Please use correct build script"
 #endif // _MSC_VER
 #endif
-  , MDBX_BUILD_METADATA
+  MDBX_BUILD_METADATA
 };
 
 #ifdef __SANITIZE_ADDRESS__
