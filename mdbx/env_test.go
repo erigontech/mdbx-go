@@ -75,7 +75,7 @@ func TestEnv_Open(t *testing.T) {
 }
 
 func TestEnv_PreOpen(t *testing.T) {
-	env, err1 := NewEnv()
+	env, err1 := NewEnv(Default)
 	if err1 != nil {
 		t.Error(err1)
 		return
