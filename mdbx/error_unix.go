@@ -14,7 +14,7 @@ func operrno(op string, ret C.int) error {
 	if ret == C.MDBX_SUCCESS || ret == C.MDBX_RESULT_TRUE {
 		return nil
 	}
-	if ret == C.MDBX_NOTFOUND {
+	if ret == C.MDBX_NOTFOUND || int(ret) == int(syscall.ENODATA) {
 		return ErrNotFound
 	}
 	if minErrno <= ret && ret <= maxErrno {
