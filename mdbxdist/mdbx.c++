@@ -2,7 +2,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 /* clang-format off */
 
-#define MDBX_BUILD_SOURCERY a19148f1d73f16063f6236bdf8e1580bb4fd35e2a392ff5c058264b6fcba9149_v0_13_2_20_g462af2be
+#define MDBX_BUILD_SOURCERY b16d14cb3026921fb14b9e52a75f956cd0a1d592091938703d138c32bc9d6541_v0_13_2_33_g98b28213
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED

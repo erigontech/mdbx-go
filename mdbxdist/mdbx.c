@@ -4,7 +4,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY a19148f1d73f16063f6236bdf8e1580bb4fd35e2a392ff5c058264b6fcba9149_v0_13_2_20_g462af2be
+#define MDBX_BUILD_SOURCERY b16d14cb3026921fb14b9e52a75f956cd0a1d592091938703d138c32bc9d6541_v0_13_2_33_g98b28213
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -3708,6 +3708,8 @@ MDBX_INTERNAL int __must_check_result txl_append(txl_t __restrict *ptxl, txnid_t
 
 MDBX_INTERNAL void txl_sort(txl_t txl);
 
+MDBX_INTERNAL bool txl_contain(const txl_t txl, txnid_t id);
+
 /*------------------------------------------------------------------------------
  * Unaligned access */
 
@@ -4194,13 +4196,14 @@ struct MDBX_txn {
     struct {
       troika_t troika;
       /* In write txns, array of cursors for each DB */
-      pnl_t __restrict relist; /* Reclaimed GC pages */
+      pnl_t __restrict repnl; /* Reclaimed GC pages */
       struct {
-        /* The list of reclaimed txns from GC */
-        txl_t __restrict reclaimed;
+        /* The list of reclaimed txn-ids from GC */
+        txl_t __restrict retxl;
         txnid_t last_reclaimed; /* ID of last used record */
         uint64_t time_acc;
       } gc;
+      bool prefault_write_activated;
 #if MDBX_ENABLE_REFUND
       pgno_t loose_refund_wl /* FIXME: describe */;
 #endif /* MDBX_ENABLE_REFUND */
@@ -4419,7 +4422,6 @@ struct MDBX_env {
   } me_sysv_ipc;
 #endif /* MDBX_LOCKING == MDBX_LOCKING_SYSV */
   bool incore;
-  bool prefault_write_activated;
 
 #if MDBX_ENABLE_DBI_LOCKFREE
   defer_free_item_t *defer_free;
@@ -9046,53 +9048,58 @@ int mdbx_dbi_close(MDBX_env *env, MDBX_dbi dbi) {
   if (unlikely(dbi >= env->max_dbi))
     return LOG_IFERR(MDBX_BAD_DBI);
 
-  if (unlikely(dbi < CORE_DBS || dbi >= env->max_dbi))
-    return LOG_IFERR(MDBX_BAD_DBI);
-
   rc = osal_fastmutex_acquire(&env->dbi_lock);
-  if (likely(rc == MDBX_SUCCESS && dbi < env->n_dbi)) {
-  retry:
-    if (env->basal_txn && (env->dbs_flags[dbi] & DB_VALID) && (env->basal_txn->flags & MDBX_TXN_FINISHED) == 0) {
-      /* LY: Опасный код, так как env->txn может быть изменено в другом потоке.
-       * К сожалению тут нет надежного решения и может быть падение при неверном
-       * использовании API (вызове mdbx_dbi_close конкурентно с завершением
-       * пишущей транзакции).
-       *
-       * Для минимизации вероятности падения сначала проверяем dbi-флаги
-       * в basal_txn, а уже после в env->txn. Таким образом, падение может быть
-       * только при коллизии с завершением вложенной транзакции.
-       *
-       * Альтернативно можно попробовать выполнять обновление/put записи в
-       * mainDb соответствующей таблице закрываемого хендла. Семантически это
-       * верный путь, но проблема в текущем API, в котором исторически dbi-хендл
-       * живет и закрывается вне транзакции. Причем проблема не только в том,
-       * что нет указателя на текущую пишущую транзакцию, а в том что
-       * пользователь точно не ожидает что закрытие хендла приведет к
-       * скрытой/непрозрачной активности внутри транзакции потенциально
-       * выполняемой в другом потоке. Другими словами, проблема может быть
-       * только при неверном использовании API и если пользователь это
-       * допускает, то точно не будет ожидать скрытых действий внутри
-       * транзакции, и поэтому этот путь потенциально более опасен. */
-      const MDBX_txn *const hazard = env->txn;
-      osal_compiler_barrier();
-      if ((dbi_state(env->basal_txn, dbi) & (DBI_LINDO | DBI_DIRTY | DBI_CREAT)) > DBI_LINDO) {
-      bailout_dirty_dbi:
-        osal_fastmutex_release(&env->dbi_lock);
-        return LOG_IFERR(MDBX_DANGLING_DBI);
-      }
-      osal_memory_barrier();
-      if (unlikely(hazard != env->txn))
-        goto retry;
-      if (hazard != env->basal_txn && hazard && (hazard->flags & MDBX_TXN_FINISHED) == 0 &&
-          hazard->signature == txn_signature &&
-          (dbi_state(hazard, dbi) & (DBI_LINDO | DBI_DIRTY | DBI_CREAT)) > DBI_LINDO)
-        goto bailout_dirty_dbi;
-      osal_compiler_barrier();
-      if (unlikely(hazard != env->txn))
-        goto retry;
-    }
-    rc = dbi_close_release(env, dbi);
+  if (unlikely(rc != MDBX_SUCCESS))
+    return LOG_IFERR(rc);
+
+  if (unlikely(dbi >= env->n_dbi)) {
+    rc = MDBX_BAD_DBI;
+  bailout:
+    osal_fastmutex_release(&env->dbi_lock);
+    return LOG_IFERR(rc);
   }
+
+  while (env->basal_txn && (env->dbs_flags[dbi] & DB_VALID) && (env->basal_txn->flags & MDBX_TXN_FINISHED) == 0) {
+    /* LY: Опасный код, так как env->txn может быть изменено в другом потоке.
+     * К сожалению тут нет надежного решения и может быть падение при неверном
+     * использовании API (вызове mdbx_dbi_close конкурентно с завершением
+     * пишущей транзакции).
+     *
+     * Для минимизации вероятности падения сначала проверяем dbi-флаги
+     * в basal_txn, а уже после в env->txn. Таким образом, падение может быть
+     * только при коллизии с завершением вложенной транзакции.
+     *
+     * Альтернативно можно попробовать выполнять обновление/put записи в
+     * mainDb соответствующей таблице закрываемого хендла. Семантически это
+     * верный путь, но проблема в текущем API, в котором исторически dbi-хендл
+     * живет и закрывается вне транзакции. Причем проблема не только в том,
+     * что нет указателя на текущую пишущую транзакцию, а в том что
+     * пользователь точно не ожидает что закрытие хендла приведет к
+     * скрытой/непрозрачной активности внутри транзакции потенциально
+     * выполняемой в другом потоке. Другими словами, проблема может быть
+     * только при неверном использовании API и если пользователь это
+     * допускает, то точно не будет ожидать скрытых действий внутри
+     * транзакции, и поэтому этот путь потенциально более опасен. */
+    const MDBX_txn *const hazard = env->txn;
+    osal_compiler_barrier();
+    if ((dbi_state(env->basal_txn, dbi) & (DBI_LINDO | DBI_DIRTY | DBI_CREAT)) > DBI_LINDO) {
+      rc = MDBX_DANGLING_DBI;
+      goto bailout;
+    }
+    osal_memory_barrier();
+    if (unlikely(hazard != env->txn))
+      continue;
+    if (hazard != env->basal_txn && hazard && (hazard->flags & MDBX_TXN_FINISHED) == 0 &&
+        hazard->signature == txn_signature &&
+        (dbi_state(hazard, dbi) & (DBI_LINDO | DBI_DIRTY | DBI_CREAT)) > DBI_LINDO) {
+      rc = MDBX_DANGLING_DBI;
+      goto bailout;
+    }
+    osal_compiler_barrier();
+    if (likely(hazard == env->txn))
+      break;
+  }
+  rc = dbi_close_release(env, dbi);
   return LOG_IFERR(rc);
 }
 
@@ -9718,8 +9725,8 @@ __cold int mdbx_env_openW(MDBX_env *env, const wchar_t *pathname, MDBX_env_flags
     txn->flags = MDBX_TXN_FINISHED;
     env->basal_txn = txn;
     txn->tw.retired_pages = pnl_alloc(MDBX_PNL_INITIAL);
-    txn->tw.relist = pnl_alloc(MDBX_PNL_INITIAL);
-    if (unlikely(!txn->tw.retired_pages || !txn->tw.relist)) {
+    txn->tw.repnl = pnl_alloc(MDBX_PNL_INITIAL);
+    if (unlikely(!txn->tw.retired_pages || !txn->tw.repnl)) {
       rc = MDBX_ENOMEM;
       goto bailout;
     }
@@ -12827,14 +12834,14 @@ int mdbx_txn_begin_ex(MDBX_env *env, MDBX_txn *parent, MDBX_txn_flags_t flags, M
     txn->geo = parent->geo;
     rc = dpl_alloc(txn);
     if (likely(rc == MDBX_SUCCESS)) {
-      const size_t len = MDBX_PNL_GETSIZE(parent->tw.relist) + parent->tw.loose_count;
-      txn->tw.relist = pnl_alloc((len > MDBX_PNL_INITIAL) ? len : MDBX_PNL_INITIAL);
-      if (unlikely(!txn->tw.relist))
+      const size_t len = MDBX_PNL_GETSIZE(parent->tw.repnl) + parent->tw.loose_count;
+      txn->tw.repnl = pnl_alloc((len > MDBX_PNL_INITIAL) ? len : MDBX_PNL_INITIAL);
+      if (unlikely(!txn->tw.repnl))
         rc = MDBX_ENOMEM;
     }
     if (unlikely(rc != MDBX_SUCCESS)) {
     nested_failed:
-      pnl_free(txn->tw.relist);
+      pnl_free(txn->tw.repnl);
       dpl_free(txn);
       osal_free(txn);
       return LOG_IFERR(rc);
@@ -12845,7 +12852,7 @@ int mdbx_txn_begin_ex(MDBX_env *env, MDBX_txn *parent, MDBX_txn_flags_t flags, M
       do {
         page_t *lp = parent->tw.loose_pages;
         tASSERT(parent, lp->flags == P_LOOSE);
-        rc = pnl_insert_span(&parent->tw.relist, lp->pgno, 1);
+        rc = pnl_insert_span(&parent->tw.repnl, lp->pgno, 1);
         if (unlikely(rc != MDBX_SUCCESS))
           goto nested_failed;
         MDBX_ASAN_UNPOISON_MEMORY_REGION(&page_next(lp), sizeof(page_t *));
@@ -12867,18 +12874,18 @@ int mdbx_txn_begin_ex(MDBX_env *env, MDBX_txn *parent, MDBX_txn_flags_t flags, M
     if (parent->tw.spilled.list)
       spill_purge(parent);
 
-    tASSERT(txn, MDBX_PNL_ALLOCLEN(txn->tw.relist) >= MDBX_PNL_GETSIZE(parent->tw.relist));
-    memcpy(txn->tw.relist, parent->tw.relist, MDBX_PNL_SIZEOF(parent->tw.relist));
-    eASSERT(env, pnl_check_allocated(txn->tw.relist, (txn->geo.first_unallocated /* LY: intentional assignment
+    tASSERT(txn, MDBX_PNL_ALLOCLEN(txn->tw.repnl) >= MDBX_PNL_GETSIZE(parent->tw.repnl));
+    memcpy(txn->tw.repnl, parent->tw.repnl, MDBX_PNL_SIZEOF(parent->tw.repnl));
+    eASSERT(env, pnl_check_allocated(txn->tw.repnl, (txn->geo.first_unallocated /* LY: intentional assignment
                                                                                here, only for assertion */
-                                                      = parent->geo.first_unallocated) -
-                                                         MDBX_ENABLE_REFUND));
+                                                     = parent->geo.first_unallocated) -
+                                                        MDBX_ENABLE_REFUND));
 
     txn->tw.gc.time_acc = parent->tw.gc.time_acc;
     txn->tw.gc.last_reclaimed = parent->tw.gc.last_reclaimed;
-    if (parent->tw.gc.reclaimed) {
-      txn->tw.gc.reclaimed = parent->tw.gc.reclaimed;
-      parent->tw.gc.reclaimed = (void *)(intptr_t)MDBX_PNL_GETSIZE(parent->tw.gc.reclaimed);
+    if (parent->tw.gc.retxl) {
+      txn->tw.gc.retxl = parent->tw.gc.retxl;
+      parent->tw.gc.retxl = (void *)(intptr_t)MDBX_PNL_GETSIZE(parent->tw.gc.retxl);
     }
 
     txn->tw.retired_pages = parent->tw.retired_pages;
@@ -13034,7 +13041,7 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
     tASSERT(txn, parent_retired_len <= MDBX_PNL_GETSIZE(txn->tw.retired_pages));
     const size_t retired_delta = MDBX_PNL_GETSIZE(txn->tw.retired_pages) - parent_retired_len;
     if (retired_delta) {
-      rc = pnl_need(&txn->tw.relist, retired_delta);
+      rc = pnl_need(&txn->tw.repnl, retired_delta);
       if (unlikely(rc != MDBX_SUCCESS))
         goto fail;
     }
@@ -13056,15 +13063,15 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
 
     //-------------------------------------------------------------------------
 
-    parent->tw.gc.reclaimed = txn->tw.gc.reclaimed;
-    txn->tw.gc.reclaimed = nullptr;
+    parent->tw.gc.retxl = txn->tw.gc.retxl;
+    txn->tw.gc.retxl = nullptr;
 
     parent->tw.retired_pages = txn->tw.retired_pages;
     txn->tw.retired_pages = nullptr;
 
-    pnl_free(parent->tw.relist);
-    parent->tw.relist = txn->tw.relist;
-    txn->tw.relist = nullptr;
+    pnl_free(parent->tw.repnl);
+    parent->tw.repnl = txn->tw.repnl;
+    txn->tw.repnl = nullptr;
     parent->tw.gc.time_acc = txn->tw.gc.time_acc;
     parent->tw.gc.last_reclaimed = txn->tw.gc.last_reclaimed;
 
@@ -13120,8 +13127,8 @@ int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency) {
         VALGRIND_MAKE_MEM_DEFINED(&page_next(lp), sizeof(page_t *));
       }
       /* Check parent's reclaimed pages not suitable for refund */
-      if (MDBX_PNL_GETSIZE(parent->tw.relist))
-        tASSERT(parent, MDBX_PNL_MOST(parent->tw.relist) + 1 < parent->geo.first_unallocated);
+      if (MDBX_PNL_GETSIZE(parent->tw.repnl))
+        tASSERT(parent, MDBX_PNL_MOST(parent->tw.repnl) + 1 < parent->geo.first_unallocated);
     }
 #endif /* MDBX_ENABLE_REFUND */
 
@@ -13487,7 +13494,7 @@ __cold static int audit_ex_locked(MDBX_txn *txn, size_t retired_stored, bool don
   const MDBX_env *const env = txn->env;
   size_t pending = 0;
   if ((txn->flags & MDBX_TXN_RDONLY) == 0)
-    pending = txn->tw.loose_count + MDBX_PNL_GETSIZE(txn->tw.relist) +
+    pending = txn->tw.loose_count + MDBX_PNL_GETSIZE(txn->tw.repnl) +
               (MDBX_PNL_GETSIZE(txn->tw.retired_pages) - retired_stored);
 
   cursor_couple_t cx;
@@ -13505,9 +13512,9 @@ __cold static int audit_ex_locked(MDBX_txn *txn, size_t retired_stored, bool don
         return MDBX_CORRUPTED;
       }
       txnid_t id = unaligned_peek_u64(4, key.iov_base);
-      if (txn->tw.gc.reclaimed) {
-        for (size_t i = 1; i <= MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed); ++i)
-          if (id == txn->tw.gc.reclaimed[i])
+      if (txn->tw.gc.retxl) {
+        for (size_t i = 1; i <= MDBX_PNL_GETSIZE(txn->tw.gc.retxl); ++i)
+          if (id == txn->tw.gc.retxl[i])
             goto skip;
       } else if (id <= txn->tw.gc.last_reclaimed)
         goto skip;
@@ -13552,7 +13559,7 @@ __cold static int audit_ex_locked(MDBX_txn *txn, size_t retired_stored, bool don
   if ((txn->flags & MDBX_TXN_RDONLY) == 0)
     ERROR("audit @%" PRIaTXN ": %zu(pending) = %zu(loose) + "
           "%zu(reclaimed) + %zu(retired-pending) - %zu(retired-stored)",
-          txn->txnid, pending, txn->tw.loose_count, MDBX_PNL_GETSIZE(txn->tw.relist),
+          txn->txnid, pending, txn->tw.loose_count, MDBX_PNL_GETSIZE(txn->tw.repnl),
           txn->tw.retired_pages ? MDBX_PNL_GETSIZE(txn->tw.retired_pages) : 0, retired_stored);
   ERROR("audit @%" PRIaTXN ": %zu(pending) + %zu"
         "(gc) + %zu(count) = %zu(total) <> %zu"
@@ -18896,10 +18903,10 @@ static inline size_t dpl_size2bytes(ptrdiff_t size) {
 
 static inline size_t dpl_bytes2size(const ptrdiff_t bytes) {
   size_t size = (bytes - sizeof(dpl_t)) / sizeof(dp_t);
-  assert(size > CURSOR_STACK_SIZE && size <= PAGELIST_LIMIT + MDBX_PNL_GRANULATE);
 #if MDBX_DPL_PREALLOC_FOR_RADIXSORT
   size >>= 1;
 #endif /* MDBX_DPL_PREALLOC_FOR_RADIXSORT */
+  assert(size > CURSOR_STACK_SIZE && size <= PAGELIST_LIMIT + MDBX_PNL_GRANULATE);
   return size;
 }
 
@@ -19005,7 +19012,7 @@ __hot __noinline dpl_t *dpl_sort_slowpath(const MDBX_txn *txn) {
 #define DP_SEARCH_CMP(dp, id) ((dp).pgno < (id))
 SEARCH_IMPL(dp_bsearch, dp_t, pgno_t, DP_SEARCH_CMP)
 
-__hot __noinline MDBX_INTERNAL size_t dpl_search(const MDBX_txn *txn, pgno_t pgno) {
+__hot __noinline size_t dpl_search(const MDBX_txn *txn, pgno_t pgno) {
   tASSERT(txn, (txn->flags & MDBX_TXN_RDONLY) == 0);
   tASSERT(txn, (txn->flags & MDBX_WRITEMAP) == 0 || MDBX_AVOID_MSYNC);
 
@@ -19238,12 +19245,12 @@ __cold bool dpl_check(MDBX_txn *txn) {
         return false;
     }
 
-    const size_t rpa = pnl_search(txn->tw.relist, dp->pgno, txn->geo.first_unallocated);
-    tASSERT(txn, rpa > MDBX_PNL_GETSIZE(txn->tw.relist) || txn->tw.relist[rpa] != dp->pgno);
-    if (rpa <= MDBX_PNL_GETSIZE(txn->tw.relist) && unlikely(txn->tw.relist[rpa] == dp->pgno))
+    const size_t rpa = pnl_search(txn->tw.repnl, dp->pgno, txn->geo.first_unallocated);
+    tASSERT(txn, rpa > MDBX_PNL_GETSIZE(txn->tw.repnl) || txn->tw.repnl[rpa] != dp->pgno);
+    if (rpa <= MDBX_PNL_GETSIZE(txn->tw.repnl) && unlikely(txn->tw.repnl[rpa] == dp->pgno))
       return false;
     if (num > 1) {
-      const size_t rpb = pnl_search(txn->tw.relist, dp->pgno + num - 1, txn->geo.first_unallocated);
+      const size_t rpb = pnl_search(txn->tw.repnl, dp->pgno + num - 1, txn->geo.first_unallocated);
       tASSERT(txn, rpa == rpb);
       if (unlikely(rpa != rpb))
         return false;
@@ -21296,10 +21303,10 @@ __cold int env_close(MDBX_env *env, bool resurrect_after_fork) {
     }
     if (env->basal_txn) {
       dpl_free(env->basal_txn);
-      txl_free(env->basal_txn->tw.gc.reclaimed);
+      txl_free(env->basal_txn->tw.gc.retxl);
       pnl_free(env->basal_txn->tw.retired_pages);
       pnl_free(env->basal_txn->tw.spilled.list);
-      pnl_free(env->basal_txn->tw.relist);
+      pnl_free(env->basal_txn->tw.repnl);
       osal_free(env->basal_txn);
       env->basal_txn = nullptr;
     }
@@ -21897,18 +21904,12 @@ static inline bool is_gc_usable(MDBX_txn *txn, const MDBX_cursor *mc, const uint
   return true;
 }
 
-__hot static bool is_already_reclaimed(const MDBX_txn *txn, txnid_t id) {
-  const size_t len = MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed);
-  for (size_t i = 1; i <= len; ++i)
-    if (txn->tw.gc.reclaimed[i] == id)
-      return true;
-  return false;
-}
+static inline bool is_already_reclaimed(const MDBX_txn *txn, txnid_t id) { return txl_contain(txn->tw.gc.retxl, id); }
 
-__hot static pgno_t relist_get_single(MDBX_txn *txn) {
-  const size_t len = MDBX_PNL_GETSIZE(txn->tw.relist);
+__hot static pgno_t repnl_get_single(MDBX_txn *txn) {
+  const size_t len = MDBX_PNL_GETSIZE(txn->tw.repnl);
   assert(len > 0);
-  pgno_t *target = MDBX_PNL_EDGE(txn->tw.relist);
+  pgno_t *target = MDBX_PNL_EDGE(txn->tw.repnl);
   const ptrdiff_t dir = MDBX_PNL_ASCENDING ? 1 : -1;
 
   /* Есть ТРИ потенциально выигрышные, но противо-направленные тактики:
@@ -21917,7 +21918,7 @@ __hot static pgno_t relist_get_single(MDBX_txn *txn) {
    * диском будет более кучным, а у страниц ближе к концу БД будет больше шансов
    * попасть под авто-компактификацию. Частично эта тактика уже реализована, но
    * для её эффективности требуется явно приоритезировать выделение страниц:
-   *   - поддерживать для relist, для ближних и для дальних страниц;
+   *   - поддерживать два repnl, для ближних и для дальних страниц;
    *   - использовать страницы из дальнего списка, если первый пуст,
    *     а второй слишком большой, либо при пустой GC.
    *
@@ -21925,11 +21926,11 @@ __hot static pgno_t relist_get_single(MDBX_txn *txn) {
    * регионы будут линейными, что принципиально ускоряет запись на HDD.
    * Одновременно, в среднем это не повлияет на чтение, точнее говоря, если
    * порядок чтения не совпадает с порядком изменения (иначе говоря, если
-   * чтение не коррклирует с обновлениями и/или вставками) то не повлияет, иначе
+   * чтение не коррелирует с обновлениями и/или вставками) то не повлияет, иначе
    * может ускорить. Однако, последовательности в среднем достаточно редки.
    * Поэтому для эффективности требуется аккумулировать и поддерживать в ОЗУ
    * огромные списки страниц, а затем сохранять их обратно в БД. Текущий формат
-   * БД (без битовых карт) для этого крайне не удачен. Поэтому эта тактика не
+   * БД (без сжатых битовых карт) для этого крайне не удачен. Поэтому эта тактика не
    * имеет шансов быть успешной без смены формата БД (Mithril).
    *
    * 3. Стараться экономить последовательности страниц. Это позволяет избегать
@@ -21938,10 +21939,10 @@ __hot static pgno_t relist_get_single(MDBX_txn *txn) {
    * информации от приложения библиотека не может знать насколько
    * востребованными будут последовательности в ближайшей перспективе, а
    * экономия последовательностей "на всякий случай" не только затратна
-   * сама-по-себе, но и работает во вред.
+   * сама-по-себе, но и работает во вред (добавляет хаоса).
    *
    * Поэтому:
-   *  - в TODO добавляется разделение relist на «ближние» и «дальние» страницы,
+   *  - в TODO добавляется разделение repnl на «ближние» и «дальние» страницы,
    *    с последующей реализацией первой тактики;
    *  - преимущественное использование последовательностей отправляется
    *    в MithrilDB как составляющая "HDD frendly" feature;
@@ -21976,7 +21977,7 @@ __hot static pgno_t relist_get_single(MDBX_txn *txn) {
 #else
         /* вырезаем элемент с перемещением хвоста */
         const pgno_t pgno = *scan;
-        MDBX_PNL_SETSIZE(txn->tw.relist, len - 1);
+        MDBX_PNL_SETSIZE(txn->tw.repnl, len - 1);
         while (++scan <= target)
           scan[-1] = *scan;
         return pgno;
@@ -21989,44 +21990,44 @@ __hot static pgno_t relist_get_single(MDBX_txn *txn) {
   const pgno_t pgno = *target;
 #if MDBX_PNL_ASCENDING
   /* вырезаем элемент с перемещением хвоста */
-  MDBX_PNL_SETSIZE(txn->tw.relist, len - 1);
-  for (const pgno_t *const end = txn->tw.relist + len - 1; target <= end; ++target)
+  MDBX_PNL_SETSIZE(txn->tw.repnl, len - 1);
+  for (const pgno_t *const end = txn->tw.repnl + len - 1; target <= end; ++target)
     *target = target[1];
 #else
   /* перемещать хвост не нужно, просто усекам список */
-  MDBX_PNL_SETSIZE(txn->tw.relist, len - 1);
+  MDBX_PNL_SETSIZE(txn->tw.repnl, len - 1);
 #endif
   return pgno;
 }
 
-__hot static pgno_t relist_get_sequence(MDBX_txn *txn, const size_t num, uint8_t flags) {
-  const size_t len = MDBX_PNL_GETSIZE(txn->tw.relist);
-  pgno_t *edge = MDBX_PNL_EDGE(txn->tw.relist);
+__hot static pgno_t repnl_get_sequence(MDBX_txn *txn, const size_t num, uint8_t flags) {
+  const size_t len = MDBX_PNL_GETSIZE(txn->tw.repnl);
+  pgno_t *edge = MDBX_PNL_EDGE(txn->tw.repnl);
   assert(len >= num && num > 1);
   const size_t seq = num - 1;
 #if !MDBX_PNL_ASCENDING
   if (edge[-(ptrdiff_t)seq] - *edge == seq) {
     if (unlikely(flags & ALLOC_RESERVE))
       return P_INVALID;
-    assert(edge == scan4range_checker(txn->tw.relist, seq));
+    assert(edge == scan4range_checker(txn->tw.repnl, seq));
     /* перемещать хвост не нужно, просто усекам список */
-    MDBX_PNL_SETSIZE(txn->tw.relist, len - num);
+    MDBX_PNL_SETSIZE(txn->tw.repnl, len - num);
     return *edge;
   }
 #endif
   pgno_t *target = scan4seq_impl(edge, len, seq);
-  assert(target == scan4range_checker(txn->tw.relist, seq));
+  assert(target == scan4range_checker(txn->tw.repnl, seq));
   if (target) {
     if (unlikely(flags & ALLOC_RESERVE))
       return P_INVALID;
     const pgno_t pgno = *target;
     /* вырезаем найденную последовательность с перемещением хвоста */
-    MDBX_PNL_SETSIZE(txn->tw.relist, len - num);
+    MDBX_PNL_SETSIZE(txn->tw.repnl, len - num);
 #if MDBX_PNL_ASCENDING
-    for (const pgno_t *const end = txn->tw.relist + len - num; target <= end; ++target)
+    for (const pgno_t *const end = txn->tw.repnl + len - num; target <= end; ++target)
       *target = target[num];
 #else
-    for (const pgno_t *const end = txn->tw.relist + len; ++target <= end;)
+    for (const pgno_t *const end = txn->tw.repnl + len; ++target <= end;)
       target[-(ptrdiff_t)num] = *target;
 #endif
     return pgno;
@@ -22075,7 +22076,7 @@ static inline pgr_t page_alloc_finalize(MDBX_env *const env, MDBX_txn *const txn
      * обновляться PTE с последующей генерацией page-fault и чтением данных из
      * грязной I/O очереди. Из-за этого штраф за лишнюю запись может быть
      * сравним с избегаемым ненужным чтением. */
-    if (env->prefault_write_activated) {
+    if (txn->tw.prefault_write_activated) {
       void *const pattern = ptr_disp(env->page_auxbuf, need_clean ? env->ps : env->ps * 2);
       size_t file_offset = pgno2bytes(env, pgno);
       if (likely(num == 1)) {
@@ -22136,7 +22137,7 @@ static inline pgr_t page_alloc_finalize(MDBX_env *const env, MDBX_txn *const txn
 
   ret.err = page_dirty(txn, ret.page, (pgno_t)num);
 bailout:
-  tASSERT(txn, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
+  tASSERT(txn, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
 #if MDBX_ENABLE_PROFGC
   size_t majflt_after;
   prof->xtime_cpu += osal_cputime(&majflt_after) - cputime_before;
@@ -22156,7 +22157,7 @@ pgr_t gc_alloc_ex(const MDBX_cursor *const mc, const size_t num, uint8_t flags) 
 #endif /* MDBX_ENABLE_PROFGC */
 
   eASSERT(env, num > 0 || (flags & ALLOC_RESERVE));
-  eASSERT(env, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
+  eASSERT(env, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
 
   size_t newnext;
   const uint64_t monotime_begin = (MDBX_ENABLE_PROFGC || (num > 1 && env->options.gc_time_limit)) ? osal_monotime() : 0;
@@ -22171,15 +22172,15 @@ pgr_t gc_alloc_ex(const MDBX_cursor *const mc, const size_t num, uint8_t flags) 
 #if MDBX_ENABLE_PROFGC
     prof->xpages += 1;
 #endif /* MDBX_ENABLE_PROFGC */
-    if (MDBX_PNL_GETSIZE(txn->tw.relist) >= num) {
-      eASSERT(env, MDBX_PNL_LAST(txn->tw.relist) < txn->geo.first_unallocated &&
-                       MDBX_PNL_FIRST(txn->tw.relist) < txn->geo.first_unallocated);
-      pgno = relist_get_sequence(txn, num, flags);
+    if (MDBX_PNL_GETSIZE(txn->tw.repnl) >= num) {
+      eASSERT(env, MDBX_PNL_LAST(txn->tw.repnl) < txn->geo.first_unallocated &&
+                       MDBX_PNL_FIRST(txn->tw.repnl) < txn->geo.first_unallocated);
+      pgno = repnl_get_sequence(txn, num, flags);
       if (likely(pgno))
         goto done;
     }
   } else {
-    eASSERT(env, num == 0 || MDBX_PNL_GETSIZE(txn->tw.relist) == 0);
+    eASSERT(env, num == 0 || MDBX_PNL_GETSIZE(txn->tw.repnl) == 0);
     eASSERT(env, !(flags & ALLOC_RESERVE) || num == 0);
   }
 
@@ -22197,7 +22198,7 @@ pgr_t gc_alloc_ex(const MDBX_cursor *const mc, const size_t num, uint8_t flags) 
        * Иначе попытка увеличить резерв может приводить к необходимости ещё
        * большего резерва из-за увеличения списка переработанных страниц. */
       (flags & ALLOC_RESERVE) == 0) {
-    if (txn->dbs[FREE_DBI].branch_pages && MDBX_PNL_GETSIZE(txn->tw.relist) < env->maxgc_large1page / 2)
+    if (txn->dbs[FREE_DBI].branch_pages && MDBX_PNL_GETSIZE(txn->tw.repnl) < env->maxgc_large1page / 2)
       flags += ALLOC_COALESCE;
   }
 
@@ -22207,8 +22208,8 @@ pgr_t gc_alloc_ex(const MDBX_cursor *const mc, const size_t num, uint8_t flags) 
   gc->dbi_state = txn->dbi_state;
   gc->top_and_flags = z_fresh_mark;
 
-  env->prefault_write_activated = env->options.prefault_write;
-  if (env->prefault_write_activated) {
+  txn->tw.prefault_write_activated = env->options.prefault_write;
+  if (txn->tw.prefault_write_activated) {
     /* Проверка посредством minicore() существенно снижает затраты, но в
      * простейших случаях (тривиальный бенчмарк) интегральная производительность
      * становится вдвое меньше. А на платформах без mincore() и с проблемной
@@ -22221,7 +22222,7 @@ pgr_t gc_alloc_ex(const MDBX_cursor *const mc, const size_t num, uint8_t flags) 
         (txn->dbs[FREE_DBI].branch_pages == 0 && txn->geo.now < 1234) ||
         /* Не суетимся если страница в зоне включенного упреждающего чтения */
         (readahead_enabled && pgno + num < readahead_edge))
-      env->prefault_write_activated = false;
+      txn->tw.prefault_write_activated = false;
   }
 
 retry_gc_refresh_oldest:;
@@ -22237,9 +22238,9 @@ retry_gc_have_oldest:
   txnid_t id = 0;
   MDBX_cursor_op op = MDBX_FIRST;
   if (flags & ALLOC_LIFO) {
-    if (!txn->tw.gc.reclaimed) {
-      txn->tw.gc.reclaimed = txl_alloc();
-      if (unlikely(!txn->tw.gc.reclaimed)) {
+    if (!txn->tw.gc.retxl) {
+      txn->tw.gc.retxl = txl_alloc();
+      if (unlikely(!txn->tw.gc.retxl)) {
         ret.err = MDBX_ENOMEM;
         goto fail;
       }
@@ -22307,9 +22308,9 @@ next_gc:;
   }
 
   const size_t gc_len = MDBX_PNL_GETSIZE(gc_pnl);
-  TRACE("gc-read: id #%" PRIaTXN " len %zu, re-list will %zu ", id, gc_len, gc_len + MDBX_PNL_GETSIZE(txn->tw.relist));
+  TRACE("gc-read: id #%" PRIaTXN " len %zu, re-list will %zu ", id, gc_len, gc_len + MDBX_PNL_GETSIZE(txn->tw.repnl));
 
-  if (unlikely(gc_len + MDBX_PNL_GETSIZE(txn->tw.relist) >= env->maxgc_large1page)) {
+  if (unlikely(gc_len + MDBX_PNL_GETSIZE(txn->tw.repnl) >= env->maxgc_large1page)) {
     /* Don't try to coalesce too much. */
     if (flags & ALLOC_SHOULD_SCAN) {
       eASSERT(env, flags & ALLOC_COALESCE);
@@ -22319,32 +22320,32 @@ next_gc:;
       env->lck->pgops.gc_prof.coalescences += 1;
 #endif /* MDBX_ENABLE_PROFGC */
       TRACE("clear %s %s", "ALLOC_COALESCE", "since got threshold");
-      if (MDBX_PNL_GETSIZE(txn->tw.relist) >= num) {
-        eASSERT(env, MDBX_PNL_LAST(txn->tw.relist) < txn->geo.first_unallocated &&
-                         MDBX_PNL_FIRST(txn->tw.relist) < txn->geo.first_unallocated);
+      if (MDBX_PNL_GETSIZE(txn->tw.repnl) >= num) {
+        eASSERT(env, MDBX_PNL_LAST(txn->tw.repnl) < txn->geo.first_unallocated &&
+                         MDBX_PNL_FIRST(txn->tw.repnl) < txn->geo.first_unallocated);
         if (likely(num == 1)) {
-          pgno = relist_get_single(txn);
+          pgno = repnl_get_single(txn);
           goto done;
         }
-        pgno = relist_get_sequence(txn, num, flags);
+        pgno = repnl_get_sequence(txn, num, flags);
         if (likely(pgno))
           goto done;
       }
       flags -= ALLOC_COALESCE | ALLOC_SHOULD_SCAN;
     }
-    if (unlikely(/* list is too long already */ MDBX_PNL_GETSIZE(txn->tw.relist) >= env->options.rp_augment_limit) &&
+    if (unlikely(/* list is too long already */ MDBX_PNL_GETSIZE(txn->tw.repnl) >= env->options.rp_augment_limit) &&
         ((/* not a slot-request from gc-update */ num &&
           /* have enough unallocated space */ txn->geo.upper >= txn->geo.first_unallocated + num &&
           monotime_since_cached(monotime_begin, &now_cache) + txn->tw.gc.time_acc >= env->options.gc_time_limit) ||
-         gc_len + MDBX_PNL_GETSIZE(txn->tw.relist) >= PAGELIST_LIMIT)) {
+         gc_len + MDBX_PNL_GETSIZE(txn->tw.repnl) >= PAGELIST_LIMIT)) {
       /* Stop reclaiming to avoid large/overflow the page list. This is a rare
        * case while search for a continuously multi-page region in a
        * large database, see https://libmdbx.dqdkfa.ru/dead-github/issues/123 */
       NOTICE("stop reclaiming %s: %zu (current) + %zu "
              "(chunk) -> %zu, rp_augment_limit %u",
-             likely(gc_len + MDBX_PNL_GETSIZE(txn->tw.relist) < PAGELIST_LIMIT) ? "since rp_augment_limit was reached"
-                                                                                : "to avoid PNL overflow",
-             MDBX_PNL_GETSIZE(txn->tw.relist), gc_len, gc_len + MDBX_PNL_GETSIZE(txn->tw.relist),
+             likely(gc_len + MDBX_PNL_GETSIZE(txn->tw.repnl) < PAGELIST_LIMIT) ? "since rp_augment_limit was reached"
+                                                                               : "to avoid PNL overflow",
+             MDBX_PNL_GETSIZE(txn->tw.repnl), gc_len, gc_len + MDBX_PNL_GETSIZE(txn->tw.repnl),
              env->options.rp_augment_limit);
       goto depleted_gc;
     }
@@ -22353,13 +22354,13 @@ next_gc:;
   /* Remember ID of readed GC record */
   txn->tw.gc.last_reclaimed = id;
   if (flags & ALLOC_LIFO) {
-    ret.err = txl_append(&txn->tw.gc.reclaimed, id);
+    ret.err = txl_append(&txn->tw.gc.retxl, id);
     if (unlikely(ret.err != MDBX_SUCCESS))
       goto fail;
   }
 
-  /* Append PNL from GC record to tw.relist */
-  ret.err = pnl_need(&txn->tw.relist, gc_len);
+  /* Append PNL from GC record to tw.repnl */
+  ret.err = pnl_need(&txn->tw.repnl, gc_len);
   if (unlikely(ret.err != MDBX_SUCCESS))
     goto fail;
 
@@ -22374,36 +22375,36 @@ next_gc:;
 #if MDBX_ENABLE_PROFGC
   const uint64_t merge_begin = osal_monotime();
 #endif /* MDBX_ENABLE_PROFGC */
-  pnl_merge(txn->tw.relist, gc_pnl);
+  pnl_merge(txn->tw.repnl, gc_pnl);
 #if MDBX_ENABLE_PROFGC
   prof->pnl_merge.calls += 1;
-  prof->pnl_merge.volume += MDBX_PNL_GETSIZE(txn->tw.relist);
+  prof->pnl_merge.volume += MDBX_PNL_GETSIZE(txn->tw.repnl);
   prof->pnl_merge.time += osal_monotime() - merge_begin;
 #endif /* MDBX_ENABLE_PROFGC */
   flags |= ALLOC_SHOULD_SCAN;
   if (AUDIT_ENABLED()) {
-    if (unlikely(!pnl_check(txn->tw.relist, txn->geo.first_unallocated))) {
+    if (unlikely(!pnl_check(txn->tw.repnl, txn->geo.first_unallocated))) {
       ERROR("%s/%d: %s", "MDBX_CORRUPTED", MDBX_CORRUPTED, "invalid txn retired-list");
       ret.err = MDBX_CORRUPTED;
       goto fail;
     }
   } else {
-    eASSERT(env, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated));
+    eASSERT(env, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated));
   }
   eASSERT(env, dpl_check(txn));
 
-  eASSERT(env, MDBX_PNL_GETSIZE(txn->tw.relist) == 0 || MDBX_PNL_MOST(txn->tw.relist) < txn->geo.first_unallocated);
-  if (MDBX_ENABLE_REFUND && MDBX_PNL_GETSIZE(txn->tw.relist) &&
-      unlikely(MDBX_PNL_MOST(txn->tw.relist) == txn->geo.first_unallocated - 1)) {
+  eASSERT(env, MDBX_PNL_GETSIZE(txn->tw.repnl) == 0 || MDBX_PNL_MOST(txn->tw.repnl) < txn->geo.first_unallocated);
+  if (MDBX_ENABLE_REFUND && MDBX_PNL_GETSIZE(txn->tw.repnl) &&
+      unlikely(MDBX_PNL_MOST(txn->tw.repnl) == txn->geo.first_unallocated - 1)) {
     /* Refund suitable pages into "unallocated" space */
     txn_refund(txn);
   }
-  eASSERT(env, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
+  eASSERT(env, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
 
   /* Done for a kick-reclaim mode, actually no page needed */
   if (unlikely(num == 0)) {
     eASSERT(env, ret.err == MDBX_SUCCESS);
-    TRACE("%s: last id #%" PRIaTXN ", re-len %zu", "early-exit for slot", id, MDBX_PNL_GETSIZE(txn->tw.relist));
+    TRACE("%s: last id #%" PRIaTXN ", re-len %zu", "early-exit for slot", id, MDBX_PNL_GETSIZE(txn->tw.repnl));
     goto early_exit;
   }
 
@@ -22411,33 +22412,33 @@ next_gc:;
 
   eASSERT(env, op == MDBX_PREV || op == MDBX_NEXT);
   if (flags & ALLOC_COALESCE) {
-    TRACE("%s: last id #%" PRIaTXN ", re-len %zu", "coalesce-continue", id, MDBX_PNL_GETSIZE(txn->tw.relist));
+    TRACE("%s: last id #%" PRIaTXN ", re-len %zu", "coalesce-continue", id, MDBX_PNL_GETSIZE(txn->tw.repnl));
     goto next_gc;
   }
 
 scan:
   eASSERT(env, flags & ALLOC_SHOULD_SCAN);
   eASSERT(env, num > 0);
-  if (MDBX_PNL_GETSIZE(txn->tw.relist) >= num) {
-    eASSERT(env, MDBX_PNL_LAST(txn->tw.relist) < txn->geo.first_unallocated &&
-                     MDBX_PNL_FIRST(txn->tw.relist) < txn->geo.first_unallocated);
+  if (MDBX_PNL_GETSIZE(txn->tw.repnl) >= num) {
+    eASSERT(env, MDBX_PNL_LAST(txn->tw.repnl) < txn->geo.first_unallocated &&
+                     MDBX_PNL_FIRST(txn->tw.repnl) < txn->geo.first_unallocated);
     if (likely(num == 1)) {
       eASSERT(env, !(flags & ALLOC_RESERVE));
-      pgno = relist_get_single(txn);
+      pgno = repnl_get_single(txn);
       goto done;
     }
-    pgno = relist_get_sequence(txn, num, flags);
+    pgno = repnl_get_sequence(txn, num, flags);
     if (likely(pgno))
       goto done;
   }
   flags -= ALLOC_SHOULD_SCAN;
   if (ret.err == MDBX_SUCCESS) {
-    TRACE("%s: last id #%" PRIaTXN ", re-len %zu", "continue-search", id, MDBX_PNL_GETSIZE(txn->tw.relist));
+    TRACE("%s: last id #%" PRIaTXN ", re-len %zu", "continue-search", id, MDBX_PNL_GETSIZE(txn->tw.repnl));
     goto next_gc;
   }
 
 depleted_gc:
-  TRACE("%s: last id #%" PRIaTXN ", re-len %zu", "gc-depleted", id, MDBX_PNL_GETSIZE(txn->tw.relist));
+  TRACE("%s: last id #%" PRIaTXN ", re-len %zu", "gc-depleted", id, MDBX_PNL_GETSIZE(txn->tw.repnl));
   ret.err = MDBX_NOTFOUND;
   if (flags & ALLOC_SHOULD_SCAN)
     goto scan;
@@ -22576,7 +22577,7 @@ done:
   if (likely((flags & ALLOC_RESERVE) == 0)) {
     if (pgno) {
       eASSERT(env, pgno + num <= txn->geo.first_unallocated && pgno >= NUM_METAS);
-      eASSERT(env, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
+      eASSERT(env, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
     } else {
       pgno = txn->geo.first_unallocated;
       txn->geo.first_unallocated += (pgno_t)num;
@@ -22588,7 +22589,7 @@ done:
     if (unlikely(ret.err != MDBX_SUCCESS)) {
     fail:
       eASSERT(env, ret.err != MDBX_SUCCESS);
-      eASSERT(env, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
+      eASSERT(env, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
       int level;
       const char *what;
       if (flags & ALLOC_RESERVE) {
@@ -22604,7 +22605,7 @@ done:
                   "unable alloc %zu %s, alloc-flags 0x%x, err %d, txn-flags "
                   "0x%x, re-list-len %zu, loose-count %zu, gc: height %u, "
                   "branch %zu, leaf %zu, large %zu, entries %zu\n",
-                  num, what, flags, ret.err, txn->flags, MDBX_PNL_GETSIZE(txn->tw.relist), txn->tw.loose_count,
+                  num, what, flags, ret.err, txn->flags, MDBX_PNL_GETSIZE(txn->tw.repnl), txn->tw.loose_count,
                   txn->dbs[FREE_DBI].height, (size_t)txn->dbs[FREE_DBI].branch_pages,
                   (size_t)txn->dbs[FREE_DBI].leaf_pages, (size_t)txn->dbs[FREE_DBI].large_pages,
                   (size_t)txn->dbs[FREE_DBI].items);
@@ -22653,8 +22654,8 @@ __hot pgr_t gc_alloc_single(const MDBX_cursor *const mc) {
     return ret;
   }
 
-  if (likely(MDBX_PNL_GETSIZE(txn->tw.relist) > 0))
-    return page_alloc_finalize(txn->env, txn, mc, relist_get_single(txn), 1);
+  if (likely(MDBX_PNL_GETSIZE(txn->tw.repnl) > 0))
+    return page_alloc_finalize(txn->env, txn, mc, repnl_get_single(txn), 1);
 
   return gc_alloc_ex(mc, 1, ALLOC_DEFAULT);
 }
@@ -22669,7 +22670,7 @@ MDBX_MAYBE_UNUSED static inline const char *dbg_prefix(const gcu_t *ctx) {
   return is_lifo(ctx->cursor.txn) ? "    lifo" : "    fifo";
 }
 
-static inline size_t backlog_size(MDBX_txn *txn) { return MDBX_PNL_GETSIZE(txn->tw.relist) + txn->tw.loose_count; }
+static inline size_t backlog_size(MDBX_txn *txn) { return MDBX_PNL_GETSIZE(txn->tw.repnl) + txn->tw.loose_count; }
 
 static int clean_stored_retired(MDBX_txn *txn, gcu_t *ctx) {
   int err = MDBX_SUCCESS;
@@ -22730,35 +22731,35 @@ static int prepare_backlog(MDBX_txn *txn, gcu_t *ctx) {
   tASSERT(txn, is_pointed(&ctx->cursor) || txn->dbs[FREE_DBI].leaf_pages == 0);
 
   const intptr_t retired_left = MDBX_PNL_SIZEOF(txn->tw.retired_pages) - ctx->retired_stored;
-  size_t for_relist = 0;
+  size_t for_repnl = 0;
   if (MDBX_ENABLE_BIGFOOT && retired_left > 0) {
-    for_relist = (retired_left + txn->env->maxgc_large1page - 1) / txn->env->maxgc_large1page;
+    for_repnl = (retired_left + txn->env->maxgc_large1page - 1) / txn->env->maxgc_large1page;
     const size_t per_branch_page = txn->env->maxgc_per_branch;
-    for (size_t entries = for_relist; entries > 1; for_split += entries)
+    for (size_t entries = for_repnl; entries > 1; for_split += entries)
       entries = (entries + per_branch_page - 1) / per_branch_page;
   } else if (!MDBX_ENABLE_BIGFOOT && retired_left != 0) {
-    for_relist = largechunk_npages(txn->env, MDBX_PNL_SIZEOF(txn->tw.retired_pages));
+    for_repnl = largechunk_npages(txn->env, MDBX_PNL_SIZEOF(txn->tw.retired_pages));
   }
 
   const size_t for_tree_before_touch = for_cow + for_rebalance + for_split;
   const size_t for_tree_after_touch = for_rebalance + for_split;
-  const size_t for_all_before_touch = for_relist + for_tree_before_touch;
-  const size_t for_all_after_touch = for_relist + for_tree_after_touch;
+  const size_t for_all_before_touch = for_repnl + for_tree_before_touch;
+  const size_t for_all_after_touch = for_repnl + for_tree_after_touch;
 
-  if (likely(for_relist < 2 && backlog_size(txn) > for_all_before_touch) &&
+  if (likely(for_repnl < 2 && backlog_size(txn) > for_all_before_touch) &&
       (ctx->cursor.top < 0 || is_modifable(txn, ctx->cursor.pg[ctx->cursor.top])))
     return MDBX_SUCCESS;
 
   TRACE(">> retired-stored %zu, left %zi, backlog %zu, need %zu (4list %zu, "
         "4split %zu, "
         "4cow %zu, 4tree %zu)",
-        ctx->retired_stored, retired_left, backlog_size(txn), for_all_before_touch, for_relist, for_split, for_cow,
+        ctx->retired_stored, retired_left, backlog_size(txn), for_all_before_touch, for_repnl, for_split, for_cow,
         for_tree_before_touch);
 
   int err = touch_gc(ctx);
   TRACE("== after-touch, backlog %zu, err %d", backlog_size(txn), err);
 
-  if (!MDBX_ENABLE_BIGFOOT && unlikely(for_relist > 1) &&
+  if (!MDBX_ENABLE_BIGFOOT && unlikely(for_repnl > 1) &&
       MDBX_PNL_GETSIZE(txn->tw.retired_pages) != ctx->retired_stored && err == MDBX_SUCCESS) {
     if (unlikely(ctx->retired_stored)) {
       err = clean_stored_retired(txn, ctx);
@@ -22767,9 +22768,9 @@ static int prepare_backlog(MDBX_txn *txn, gcu_t *ctx) {
       if (!ctx->retired_stored)
         return /* restart by tail-recursion */ prepare_backlog(txn, ctx);
     }
-    err = gc_alloc_ex(&ctx->cursor, for_relist, ALLOC_RESERVE).err;
+    err = gc_alloc_ex(&ctx->cursor, for_repnl, ALLOC_RESERVE).err;
     TRACE("== after-4linear, backlog %zu, err %d", backlog_size(txn), err);
-    cASSERT(&ctx->cursor, backlog_size(txn) >= for_relist || err != MDBX_SUCCESS);
+    cASSERT(&ctx->cursor, backlog_size(txn) >= for_repnl || err != MDBX_SUCCESS);
   }
 
   while (backlog_size(txn) < for_all_after_touch && err == MDBX_SUCCESS)
@@ -22804,10 +22805,10 @@ static inline void zeroize_reserved(const MDBX_env *env, MDBX_val pnl) {
 
 static int gcu_loose(MDBX_txn *txn, gcu_t *ctx) {
   tASSERT(txn, txn->tw.loose_count > 0);
-  /* Return loose page numbers to tw.relist,
+  /* Return loose page numbers to tw.repnl,
    * though usually none are left at this point.
    * The pages themselves remain in dirtylist. */
-  if (unlikely(!txn->tw.gc.reclaimed && txn->tw.gc.last_reclaimed < 1)) {
+  if (unlikely(!txn->tw.gc.retxl && txn->tw.gc.last_reclaimed < 1)) {
     TRACE("%s: try allocate gc-slot for %zu loose-pages", dbg_prefix(ctx), txn->tw.loose_count);
     int err = gc_alloc_ex(&ctx->cursor, 0, ALLOC_RESERVE).err;
     if (err == MDBX_SUCCESS) {
@@ -22816,7 +22817,7 @@ static int gcu_loose(MDBX_txn *txn, gcu_t *ctx) {
     }
 
     /* Put loose page numbers in tw.retired_pages,
-     * since unable to return ones to tw.relist. */
+     * since unable to return ones to tw.repnl. */
     err = pnl_need(&txn->tw.retired_pages, txn->tw.loose_count);
     if (unlikely(err != MDBX_SUCCESS))
       return err;
@@ -22828,10 +22829,10 @@ static int gcu_loose(MDBX_txn *txn, gcu_t *ctx) {
     TRACE("%s: append %zu loose-pages to retired-pages", dbg_prefix(ctx), txn->tw.loose_count);
   } else {
     /* Room for loose pages + temp PNL with same */
-    int err = pnl_need(&txn->tw.relist, 2 * txn->tw.loose_count + 2);
+    int err = pnl_need(&txn->tw.repnl, 2 * txn->tw.loose_count + 2);
     if (unlikely(err != MDBX_SUCCESS))
       return err;
-    pnl_t loose = txn->tw.relist + MDBX_PNL_ALLOCLEN(txn->tw.relist) - txn->tw.loose_count - 1;
+    pnl_t loose = txn->tw.repnl + MDBX_PNL_ALLOCLEN(txn->tw.repnl) - txn->tw.loose_count - 1;
     size_t count = 0;
     for (page_t *lp = txn->tw.loose_pages; lp; lp = page_next(lp)) {
       tASSERT(txn, lp->flags == P_LOOSE);
@@ -22842,7 +22843,7 @@ static int gcu_loose(MDBX_txn *txn, gcu_t *ctx) {
     tASSERT(txn, count == txn->tw.loose_count);
     MDBX_PNL_SETSIZE(loose, count);
     pnl_sort(loose, txn->geo.first_unallocated);
-    pnl_merge(txn->tw.relist, loose);
+    pnl_merge(txn->tw.repnl, loose);
     TRACE("%s: append %zu loose-pages to reclaimed-pages", dbg_prefix(ctx), txn->tw.loose_count);
   }
 
@@ -23017,16 +23018,15 @@ typedef struct gcu_rid_result {
 static rid_t get_rid_for_reclaimed(MDBX_txn *txn, gcu_t *ctx, const size_t left) {
   rid_t r;
   if (is_lifo(txn)) {
-    if (txn->tw.gc.reclaimed == nullptr) {
-      txn->tw.gc.reclaimed = txl_alloc();
-      if (unlikely(!txn->tw.gc.reclaimed)) {
+    if (txn->tw.gc.retxl == nullptr) {
+      txn->tw.gc.retxl = txl_alloc();
+      if (unlikely(!txn->tw.gc.retxl)) {
         r.err = MDBX_ENOMEM;
         goto return_error;
       }
     }
-    if (MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) < txl_max &&
-        left > (MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) - ctx->reused_slot) * txn->env->maxgc_large1page &&
-        !ctx->dense) {
+    if (MDBX_PNL_GETSIZE(txn->tw.gc.retxl) < txl_max &&
+        left > (MDBX_PNL_GETSIZE(txn->tw.gc.retxl) - ctx->reused_slot) * txn->env->maxgc_large1page && !ctx->dense) {
       /* Hужен свободный для для сохранения списка страниц. */
       bool need_cleanup = false;
       txnid_t snap_oldest = 0;
@@ -23035,11 +23035,11 @@ static rid_t get_rid_for_reclaimed(MDBX_txn *txn, gcu_t *ctx, const size_t left)
         r.err = gc_alloc_ex(&ctx->cursor, 0, ALLOC_RESERVE).err;
         snap_oldest = txn->env->lck->cached_oldest.weak;
         if (likely(r.err == MDBX_SUCCESS)) {
-          TRACE("%s: took @%" PRIaTXN " from GC", dbg_prefix(ctx), MDBX_PNL_LAST(txn->tw.gc.reclaimed));
+          TRACE("%s: took @%" PRIaTXN " from GC", dbg_prefix(ctx), MDBX_PNL_LAST(txn->tw.gc.retxl));
           need_cleanup = true;
         }
-      } while (r.err == MDBX_SUCCESS && MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) < txl_max &&
-               left > (MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) - ctx->reused_slot) * txn->env->maxgc_large1page);
+      } while (r.err == MDBX_SUCCESS && MDBX_PNL_GETSIZE(txn->tw.gc.retxl) < txl_max &&
+               left > (MDBX_PNL_GETSIZE(txn->tw.gc.retxl) - ctx->reused_slot) * txn->env->maxgc_large1page);
 
       if (likely(r.err == MDBX_SUCCESS)) {
         TRACE("%s: got enough from GC.", dbg_prefix(ctx));
@@ -23048,12 +23048,12 @@ static rid_t get_rid_for_reclaimed(MDBX_txn *txn, gcu_t *ctx, const size_t left)
         /* LY: some troubles... */
         goto return_error;
 
-      if (MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed)) {
+      if (MDBX_PNL_GETSIZE(txn->tw.gc.retxl)) {
         if (need_cleanup) {
-          txl_sort(txn->tw.gc.reclaimed);
+          txl_sort(txn->tw.gc.retxl);
           ctx->cleaned_slot = 0;
         }
-        ctx->rid = MDBX_PNL_LAST(txn->tw.gc.reclaimed);
+        ctx->rid = MDBX_PNL_LAST(txn->tw.gc.retxl);
       } else {
         tASSERT(txn, txn->tw.gc.last_reclaimed == 0);
         if (unlikely(txn_snapshot_oldest(txn) != snap_oldest))
@@ -23068,14 +23068,14 @@ static rid_t get_rid_for_reclaimed(MDBX_txn *txn, gcu_t *ctx, const size_t left)
 
       /* В GC нет годных к переработке записей,
        * будем использовать свободные id в обратном порядке. */
-      while (MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) < txl_max &&
-             left > (MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) - ctx->reused_slot) * txn->env->maxgc_large1page) {
+      while (MDBX_PNL_GETSIZE(txn->tw.gc.retxl) < txl_max &&
+             left > (MDBX_PNL_GETSIZE(txn->tw.gc.retxl) - ctx->reused_slot) * txn->env->maxgc_large1page) {
         if (unlikely(ctx->rid <= MIN_TXNID)) {
           ctx->dense = true;
-          if (unlikely(MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) <= ctx->reused_slot)) {
-            NOTICE("** restart: reserve depleted (reused_gc_slot %zu >= "
-                   "gc.reclaimed %zu)",
-                   ctx->reused_slot, MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed));
+          if (unlikely(MDBX_PNL_GETSIZE(txn->tw.gc.retxl) <= ctx->reused_slot)) {
+            VERBOSE("** restart: reserve depleted (reused_gc_slot %zu >= "
+                    "gc.reclaimed %zu)",
+                    ctx->reused_slot, MDBX_PNL_GETSIZE(txn->tw.gc.retxl));
             goto return_restart;
           }
           break;
@@ -23103,7 +23103,7 @@ static rid_t get_rid_for_reclaimed(MDBX_txn *txn, gcu_t *ctx, const size_t left)
         }
 
         tASSERT(txn, !ctx->dense);
-        r.err = txl_append(&txn->tw.gc.reclaimed, ctx->rid);
+        r.err = txl_append(&txn->tw.gc.retxl, ctx->rid);
         if (unlikely(r.err != MDBX_SUCCESS))
           goto return_error;
 
@@ -23127,12 +23127,12 @@ static rid_t get_rid_for_reclaimed(MDBX_txn *txn, gcu_t *ctx, const size_t left)
       }
     }
 
-    const size_t i = MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) - ctx->reused_slot;
-    tASSERT(txn, i > 0 && i <= MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed));
-    r.rid = txn->tw.gc.reclaimed[i];
+    const size_t i = MDBX_PNL_GETSIZE(txn->tw.gc.retxl) - ctx->reused_slot;
+    tASSERT(txn, i > 0 && i <= MDBX_PNL_GETSIZE(txn->tw.gc.retxl));
+    r.rid = txn->tw.gc.retxl[i];
     TRACE("%s: take @%" PRIaTXN " from lifo-reclaimed[%zu]", dbg_prefix(ctx), r.rid, i);
   } else {
-    tASSERT(txn, txn->tw.gc.reclaimed == nullptr);
+    tASSERT(txn, txn->tw.gc.retxl == nullptr);
     if (unlikely(ctx->rid == 0)) {
       ctx->rid = txn_snapshot_oldest(txn);
       MDBX_val key;
@@ -23181,9 +23181,9 @@ return_error:
   return r;
 }
 
-/* Cleanups reclaimed GC (aka freeDB) records, saves the retired-list (aka
+/* Cleanups retxl GC (aka freeDB) records, saves the retired-list (aka
  * freelist) of current transaction to GC, puts back into GC leftover of the
- * reclaimed pages with chunking. This recursive changes the reclaimed-list,
+ * retxl pages with chunking. This recursive changes the retxl-list,
  * loose-list and retired-list. Keep trying until it stabilizes.
  *
  * NOTE: This code is a consequence of many iterations of adding crutches (aka
@@ -23197,7 +23197,7 @@ int gc_update(MDBX_txn *txn, gcu_t *ctx) {
   txn->cursors[FREE_DBI] = &ctx->cursor;
   int rc;
 
-  /* txn->tw.relist[] can grow and shrink during this call.
+  /* txn->tw.repnl[] can grow and shrink during this call.
    * txn->tw.gc.last_reclaimed and txn->tw.retired_pages[] can only grow.
    * But page numbers cannot disappear from txn->tw.retired_pages[]. */
 retry_clean_adj:
@@ -23206,7 +23206,7 @@ retry:
   ctx->loop += !(ctx->prev_first_unallocated > txn->geo.first_unallocated);
   TRACE(">> restart, loop %u", ctx->loop);
 
-  tASSERT(txn, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
+  tASSERT(txn, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
   tASSERT(txn, dpl_check(txn));
   if (unlikely(/* paranoia */ ctx->loop > ((MDBX_DEBUG > 0) ? 12 : 42))) {
     ERROR("txn #%" PRIaTXN " too more loops %u, bailout", txn->txnid, ctx->loop);
@@ -23233,17 +23233,17 @@ retry:
     /* Come back here after each Put() in case retired-list changed */
     TRACE("%s", " >> continue");
 
-    tASSERT(txn, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
+    tASSERT(txn, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
     MDBX_val key, data;
     if (is_lifo(txn)) {
-      if (ctx->cleaned_slot < (txn->tw.gc.reclaimed ? MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) : 0)) {
+      if (ctx->cleaned_slot < (txn->tw.gc.retxl ? MDBX_PNL_GETSIZE(txn->tw.gc.retxl) : 0)) {
         ctx->reserved = 0;
         ctx->cleaned_slot = 0;
         ctx->reused_slot = 0;
         ctx->fill_idx = ~0u;
         /* LY: cleanup reclaimed records. */
         do {
-          ctx->cleaned_id = txn->tw.gc.reclaimed[++ctx->cleaned_slot];
+          ctx->cleaned_id = txn->tw.gc.retxl[++ctx->cleaned_slot];
           tASSERT(txn, ctx->cleaned_slot > 0 && ctx->cleaned_id <= env->lck->cached_oldest.weak);
           key.iov_base = &ctx->cleaned_id;
           key.iov_len = sizeof(ctx->cleaned_id);
@@ -23261,8 +23261,8 @@ retry:
           rc = cursor_del(&ctx->cursor, 0);
           if (unlikely(rc != MDBX_SUCCESS))
             goto bailout;
-        } while (ctx->cleaned_slot < MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed));
-        txl_sort(txn->tw.gc.reclaimed);
+        } while (ctx->cleaned_slot < MDBX_PNL_GETSIZE(txn->tw.gc.retxl));
+        txl_sort(txn->tw.gc.retxl);
       }
     } else {
       /* Удаляем оставшиеся вынутые из GC записи. */
@@ -23303,7 +23303,7 @@ retry:
       }
     }
 
-    tASSERT(txn, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
+    tASSERT(txn, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
     tASSERT(txn, dpl_check(txn));
     if (AUDIT_ENABLED()) {
       rc = audit_ex(txn, ctx->retired_stored, false);
@@ -23313,7 +23313,7 @@ retry:
 
     /* return suitable into unallocated space */
     if (txn_refund(txn)) {
-      tASSERT(txn, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
+      tASSERT(txn, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
       if (AUDIT_ENABLED()) {
         rc = audit_ex(txn, ctx->retired_stored, false);
         if (unlikely(rc != MDBX_SUCCESS))
@@ -23332,14 +23332,14 @@ retry:
       tASSERT(txn, txn->tw.loose_pages == 0);
     }
 
-    if (unlikely(ctx->reserved > MDBX_PNL_GETSIZE(txn->tw.relist)) &&
-        (ctx->loop < 5 || ctx->reserved - MDBX_PNL_GETSIZE(txn->tw.relist) > env->maxgc_large1page / 2)) {
+    if (unlikely(ctx->reserved > MDBX_PNL_GETSIZE(txn->tw.repnl)) &&
+        (ctx->loop < 5 || ctx->reserved - MDBX_PNL_GETSIZE(txn->tw.repnl) > env->maxgc_large1page / 2)) {
       TRACE("%s: reclaimed-list changed %zu -> %zu, retry", dbg_prefix(ctx), ctx->amount,
-            MDBX_PNL_GETSIZE(txn->tw.relist));
-      ctx->reserve_adj += ctx->reserved - MDBX_PNL_GETSIZE(txn->tw.relist);
+            MDBX_PNL_GETSIZE(txn->tw.repnl));
+      ctx->reserve_adj += ctx->reserved - MDBX_PNL_GETSIZE(txn->tw.repnl);
       goto retry;
     }
-    ctx->amount = MDBX_PNL_GETSIZE(txn->tw.relist);
+    ctx->amount = MDBX_PNL_GETSIZE(txn->tw.repnl);
 
     if (ctx->retired_stored < MDBX_PNL_GETSIZE(txn->tw.retired_pages)) {
       /* store retired-list into GC */
@@ -23349,7 +23349,7 @@ retry:
       continue;
     }
 
-    tASSERT(txn, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
+    tASSERT(txn, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
     tASSERT(txn, txn->tw.loose_count == 0);
 
     TRACE("%s", " >> reserving");
@@ -23363,7 +23363,7 @@ retry:
           "lifo-reclaimed-slots %zu, "
           "reused-gc-slots %zu",
           dbg_prefix(ctx), ctx->amount, ctx->reserved, ctx->reserve_adj, left,
-          txn->tw.gc.reclaimed ? MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) : 0, ctx->reused_slot);
+          txn->tw.gc.retxl ? MDBX_PNL_GETSIZE(txn->tw.gc.retxl) : 0, ctx->reused_slot);
     if (0 >= (intptr_t)left)
       break;
 
@@ -23381,14 +23381,14 @@ retry:
 
     size_t chunk = left;
     if (unlikely(left > env->maxgc_large1page)) {
-      const size_t avail_gc_slots = txn->tw.gc.reclaimed ? MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) - ctx->reused_slot + 1
+      const size_t avail_gc_slots = txn->tw.gc.retxl         ? MDBX_PNL_GETSIZE(txn->tw.gc.retxl) - ctx->reused_slot + 1
                                     : (ctx->rid < INT16_MAX) ? (size_t)ctx->rid
                                                              : INT16_MAX;
       if (likely(avail_gc_slots > 1)) {
 #if MDBX_ENABLE_BIGFOOT
         chunk = env->maxgc_large1page;
         if (avail_gc_slots < INT16_MAX && unlikely(left > env->maxgc_large1page * avail_gc_slots))
-          /* TODO: Можно смотреть последовательности какой длины есть в relist
+          /* TODO: Можно смотреть последовательности какой длины есть в repnl
            *       и пробовать нарезать куски соответствующего размера.
            *       Смысл в том, чтобы не дробить последовательности страниц,
            *       а использовать целиком. */
@@ -23408,8 +23408,8 @@ retry:
             size_t avail = ((pgno2bytes(env, span) - PAGEHDRSZ) / sizeof(pgno_t)) /* - 1 + span */;
             if (tail > avail) {
               for (size_t i = ctx->amount - span; i > 0; --i) {
-                if (MDBX_PNL_ASCENDING ? (txn->tw.relist[i] + span)
-                                       : (txn->tw.relist[i] - span) == txn->tw.relist[i + span]) {
+                if (MDBX_PNL_ASCENDING ? (txn->tw.repnl[i] + span)
+                                       : (txn->tw.repnl[i] - span) == txn->tw.repnl[i + span]) {
                   span += 1;
                   avail = ((pgno2bytes(env, span) - PAGEHDRSZ) / sizeof(pgno_t)) - 1 + span;
                   if (avail >= tail)
@@ -23450,7 +23450,7 @@ retry:
           ctx->reserved + chunk + 1, reservation_gc_id);
     prepare_backlog(txn, ctx);
     rc = cursor_put(&ctx->cursor, &key, &data, MDBX_RESERVE | MDBX_NOOVERWRITE);
-    tASSERT(txn, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
+    tASSERT(txn, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
     if (unlikely(rc != MDBX_SUCCESS))
       goto bailout;
 
@@ -23461,14 +23461,14 @@ retry:
     continue;
   }
 
-  tASSERT(txn, ctx->cleaned_slot == (txn->tw.gc.reclaimed ? MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) : 0));
+  tASSERT(txn, ctx->cleaned_slot == (txn->tw.gc.retxl ? MDBX_PNL_GETSIZE(txn->tw.gc.retxl) : 0));
 
   TRACE("%s", " >> filling");
   /* Fill in the reserved records */
   size_t excess_slots = 0;
-  ctx->fill_idx = txn->tw.gc.reclaimed ? MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) - ctx->reused_slot : ctx->reused_slot;
+  ctx->fill_idx = txn->tw.gc.retxl ? MDBX_PNL_GETSIZE(txn->tw.gc.retxl) - ctx->reused_slot : ctx->reused_slot;
   rc = MDBX_SUCCESS;
-  tASSERT(txn, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
+  tASSERT(txn, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
   tASSERT(txn, dpl_check(txn));
   if (ctx->amount) {
     MDBX_val key, data;
@@ -23476,7 +23476,7 @@ retry:
     key.iov_base = data.iov_base = nullptr;
 
     size_t left = ctx->amount, excess = 0;
-    if (txn->tw.gc.reclaimed == nullptr) {
+    if (txn->tw.gc.retxl == nullptr) {
       tASSERT(txn, is_lifo(txn) == 0);
       rc = outer_first(&ctx->cursor, &key, &data);
       if (unlikely(rc != MDBX_SUCCESS)) {
@@ -23489,33 +23489,33 @@ retry:
 
     while (true) {
       txnid_t fill_gc_id;
-      TRACE("%s: left %zu of %zu", dbg_prefix(ctx), left, MDBX_PNL_GETSIZE(txn->tw.relist));
-      if (txn->tw.gc.reclaimed == nullptr) {
+      TRACE("%s: left %zu of %zu", dbg_prefix(ctx), left, MDBX_PNL_GETSIZE(txn->tw.repnl));
+      if (txn->tw.gc.retxl == nullptr) {
         tASSERT(txn, is_lifo(txn) == 0);
         fill_gc_id = key.iov_base ? unaligned_peek_u64(4, key.iov_base) : MIN_TXNID;
         if (ctx->fill_idx == 0 || fill_gc_id > txn->tw.gc.last_reclaimed) {
           if (!left)
             break;
-          NOTICE("** restart: reserve depleted (fill_idx %zu, fill_id %" PRIaTXN " > last_reclaimed %" PRIaTXN
-                 ", left %zu",
-                 ctx->fill_idx, fill_gc_id, txn->tw.gc.last_reclaimed, left);
+          VERBOSE("** restart: reserve depleted (fill_idx %zu, fill_id %" PRIaTXN " > last_reclaimed %" PRIaTXN
+                  ", left %zu",
+                  ctx->fill_idx, fill_gc_id, txn->tw.gc.last_reclaimed, left);
           ctx->reserve_adj = (ctx->reserve_adj > left) ? ctx->reserve_adj - left : 0;
           goto retry;
         }
         ctx->fill_idx -= 1;
       } else {
         tASSERT(txn, is_lifo(txn) != 0);
-        if (ctx->fill_idx >= MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed)) {
+        if (ctx->fill_idx >= MDBX_PNL_GETSIZE(txn->tw.gc.retxl)) {
           if (!left)
             break;
-          NOTICE("** restart: reserve depleted (fill_idx %zu >= "
-                 "gc.reclaimed %zu, left %zu",
-                 ctx->fill_idx, MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed), left);
+          VERBOSE("** restart: reserve depleted (fill_idx %zu >= "
+                  "gc.reclaimed %zu, left %zu",
+                  ctx->fill_idx, MDBX_PNL_GETSIZE(txn->tw.gc.retxl), left);
           ctx->reserve_adj = (ctx->reserve_adj > left) ? ctx->reserve_adj - left : 0;
           goto retry;
         }
         ctx->fill_idx += 1;
-        fill_gc_id = txn->tw.gc.reclaimed[ctx->fill_idx];
+        fill_gc_id = txn->tw.gc.retxl[ctx->fill_idx];
         TRACE("%s: seek-reservation @%" PRIaTXN " at gc.reclaimed[%zu]", dbg_prefix(ctx), fill_gc_id, ctx->fill_idx);
         key.iov_base = &fill_gc_id;
         key.iov_len = sizeof(fill_gc_id);
@@ -23523,7 +23523,7 @@ retry:
         if (unlikely(rc != MDBX_SUCCESS))
           goto bailout;
       }
-      tASSERT(txn, ctx->cleaned_slot == (txn->tw.gc.reclaimed ? MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) : 0));
+      tASSERT(txn, ctx->cleaned_slot == (txn->tw.gc.retxl ? MDBX_PNL_GETSIZE(txn->tw.gc.retxl) : 0));
       tASSERT(txn, fill_gc_id > 0 && fill_gc_id <= env->lck->cached_oldest.weak);
       key.iov_base = &fill_gc_id;
       key.iov_len = sizeof(fill_gc_id);
@@ -23547,16 +23547,16 @@ retry:
         goto bailout;
       zeroize_reserved(env, data);
 
-      if (unlikely(txn->tw.loose_count || ctx->amount != MDBX_PNL_GETSIZE(txn->tw.relist))) {
+      if (unlikely(txn->tw.loose_count || ctx->amount != MDBX_PNL_GETSIZE(txn->tw.repnl))) {
         NOTICE("** restart: reclaimed-list changed (%zu -> %zu, loose +%zu)", ctx->amount,
-               MDBX_PNL_GETSIZE(txn->tw.relist), txn->tw.loose_count);
+               MDBX_PNL_GETSIZE(txn->tw.repnl), txn->tw.loose_count);
         if (ctx->loop < 5 || (ctx->loop > 10 && (ctx->loop & 1)))
           goto retry_clean_adj;
         goto retry;
       }
 
-      if (unlikely(txn->tw.gc.reclaimed ? ctx->cleaned_slot < MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed)
-                                        : ctx->cleaned_id < txn->tw.gc.last_reclaimed)) {
+      if (unlikely(txn->tw.gc.retxl ? ctx->cleaned_slot < MDBX_PNL_GETSIZE(txn->tw.gc.retxl)
+                                    : ctx->cleaned_id < txn->tw.gc.last_reclaimed)) {
         NOTICE("%s", "** restart: reclaimed-slots changed");
         goto retry;
       }
@@ -23569,11 +23569,11 @@ retry:
 
       pgno_t *dst = data.iov_base;
       *dst++ = (pgno_t)chunk;
-      pgno_t *src = MDBX_PNL_BEGIN(txn->tw.relist) + left - chunk;
+      pgno_t *src = MDBX_PNL_BEGIN(txn->tw.repnl) + left - chunk;
       memcpy(dst, src, chunk * sizeof(pgno_t));
       pgno_t *from = src, *to = src + chunk;
       TRACE("%s: fill %zu [ %zu:%" PRIaPGNO "...%zu:%" PRIaPGNO "] @%" PRIaTXN, dbg_prefix(ctx), chunk,
-            from - txn->tw.relist, from[0], to - txn->tw.relist, to[-1], fill_gc_id);
+            from - txn->tw.repnl, from[0], to - txn->tw.repnl, to[-1], fill_gc_id);
 
       left -= chunk;
       if (AUDIT_ENABLED()) {
@@ -23584,7 +23584,7 @@ retry:
 
     next:
 
-      if (txn->tw.gc.reclaimed == nullptr) {
+      if (txn->tw.gc.retxl == nullptr) {
         tASSERT(txn, is_lifo(txn) == 0);
         rc = outer_next(&ctx->cursor, &key, &data, MDBX_NEXT);
         if (unlikely(rc != MDBX_SUCCESS)) {
@@ -23609,9 +23609,9 @@ retry:
   }
 
   tASSERT(txn, rc == MDBX_SUCCESS);
-  if (unlikely(txn->tw.loose_count != 0 || ctx->amount != MDBX_PNL_GETSIZE(txn->tw.relist))) {
+  if (unlikely(txn->tw.loose_count != 0 || ctx->amount != MDBX_PNL_GETSIZE(txn->tw.repnl))) {
     NOTICE("** restart: got %zu loose pages (reclaimed-list %zu -> %zu)", txn->tw.loose_count, ctx->amount,
-           MDBX_PNL_GETSIZE(txn->tw.relist));
+           MDBX_PNL_GETSIZE(txn->tw.repnl));
     goto retry;
   }
 
@@ -23624,12 +23624,12 @@ retry:
       goto retry;
   }
 
-  tASSERT(txn, txn->tw.gc.reclaimed == nullptr || ctx->cleaned_slot == MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed));
+  tASSERT(txn, txn->tw.gc.retxl == nullptr || ctx->cleaned_slot == MDBX_PNL_GETSIZE(txn->tw.gc.retxl));
 
 bailout:
   txn->cursors[FREE_DBI] = ctx->cursor.next;
 
-  MDBX_PNL_SETSIZE(txn->tw.relist, 0);
+  MDBX_PNL_SETSIZE(txn->tw.repnl, 0);
 #if MDBX_ENABLE_PROFGC
   env->lck->pgops.gc_prof.wloops += (uint32_t)ctx->loop;
 #endif /* MDBX_ENABLE_PROFGC */
@@ -32128,8 +32128,8 @@ status_done:
 
   reclaim:
     DEBUG("reclaim %zu %s page %" PRIaPGNO, npages, "dirty", pgno);
-    rc = pnl_insert_span(&txn->tw.relist, pgno, npages);
-    tASSERT(txn, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
+    rc = pnl_insert_span(&txn->tw.repnl, pgno, npages);
+    tASSERT(txn, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
     tASSERT(txn, dpl_check(txn));
     return rc;
   }
@@ -32199,7 +32199,7 @@ __hot int __must_check_result page_dirty(MDBX_txn *txn, page_t *mp, size_t npage
     if (txn->tw.loose_count) {
       page_t *lp = txn->tw.loose_pages;
       DEBUG("purge-and-reclaim loose page %" PRIaPGNO, lp->pgno);
-      rc = pnl_insert_span(&txn->tw.relist, lp->pgno, 1);
+      rc = pnl_insert_span(&txn->tw.repnl, lp->pgno, 1);
       if (unlikely(rc != MDBX_SUCCESS))
         goto bailout;
       size_t di = dpl_search(txn, lp->pgno);
@@ -32265,7 +32265,7 @@ size_t page_subleaf2_reserve(const MDBX_env *env, size_t host_page_room, size_t 
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
-MDBX_INTERNAL pnl_t pnl_alloc(size_t size) {
+pnl_t pnl_alloc(size_t size) {
   size_t bytes = pnl_size2bytes(size);
   pnl_t pnl = osal_malloc(bytes);
   if (likely(pnl)) {
@@ -32280,12 +32280,12 @@ MDBX_INTERNAL pnl_t pnl_alloc(size_t size) {
   return pnl;
 }
 
-MDBX_INTERNAL void pnl_free(pnl_t pnl) {
+void pnl_free(pnl_t pnl) {
   if (likely(pnl))
     osal_free(pnl - 1);
 }
 
-MDBX_INTERNAL void pnl_shrink(pnl_t __restrict *__restrict ppnl) {
+void pnl_shrink(pnl_t __restrict *__restrict ppnl) {
   assert(pnl_bytes2size(pnl_size2bytes(MDBX_PNL_INITIAL)) >= MDBX_PNL_INITIAL &&
          pnl_bytes2size(pnl_size2bytes(MDBX_PNL_INITIAL)) < MDBX_PNL_INITIAL * 3 / 2);
   assert(MDBX_PNL_GETSIZE(*ppnl) <= PAGELIST_LIMIT && MDBX_PNL_ALLOCLEN(*ppnl) >= MDBX_PNL_GETSIZE(*ppnl));
@@ -32304,7 +32304,7 @@ MDBX_INTERNAL void pnl_shrink(pnl_t __restrict *__restrict ppnl) {
   }
 }
 
-MDBX_INTERNAL int pnl_reserve(pnl_t __restrict *__restrict ppnl, const size_t wanna) {
+int pnl_reserve(pnl_t __restrict *__restrict ppnl, const size_t wanna) {
   const size_t allocated = MDBX_PNL_ALLOCLEN(*ppnl);
   assert(MDBX_PNL_GETSIZE(*ppnl) <= PAGELIST_LIMIT && MDBX_PNL_ALLOCLEN(*ppnl) >= MDBX_PNL_GETSIZE(*ppnl));
   if (likely(allocated >= wanna))
@@ -32361,15 +32361,15 @@ static __always_inline int __must_check_result pnl_append_stepped(unsigned step,
   return MDBX_SUCCESS;
 }
 
-__hot MDBX_INTERNAL int __must_check_result spill_append_span(__restrict pnl_t *ppnl, pgno_t pgno, size_t n) {
+__hot int __must_check_result spill_append_span(__restrict pnl_t *ppnl, pgno_t pgno, size_t n) {
   return pnl_append_stepped(2, ppnl, pgno << 1, n);
 }
 
-__hot MDBX_INTERNAL int __must_check_result pnl_append_span(__restrict pnl_t *ppnl, pgno_t pgno, size_t n) {
+__hot int __must_check_result pnl_append_span(__restrict pnl_t *ppnl, pgno_t pgno, size_t n) {
   return pnl_append_stepped(1, ppnl, pgno, n);
 }
 
-__hot MDBX_INTERNAL int __must_check_result pnl_insert_span(__restrict pnl_t *ppnl, pgno_t pgno, size_t n) {
+__hot int __must_check_result pnl_insert_span(__restrict pnl_t *ppnl, pgno_t pgno, size_t n) {
   assert(n > 0);
   int rc = pnl_need(ppnl, n);
   if (unlikely(rc != MDBX_SUCCESS))
@@ -32387,7 +32387,7 @@ __hot MDBX_INTERNAL int __must_check_result pnl_insert_span(__restrict pnl_t *pp
   return MDBX_SUCCESS;
 }
 
-__hot __noinline MDBX_INTERNAL bool pnl_check(const const_pnl_t pnl, const size_t limit) {
+__hot __noinline bool pnl_check(const const_pnl_t pnl, const size_t limit) {
   assert(limit >= MIN_PAGENO - MDBX_ENABLE_REFUND);
   if (likely(MDBX_PNL_GETSIZE(pnl))) {
     if (unlikely(MDBX_PNL_GETSIZE(pnl) > PAGELIST_LIMIT))
@@ -32441,7 +32441,7 @@ static __always_inline void pnl_merge_inner(pgno_t *__restrict dst, const pgno_t
   } while (likely(src_b > src_b_detent));
 }
 
-__hot MDBX_INTERNAL size_t pnl_merge(pnl_t dst, const pnl_t src) {
+__hot size_t pnl_merge(pnl_t dst, const pnl_t src) {
   assert(pnl_check_allocated(dst, MAX_PAGENO + 1));
   assert(pnl_check(src, MAX_PAGENO + 1));
   const size_t src_len = MDBX_PNL_GETSIZE(src);
@@ -32477,7 +32477,7 @@ RADIXSORT_IMPL(pgno, pgno_t, MDBX_PNL_EXTRACT_KEY, MDBX_PNL_PREALLOC_FOR_RADIXSO
 
 SORT_IMPL(pgno_sort, false, pgno_t, MDBX_PNL_ORDERED)
 
-__hot __noinline MDBX_INTERNAL void pnl_sort_nochk(pnl_t pnl) {
+__hot __noinline void pnl_sort_nochk(pnl_t pnl) {
   if (likely(MDBX_PNL_GETSIZE(pnl) < MDBX_RADIXSORT_THRESHOLD) ||
       unlikely(!pgno_radixsort(&MDBX_PNL_FIRST(pnl), MDBX_PNL_GETSIZE(pnl))))
     pgno_sort(MDBX_PNL_BEGIN(pnl), MDBX_PNL_END(pnl));
@@ -32485,7 +32485,7 @@ __hot __noinline MDBX_INTERNAL void pnl_sort_nochk(pnl_t pnl) {
 
 SEARCH_IMPL(pgno_bsearch, pgno_t, pgno_t, MDBX_PNL_ORDERED)
 
-__hot __noinline MDBX_INTERNAL size_t pnl_search_nochk(const pnl_t pnl, pgno_t pgno) {
+__hot __noinline size_t pnl_search_nochk(const pnl_t pnl, pgno_t pgno) {
   const pgno_t *begin = MDBX_PNL_BEGIN(pnl);
   const pgno_t *it = pgno_bsearch(begin, MDBX_PNL_GETSIZE(pnl), pgno);
   const pgno_t *end = begin + MDBX_PNL_GETSIZE(pnl);
@@ -32503,7 +32503,7 @@ __hot __noinline MDBX_INTERNAL size_t pnl_search_nochk(const pnl_t pnl, pgno_t p
 static void refund_reclaimed(MDBX_txn *txn) {
   /* Scanning in descend order */
   pgno_t first_unallocated = txn->geo.first_unallocated;
-  const pnl_t pnl = txn->tw.relist;
+  const pnl_t pnl = txn->tw.repnl;
   tASSERT(txn, MDBX_PNL_GETSIZE(pnl) && MDBX_PNL_MOST(pnl) == first_unallocated - 1);
 #if MDBX_PNL_ASCENDING
   size_t i = MDBX_PNL_GETSIZE(pnl);
@@ -32524,7 +32524,7 @@ static void refund_reclaimed(MDBX_txn *txn) {
   VERBOSE("refunded %" PRIaPGNO " pages: %" PRIaPGNO " -> %" PRIaPGNO, txn->geo.first_unallocated - first_unallocated,
           txn->geo.first_unallocated, first_unallocated);
   txn->geo.first_unallocated = first_unallocated;
-  tASSERT(txn, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - 1));
+  tASSERT(txn, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - 1));
 }
 
 static void refund_loose(MDBX_txn *txn) {
@@ -32674,7 +32674,7 @@ bool txn_refund(MDBX_txn *txn) {
     refund_loose(txn);
 
   while (true) {
-    if (MDBX_PNL_GETSIZE(txn->tw.relist) == 0 || MDBX_PNL_MOST(txn->tw.relist) != txn->geo.first_unallocated - 1)
+    if (MDBX_PNL_GETSIZE(txn->tw.repnl) == 0 || MDBX_PNL_MOST(txn->tw.repnl) != txn->geo.first_unallocated - 1)
       break;
 
     refund_reclaimed(txn);
@@ -34665,7 +34665,7 @@ retry:
     goto retry;
   }
   if (likely(!involve) &&
-      (likely(mc->tree != &mc->txn->dbs[FREE_DBI]) || mc->txn->tw.loose_pages || MDBX_PNL_GETSIZE(mc->txn->tw.relist) ||
+      (likely(mc->tree != &mc->txn->dbs[FREE_DBI]) || mc->txn->tw.loose_pages || MDBX_PNL_GETSIZE(mc->txn->tw.repnl) ||
        (mc->flags & z_gcu_preparation) || (mc->txn->flags & txn_gc_drained) || room_threshold)) {
     involve = true;
     goto retry;
@@ -35483,7 +35483,7 @@ static inline size_t txl_bytes2size(const size_t bytes) {
   return size - 2;
 }
 
-MDBX_INTERNAL txl_t txl_alloc(void) {
+txl_t txl_alloc(void) {
   size_t bytes = txl_size2bytes(txl_initial);
   txl_t txl = osal_malloc(bytes);
   if (likely(txl)) {
@@ -35498,12 +35498,12 @@ MDBX_INTERNAL txl_t txl_alloc(void) {
   return txl;
 }
 
-MDBX_INTERNAL void txl_free(txl_t txl) {
+void txl_free(txl_t txl) {
   if (likely(txl))
     osal_free(txl - 1);
 }
 
-MDBX_INTERNAL int txl_reserve(txl_t __restrict *__restrict ptxl, const size_t wanna) {
+int txl_reserve(txl_t __restrict *__restrict ptxl, const size_t wanna) {
   const size_t allocated = (size_t)MDBX_PNL_ALLOCLEN(*ptxl);
   assert(MDBX_PNL_GETSIZE(*ptxl) <= txl_max && MDBX_PNL_ALLOCLEN(*ptxl) >= MDBX_PNL_GETSIZE(*ptxl));
   if (likely(allocated >= wanna))
@@ -35544,9 +35544,9 @@ static __always_inline void txl_xappend(txl_t __restrict txl, txnid_t id) {
 
 #define TXNID_SORT_CMP(first, last) ((first) > (last))
 SORT_IMPL(txnid_sort, false, txnid_t, TXNID_SORT_CMP)
-MDBX_INTERNAL void txl_sort(txl_t txl) { txnid_sort(MDBX_PNL_BEGIN(txl), MDBX_PNL_END(txl)); }
+void txl_sort(txl_t txl) { txnid_sort(MDBX_PNL_BEGIN(txl), MDBX_PNL_END(txl)); }
 
-MDBX_INTERNAL int __must_check_result txl_append(txl_t __restrict *ptxl, txnid_t id) {
+int __must_check_result txl_append(txl_t __restrict *ptxl, txnid_t id) {
   if (unlikely(MDBX_PNL_GETSIZE(*ptxl) == MDBX_PNL_ALLOCLEN(*ptxl))) {
     int rc = txl_need(ptxl, txl_granulate);
     if (unlikely(rc != MDBX_SUCCESS))
@@ -35554,6 +35554,14 @@ MDBX_INTERNAL int __must_check_result txl_append(txl_t __restrict *ptxl, txnid_t
   }
   txl_xappend(*ptxl, id);
   return MDBX_SUCCESS;
+}
+
+__hot bool txl_contain(const txl_t txl, txnid_t id) {
+  const size_t len = MDBX_PNL_GETSIZE(txl);
+  for (size_t i = 1; i <= len; ++i)
+    if (txl[i] == id)
+      return true;
+  return false;
 }
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
@@ -35640,7 +35648,7 @@ void txn_merge(MDBX_txn *const parent, MDBX_txn *const txn, const size_t parent_
   }
 
   /* Remove reclaimed pages from parent's dirty list */
-  const pnl_t reclaimed_list = parent->tw.relist;
+  const pnl_t reclaimed_list = parent->tw.repnl;
   dpl_sift(parent, reclaimed_list, false);
 
   /* Move retired pages from parent's dirty & spilled list to reclaimed */
@@ -35694,7 +35702,7 @@ void txn_merge(MDBX_txn *const parent, MDBX_txn *const txn, const size_t parent_
     }
 
     DEBUG("reclaim retired parent's %u -> %zu %s page %" PRIaPGNO, npages, l, kind, pgno);
-    int err = pnl_insert_span(&parent->tw.relist, pgno, l);
+    int err = pnl_insert_span(&parent->tw.repnl, pgno, l);
     ENSURE(txn->env, err == MDBX_SUCCESS);
   }
   MDBX_PNL_SETSIZE(parent->tw.retired_pages, w);
@@ -36206,8 +36214,8 @@ int txn_renew(MDBX_txn *txn, unsigned flags) {
     txn->tw.spilled.least_removed = 0;
     txn->tw.gc.time_acc = 0;
     txn->tw.gc.last_reclaimed = 0;
-    if (txn->tw.gc.reclaimed)
-      MDBX_PNL_SETSIZE(txn->tw.gc.reclaimed, 0);
+    if (txn->tw.gc.retxl)
+      MDBX_PNL_SETSIZE(txn->tw.gc.retxl, 0);
     env->txn = txn;
 
     if ((txn->flags & MDBX_WRITEMAP) == 0 || MDBX_AVOID_MSYNC) {
@@ -36471,7 +36479,7 @@ int txn_end(MDBX_txn *txn, unsigned mode) {
       /* Export or close DBI handles created in this txn */
       rc = dbi_update(txn, mode & TXN_END_UPDATE);
       pnl_shrink(&txn->tw.retired_pages);
-      pnl_shrink(&txn->tw.relist);
+      pnl_shrink(&txn->tw.repnl);
       if (!(env->flags & MDBX_WRITEMAP))
         dpl_release_shadows(txn);
       /* The writer mutex was locked in mdbx_txn_begin. */
@@ -36481,14 +36489,14 @@ int txn_end(MDBX_txn *txn, unsigned mode) {
       MDBX_txn *const parent = txn->parent;
       eASSERT(env, parent->signature == txn_signature);
       eASSERT(env, parent->nested == txn && (parent->flags & MDBX_TXN_HAS_CHILD) != 0);
-      eASSERT(env, pnl_check_allocated(txn->tw.relist, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
+      eASSERT(env, pnl_check_allocated(txn->tw.repnl, txn->geo.first_unallocated - MDBX_ENABLE_REFUND));
       eASSERT(env, memcmp(&txn->tw.troika, &parent->tw.troika, sizeof(troika_t)) == 0);
 
       txn->owner = 0;
-      if (txn->tw.gc.reclaimed) {
-        eASSERT(env, MDBX_PNL_GETSIZE(txn->tw.gc.reclaimed) >= (uintptr_t)parent->tw.gc.reclaimed);
-        MDBX_PNL_SETSIZE(txn->tw.gc.reclaimed, (uintptr_t)parent->tw.gc.reclaimed);
-        parent->tw.gc.reclaimed = txn->tw.gc.reclaimed;
+      if (txn->tw.gc.retxl) {
+        eASSERT(env, MDBX_PNL_GETSIZE(txn->tw.gc.retxl) >= (uintptr_t)parent->tw.gc.retxl);
+        MDBX_PNL_SETSIZE(txn->tw.gc.retxl, (uintptr_t)parent->tw.gc.retxl);
+        parent->tw.gc.retxl = txn->tw.gc.retxl;
       }
 
       if (txn->tw.retired_pages) {
@@ -36504,7 +36512,7 @@ int txn_end(MDBX_txn *txn, unsigned mode) {
       tASSERT(parent, audit_ex(parent, 0, false) == 0);
       dpl_release_shadows(txn);
       dpl_free(txn);
-      pnl_free(txn->tw.relist);
+      pnl_free(txn->tw.repnl);
 
       if (parent->geo.upper != txn->geo.upper || parent->geo.now != txn->geo.now) {
         /* undo resize performed by child txn */
@@ -37124,10 +37132,10 @@ __dll_export
         0,
         13,
         2,
-        20,
+        33,
         "", /* pre-release suffix of SemVer
-                                        0.13.2.20 */
-        {"2024-12-20T11:46:01+03:00", "f5f7cbaffc7a77d762877487c74474492299f201", "462af2be48bb864f07170455bb99eb8ba494d555", "v0.13.2-20-g462af2be"},
+                                        0.13.2.33 */
+        {"2024-12-22T18:30:58+03:00", "c23d2c6e1cd691d337ee3e8ed4cb74a822fc0787", "98b28213ce06e9c6c3059712e859500a3e72c283", "v0.13.2-33-g98b28213"},
         sourcery};
 
 __dll_export
