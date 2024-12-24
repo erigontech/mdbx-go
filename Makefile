@@ -4,7 +4,7 @@
 MASTER_COMMIT=`git rev-parse --short origin/master`
 
 deps: lintci-deps
-	go get -d ./...
+	go get ./...
 
 all: deps
 
@@ -20,7 +20,7 @@ lint:
 
 lintci-deps:
 	rm -f ./build/bin/golangci-lint
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./build/bin v1.59.1
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./build/bin v1.62.2
 
 clean:
 	cd mdbxdist && make clean
@@ -29,5 +29,5 @@ tools: clean
 	cd mdbxdist && MDBX_BUILD_TIMESTAMP=unknown CFLAGS="${CFLAGS} -Wno-unknown-warning-option -Wno-enum-int-mismatch -Wno-strict-prototypes -Wno-unused-but-set-variable" make tools
 
 cp:
-	cp mdbxdist/mdbx.h mdbx/
-	cp mdbxdist/mdbx.c mdbx/
+	#cd ../libmdbx && make dist
+	cp -R ./../libmdbx/dist/* ./mdbxdist/

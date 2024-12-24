@@ -7,7 +7,7 @@ import (
 )
 
 func TestEmptyKeysAndValues(t *testing.T) {
-	env, err1 := NewEnv()
+	env, err1 := NewEnv(Default)
 	if err1 != nil {
 		t.Fatalf("Cannot create environment: %s", err1)
 	}
@@ -104,7 +104,7 @@ func TestEmptyKeysAndValues(t *testing.T) {
 }
 
 func TestTest1(t *testing.T) {
-	env, err1 := NewEnv()
+	env, err1 := NewEnv(Default)
 	if err1 != nil {
 		t.Fatalf("Cannot create environment: %s", err1)
 	}

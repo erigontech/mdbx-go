@@ -4,6 +4,7 @@ package mdbx
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/rand"
 	"runtime"
@@ -422,16 +423,19 @@ func TestTxn_OpenDBI_emptyName(t *testing.T) {
 func TestTxn_OpenDBI_zero(t *testing.T) {
 	env, _ := setup(t)
 
-	err := env.View(func(txn *Txn) (err error) {
-		_, err = txn.OpenRoot(0)
-		if err != nil {
-			return err
-		}
-		_, err = txn.Get(0, []byte("k"))
-		return err
-	})
-	if !IsErrno(err, BadDBI) {
-		t.Errorf("mdb_dbi_open: %v", err)
+	txn, err := env.BeginTxn(nil, 0)
+	if err != nil {
+		panic(err)
+	}
+	defer txn.Abort()
+
+	dbi, err := txn.OpenRoot(0)
+	if err != nil {
+		panic(err)
+	}
+	_, err = txn.Get(dbi, []byte("k"))
+	if !errors.Is(err, ErrNotFound) {
+		panic(err)
 	}
 }
 
@@ -592,7 +596,7 @@ func TestTxn_Flags(t *testing.T) {
 	env.Close()
 
 	// opening the database after it is created inherits the original flags.
-	env, err = NewEnv()
+	env, err = NewEnv(Default)
 	if err != nil {
 		t.Error(err)
 		return
