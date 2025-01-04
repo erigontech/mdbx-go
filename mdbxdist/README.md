@@ -99,7 +99,7 @@ Nonetheless, I try not to make any promises regarding _MithrilDB_ until release.
 
 Contrary to _MithrilDB_, _libmdbx_ will forever free and open source.
 Moreover with high-quality support whenever possible. Tu deviens
-responsable pour toujours de ce que tu as apprivois. So I will continue
+responsible pour toujours de ce que tu as apprivois. So I will continue
 to comply with the original open license and the principles of
 constructive cooperation, in spite of outright Github sabotage and
 sanctions. I will also try to keep (not drop) Windows support, despite
