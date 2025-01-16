@@ -219,3 +219,59 @@ func TestTest1(t *testing.T) {
 //		t.Error("empty version string")
 //	}
 //}
+
+func TestGetSysRamInfo(t *testing.T) {
+	env, err1 := NewEnv(Default)
+	if err1 != nil {
+		t.Fatalf("Cannot create environment: %s", err1)
+	}
+	err1 = env.SetGeometry(-1, -1, 1024*1024, -1, -1, 4096)
+	if err1 != nil {
+		t.Fatalf("Cannot set mapsize: %s", err1)
+	}
+	path := t.TempDir()
+	err1 = env.Open(path, 0, 0664)
+	defer env.Close()
+	if err1 != nil {
+		t.Fatalf("Cannot open environment: %s", err1)
+	}
+
+	var db DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			panic(err)
+		}
+
+		err = txn.Put(db, nil, []byte{}, NoOverwrite)
+		if err != nil {
+			panic(err)
+		}
+		err = txn.Put(db, []byte{}, []byte{}, NoOverwrite)
+		if err == nil { //expect err: MDBX_KEYEXIST
+			panic(err)
+		}
+		err = txn.Put(db, []byte{1}, []byte{}, NoOverwrite)
+		if err != nil {
+			panic(err)
+		}
+		err = txn.Put(db, []byte{2}, nil, NoOverwrite)
+		if err != nil {
+			panic(err)
+		}
+		err = txn.Put(db, []byte{3}, []byte{1}, NoOverwrite)
+		if err != nil {
+			panic(err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	pageSize, totalPages, availablePages, err := GetSysRamInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	println(pageSize, totalPages, availablePages)
+}
