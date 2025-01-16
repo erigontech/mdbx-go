@@ -273,5 +273,5 @@ func TestGetSysRamInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	println(pageSize, totalPages, availablePages)
+	println(pageSize, totalPages, availablePages) //no asserts because it's (at least avP) pretty random TODO: think about how to avoid it
 }
