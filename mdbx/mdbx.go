@@ -172,3 +172,20 @@ CGO_CFLAGS="${CGO_CFLAGS} -DMDBX_DEBUG=1 -DMDBX_FORCE_ASSERTIONS=1 -v" go run ./
 func Version() string {
 	return C.GoString(C.mdbx_version.git.describe)
 }
+
+func GetSysRamInfo() (pageSize, totalPages, availablePages int, err error) {
+	var cPageSize, cTotalPages, cAvailablePages C.intptr_t
+
+	// Вызываем C-функцию, передавая туда указатели на тип C.intptr_t
+	ret := C.mdbx_get_sysraminfo(&cPageSize, &cTotalPages, &cAvailablePages)
+	if ret != success {
+		return 0, 0, 0, operrno("mdbx_cursor_count", ret)
+	}
+
+	// Преобразуем результаты обратно в Go int
+	pageSize = int(cPageSize)
+	totalPages = int(cTotalPages)
+	availablePages = int(cAvailablePages)
+
+	return
+}
