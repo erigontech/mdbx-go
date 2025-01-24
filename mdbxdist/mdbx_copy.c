@@ -18,7 +18,7 @@
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
-#define MDBX_BUILD_SOURCERY b16d14cb3026921fb14b9e52a75f956cd0a1d592091938703d138c32bc9d6541_v0_13_2_33_g98b28213
+#define MDBX_BUILD_SOURCERY 9549c16ee25142a5064a08cd4f876331eb2b45fe565d64e6019be2687644564e_v0_13_3_0_g92e2b628
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -3336,6 +3336,21 @@ static void usage(const char *prog) {
   exit(EXIT_FAILURE);
 }
 
+static void logger(MDBX_log_level_t level, const char *function, int line, const char *fmt, va_list args) {
+  static const char *const prefixes[] = {
+      "!!!fatal: ", // 0 fatal
+      " ! ",        // 1 error
+      " ~ ",        // 2 warning
+      "   ",        // 3 notice
+      "   //",      // 4 verbose
+  };
+  if (level < MDBX_LOG_DEBUG) {
+    if (function && line)
+      fprintf(stderr, "%s", prefixes[level]);
+    vfprintf(stderr, fmt, args);
+  }
+}
+
 int main(int argc, char *argv[]) {
   int rc;
   MDBX_env *env = nullptr;
@@ -3400,6 +3415,7 @@ int main(int argc, char *argv[]) {
             mdbx_version.git.describe, mdbx_version.git.datetime, mdbx_version.git.tree, argv[1],
             (argc == 2) ? "stdout" : argv[2]);
     fflush(nullptr);
+    mdbx_setup_debug(MDBX_LOG_NOTICE, MDBX_DBG_DONTCHANGE, logger);
   }
 
   act = "opening environment";

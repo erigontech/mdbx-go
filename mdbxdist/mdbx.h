@@ -2188,7 +2188,8 @@ typedef enum MDBX_option {
    * spill to disk instead.
    *
    * The `MDBX_opt_txn_dp_limit` controls described threshold for the current
-   * process. Default is 65536, it is usually enough for most cases. */
+   * process. Default is 1/42 of the sum of whole and currently available RAM
+   * size, which the same ones are reported by \ref mdbx_get_sysraminfo(). */
   MDBX_opt_txn_dp_limit,
 
   /** \brief Controls the in-process initial allocation size for dirty pages
@@ -4232,7 +4233,7 @@ LIBMDBX_INLINE_API(int, mdbx_txn_commit, (MDBX_txn * txn)) { return mdbx_txn_com
  * \retval MDBX_EINVAL           Transaction handle is NULL. */
 LIBMDBX_API int mdbx_txn_abort(MDBX_txn *txn);
 
-/** \brief Marks transaction as broken.
+/** \brief Marks transaction as broken to prevent further operations.
  * \ingroup c_transactions
  *
  * Function keeps the transaction handle and corresponding locks, but makes

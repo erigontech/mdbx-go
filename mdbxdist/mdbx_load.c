@@ -18,7 +18,7 @@
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
 
-#define MDBX_BUILD_SOURCERY b16d14cb3026921fb14b9e52a75f956cd0a1d592091938703d138c32bc9d6541_v0_13_2_33_g98b28213
+#define MDBX_BUILD_SOURCERY 9549c16ee25142a5064a08cd4f876331eb2b45fe565d64e6019be2687644564e_v0_13_3_0_g92e2b628
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -3334,6 +3334,21 @@ static void error(const char *func, int rc) {
   }
 }
 
+static void logger(MDBX_log_level_t level, const char *function, int line, const char *fmt, va_list args) {
+  static const char *const prefixes[] = {
+      "!!!fatal: ", // 0 fatal
+      " ! ",        // 1 error
+      " ~ ",        // 2 warning
+      "   ",        // 3 notice
+      "   //",      // 4 verbose
+  };
+  if (level < MDBX_LOG_DEBUG) {
+    if (function && line)
+      fprintf(stderr, "%s", prefixes[level]);
+    vfprintf(stderr, fmt, args);
+  }
+}
+
 static char *valstr(char *line, const char *item) {
   const size_t len = strlen(item);
   if (strncmp(line, item, len) != 0)
@@ -3827,10 +3842,12 @@ int main(int argc, char *argv[]) {
 #endif /* !WINDOWS */
 
   envname = argv[optind];
-  if (!quiet)
+  if (!quiet) {
     printf("mdbx_load %s (%s, T-%s)\nRunning for %s...\n", mdbx_version.git.describe, mdbx_version.git.datetime,
            mdbx_version.git.tree, envname);
-  fflush(nullptr);
+    fflush(nullptr);
+    mdbx_setup_debug(MDBX_LOG_NOTICE, MDBX_DBG_DONTCHANGE, logger);
+  }
 
   dbuf.iov_len = 4096;
   dbuf.iov_base = osal_malloc(dbuf.iov_len);
