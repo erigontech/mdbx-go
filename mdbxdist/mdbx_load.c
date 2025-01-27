@@ -1,7 +1,7 @@
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \note Please refer to the COPYRIGHT file for explanations license change,
 /// credits and acknowledgments.
-/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
+/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
 ///
 /// mdbx_load.c - memory-mapped database load tool
 ///
@@ -16,9 +16,9 @@
 
 #define xMDBX_TOOLS /* Avoid using internal eASSERT() */
 /// \copyright SPDX-License-Identifier: Apache-2.0
-/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
+/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
 
-#define MDBX_BUILD_SOURCERY 9549c16ee25142a5064a08cd4f876331eb2b45fe565d64e6019be2687644564e_v0_13_3_0_g92e2b628
+#define MDBX_BUILD_SOURCERY c6a435f74a8ee41db686a43228581987b07a6eb2857931fec778842d40433799_v0_13_3_106_gdf27f764
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -1678,7 +1678,7 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 
 /** Controls profiling of GC search and updates. */
 #ifndef MDBX_ENABLE_PROFGC
-#define MDBX_ENABLE_PROFGC 0
+#define MDBX_ENABLE_PROFGC 1
 #elif !(MDBX_ENABLE_PROFGC == 0 || MDBX_ENABLE_PROFGC == 1)
 #error MDBX_ENABLE_PROFGC must be defined as 0 or 1
 #endif /* MDBX_ENABLE_PROFGC */
