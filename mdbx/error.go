@@ -84,7 +84,7 @@ var CorruptErrorHardwareRecommendations = "Maybe free space is over on disk. Oth
 var CorruptErrorBacktraceRecommendations = "Otherwise - please create issue in Application repo." // with backtrace or coredump. To create coredump set compile option 'MDBX_FORCE_ASSERTIONS=1' and env variable 'GOTRACEBACK=crash'."
 var CorruptErrorRecoveryRecommendations = "On default DURABLE mode, power outage can't cause this error. On other modes - power outage may break last transaction and mdbx_chk can recover db in this case, see '-t' and '-0|1|2' options."
 var CorruptErrorMessage = CorruptErrorHardwareRecommendations + " " + CorruptErrorBacktraceRecommendations + " " + CorruptErrorRecoveryRecommendations
-var MapFullErrorRecommendation = "Environment map size limit is reached, please try to rm -rf /path/to/db"
+var MapFullErrorRecommendation = "The allocated database storage size limit has been reached. You can try increasing the storage capacity or remove the database files (e.g., by running rm -rf /path/to/db) only if the data is unused and safe to delete. Please proceed with caution!"
 
 func (e Errno) Error() string {
 	switch e {
