@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024 Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> ###############################################
+# Copyright (c) 2020-2025 Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> ###############################################
 # SPDX-License-Identifier: Apache-2.0
 #
 # Donations are welcome to ETH `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`. Всё будет хорошо!
@@ -149,6 +149,9 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/tree-ops.c"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txl.c"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txl.h"
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txn-basal.c"
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txn-nested.c"
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txn-ro.c"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txn.c"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/unaligned.h"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/utils.c"
@@ -213,6 +216,20 @@ if(DEFINED PROJECT_NAME AND NOT MDBX_FORCE_BUILD_AS_MAIN_PROJECT)
 else()
   set(SUBPROJECT OFF)
   set(NOT_SUBPROJECT ON)
+
+  # Setup Apple stuff which should be set prior to the first project() or enable_language()
+  if(APPLE)
+    # Enable universal binaries for macOS (target arm64 and x86_64)
+    if(NOT DEFINED CMAKE_OSX_ARCHITECTURES)
+      set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
+    endif()
+
+    # Set the minimum macOS deployment target if not already defined
+    if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+      set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0")
+    endif()
+  endif()
+
   project(libmdbx C)
   if(NOT MDBX_AMALGAMATED_SOURCE AND NOT DEFINED BUILD_TESTING)
     set(BUILD_TESTING ON)
@@ -824,6 +841,9 @@ else()
       "${MDBX_SOURCE_DIR}/tree-ops.c"
       "${MDBX_SOURCE_DIR}/txl.c"
       "${MDBX_SOURCE_DIR}/txl.h"
+      "${MDBX_SOURCE_DIR}/txn-basal.c"
+      "${MDBX_SOURCE_DIR}/txn-nested.c"
+      "${MDBX_SOURCE_DIR}/txn-ro.c"
       "${MDBX_SOURCE_DIR}/txn.c"
       "${MDBX_SOURCE_DIR}/unaligned.h"
       "${MDBX_SOURCE_DIR}/utils.c"

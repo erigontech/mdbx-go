@@ -31,7 +31,7 @@ developers. For the same reason ~~Github~~ is blacklisted forever.
 \copyright SPDX-License-Identifier: Apache-2.0
 \note Please refer to the COPYRIGHT file for explanations license change,
 credits and acknowledgments.
-\author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2024
+\author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
 
 *******************************************************************************/
 
@@ -579,9 +579,9 @@ typedef mode_t mdbx_mode_t;
 extern "C" {
 #endif
 
-/* MDBX version 0.13.x */
+/* MDBX version 0.14.x */
 #define MDBX_VERSION_MAJOR 0
-#define MDBX_VERSION_MINOR 13
+#define MDBX_VERSION_MINOR 14
 
 #ifndef LIBMDBX_API
 #if defined(LIBMDBX_EXPORTS) || defined(DOXYGEN)
@@ -1997,7 +1997,12 @@ typedef enum MDBX_error {
   MDBX_EPERM = EPERM,
   MDBX_EINTR = EINTR,
   MDBX_ENOFILE = ENOENT,
+#if defined(EREMOTEIO) || defined(DOXYGEN)
+  /** Cannot use the database on a network file system or when exporting it via NFS. */
+  MDBX_EREMOTE = EREMOTEIO,
+#else
   MDBX_EREMOTE = ENOTBLK,
+#endif /* EREMOTEIO */
   MDBX_EDEADLK = EDEADLK
 #endif /* !Windows */
 } MDBX_error_t;
@@ -4182,7 +4187,10 @@ LIBMDBX_API int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency);
  * \returns A non-zero error value on failure and 0 on success,
  *          some possible errors are:
  * \retval MDBX_RESULT_TRUE      Transaction was aborted since it should
- *                               be aborted due to previous errors.
+ *                               be aborted due to previous errors,
+ *                               either no changes were made during the transaction,
+ *                               and the build time option
+ *                               \ref MDBX_NOSUCCESS_PURE_COMMIT was enabled.
  * \retval MDBX_PANIC            A fatal error occurred earlier
  *                               and the environment must be shut down.
  * \retval MDBX_BAD_TXN          Transaction is already finished or never began.
