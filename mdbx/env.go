@@ -494,6 +494,19 @@ func (env *Env) GetSyncPeriod() (time.Duration, error) {
 	return Duration16dot16(res).ToDuration(), operrno("mdbx_env_get_syncperiod", ret)
 }
 
+func (env *Env) SetSyncBytes(threshold uint) error {
+	ret := C.mdbx_env_set_syncbytes(env._env, C.size_t(threshold))
+	return operrno("mdbx_env_set_syncbytes", ret)
+
+}
+
+func (env *Env) GetSyncBytes() (uint, error) {
+	var res C.size_t
+	ret := C.mdbx_env_get_syncbytes(env._env, &res)
+	return uint(res), operrno("mdbx_env_get_syncbytes", ret)
+
+}
+
 func (env *Env) SetGeometry(sizeLower int, sizeNow int, sizeUpper int, growthStep int, shrinkThreshold int, pageSize int) error {
 	ret := C.mdbx_env_set_geometry(env._env,
 		C.intptr_t(sizeLower),
