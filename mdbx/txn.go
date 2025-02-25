@@ -313,6 +313,34 @@ func (txn *Txn) abort() {
 	txn.clearTxn()
 }
 
+func (txn *Txn) Park(autounpark bool) error {
+	if txn._txn == nil {
+		return nil
+	}
+
+	if txn.env._env != nil {
+		ret := C.mdbx_txn_park(txn._txn, C.bool(autounpark))
+		if ret != success {
+			return operrno("mdbx_txn_park", ret)
+		}
+	}
+	return nil
+}
+
+func (txn *Txn) Unpark(restartIfOusted bool) error {
+	if txn._txn == nil {
+		return nil
+	}
+
+	if txn.env._env != nil {
+		ret := C.mdbx_txn_unpark(txn._txn, C.bool(restartIfOusted))
+		if ret != success {
+			return operrno("mdbx_txn_park", ret)
+		}
+	}
+	return nil
+}
+
 func (txn *Txn) clearTxn() {
 	// Clear the C object to prevent any potential future use of the freed
 	// pointer.

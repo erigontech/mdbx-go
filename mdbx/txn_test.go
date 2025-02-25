@@ -717,6 +717,27 @@ func TestTxn_Reset_doubleReset(t *testing.T) {
 	txn.Reset()
 }
 
+func TestTxn_ParkUnpark(t *testing.T) {
+	env, _ := setup(t)
+
+	txn, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer txn.Abort()
+	err = txn.Park(true)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = txn.Unpark(true)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+}
+
 // This test demonstrates that Reset/Renew have no effect on writable
 // transactions. The transaction may be committed after Reset/Renew are called.
 func TestTxn_Reset_writeTxn(t *testing.T) {
