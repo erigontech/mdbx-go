@@ -768,3 +768,11 @@ func (txn *Txn) EnvWarmup(flags uint, timeout time.Duration) error {
 func (txn *Txn) CHandle() unsafe.Pointer {
 	return unsafe.Pointer(txn._txn)
 }
+
+func (txn *Txn) ReleaseAllCursors(unbind bool) error {
+	ret := C.mdbx_txn_release_all_cursors(txn._txn, C.bool(unbind))
+	if ret != success {
+		return operrno("mdbx_txn_release_all_cursors", ret)
+	}
+	return nil
+}
