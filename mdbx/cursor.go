@@ -98,6 +98,17 @@ func (c *Cursor) Bind(txn *Txn, db DBI) error {
 	return nil
 }
 
+// Unbind Unbinded cursor is disassociated with any transactions but still holds
+// the original DBI-handle internally. Thus, it could be renewed with any running
+// transaction or closed.
+func (c *Cursor) Unbind() error {
+	ret := C.mdbx_cursor_unbind(c._c)
+	if ret != success {
+		return operrno("mdbx_cursor_unbind", ret)
+	}
+	return nil
+}
+
 // Close the cursor handle and clear the finalizer on c.  Cursors belonging to
 // write transactions are closed automatically when the transaction is
 // terminated.
