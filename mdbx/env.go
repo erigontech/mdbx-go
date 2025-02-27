@@ -341,6 +341,7 @@ type EnvInfo struct {
 	SystemPageSize    uint          //
 	MiLastPgNo        uint64        //
 	AutoSyncThreshold uint          //
+	UnsyncedBytes     uint          // how many bytes have been committed but not flushed yet to disk
 	SinceSync         time.Duration //
 	AutosyncPeriod    time.Duration //
 	SinceReaderCheck  time.Duration //
@@ -397,6 +398,7 @@ func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
 		MiLastPgNo:     uint64(_info.mi_last_pgno),
 
 		AutoSyncThreshold: uint(_info.mi_autosync_threshold),
+		UnsyncedBytes:     uint(_info.mi_unsync_volume),
 		SinceSync:         toDuration(_info.mi_since_sync_seconds16dot16),
 		AutosyncPeriod:    toDuration(_info.mi_autosync_period_seconds16dot16),
 		SinceReaderCheck:  toDuration(_info.mi_since_reader_check_seconds16dot16),
