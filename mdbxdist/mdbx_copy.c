@@ -18,7 +18,7 @@
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
 
-#define MDBX_BUILD_SOURCERY 913e44a487fce1aefc3c16f11abfa00975db0d789a2dcfeca770efaab8d05f72_v0_14_0_53_g4730abe3
+#define MDBX_BUILD_SOURCERY 356ec22e7c5e8d9cca12ad69f6d79de56e78709608132569b008a4fca0d373c5_v0_13_4_0_g75122b31
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -1477,8 +1477,7 @@ MDBX_INTERNAL int osal_lockfile(mdbx_filehandle_t fd, bool wait);
 
 #define MMAP_OPTION_TRUNCATE 1
 #define MMAP_OPTION_SEMAPHORE 2
-MDBX_INTERNAL int osal_mmap(const int flags, osal_mmap_t *map, size_t size, const size_t limit, const unsigned options,
-                            const pathchar_t *pathname4logging);
+MDBX_INTERNAL int osal_mmap(const int flags, osal_mmap_t *map, size_t size, const size_t limit, const unsigned options);
 MDBX_INTERNAL int osal_munmap(osal_mmap_t *map);
 #define MDBX_MRESIZE_MAY_MOVE 0x00000100
 #define MDBX_MRESIZE_MAY_UNMAP 0x00000200
@@ -1848,22 +1847,6 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 #elif !(MDBX_HAVE_BUILTIN_CPU_SUPPORTS == 0 || MDBX_HAVE_BUILTIN_CPU_SUPPORTS == 1)
 #error MDBX_HAVE_BUILTIN_CPU_SUPPORTS must be defined as 0 or 1
 #endif /* MDBX_HAVE_BUILTIN_CPU_SUPPORTS */
-
-/** if enabled then treats the commit of pure (nothing changes) transactions as special
- * cases and return \ref MDBX_RESULT_TRUE instead of \ref MDBX_SUCCESS. */
-#ifndef MDBX_NOSUCCESS_PURE_COMMIT
-#define MDBX_NOSUCCESS_PURE_COMMIT 0
-#elif !(MDBX_NOSUCCESS_PURE_COMMIT == 0 || MDBX_NOSUCCESS_PURE_COMMIT == 1)
-#error MDBX_NOSUCCESS_PURE_COMMIT must be defined as 0 or 1
-#endif /* MDBX_NOSUCCESS_PURE_COMMIT */
-
-/** if enabled then instead of the returned error `MDBX_REMOTE`, only a warning is issued, when
- * the database being opened in non-read-only mode is located in a file system exported via NFS. */
-#ifndef MDBX_ENABLE_NON_READONLY_EXPORT
-#define MDBX_ENABLE_NON_READONLY_EXPORT 0
-#elif !(MDBX_ENABLE_NON_READONLY_EXPORT == 0 || MDBX_ENABLE_NON_READONLY_EXPORT == 1)
-#error MDBX_ENABLE_NON_READONLY_EXPORT must be defined as 0 or 1
-#endif /* MDBX_ENABLE_NON_READONLY_EXPORT */
 
 //------------------------------------------------------------------------------
 
