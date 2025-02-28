@@ -503,7 +503,7 @@ func setupFlags(t testing.TB, flags uint) (env *Env, path string) {
 		t.Fatalf("setmaxdbs: %v", err)
 	}
 	const pageSize = 4096
-	err = env.SetGeometry(-1, -1, 64*1024*pageSize, -1, -1, pageSize)
+	err = env.SetGeometry(-1, -1, 256*64*1024*pageSize, -1, -1, pageSize)
 	if err != nil {
 		t.Fatalf("setmaxdbs: %v", err)
 	}
@@ -559,7 +559,7 @@ func TestEnv_CloseDBI(t *testing.T) {
 		return
 	}
 
-	//nolint:goerr113
+	//nolint:err113
 	if stat.Entries != numdb {
 		t.Errorf("unexpected entries: %d (not %d)", stat.Entries, numdb)
 	}

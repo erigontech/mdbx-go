@@ -59,8 +59,8 @@ const (
 type Txn struct {
 	env  *Env
 	_txn *C.MDBX_txn
-	key  *C.MDBX_val
-	val  *C.MDBX_val
+	key  C.MDBX_val
+	val  C.MDBX_val
 
 	errLogf func(format string, v ...interface{})
 
@@ -88,26 +88,10 @@ func beginTxn(env *Env, parent *Txn, flags uint) (*Txn, error) {
 	}
 
 	var ptxn *C.MDBX_txn
-	if parent == nil {
-		if flags&Readonly == 0 {
-			// In a write Txn we can use the shared, C-allocated key and value
-			// allocated by env, and freed when it is closed.
-			txn.key = env.ckey
-			txn.val = env.cval
-		} else {
-			// It is not easy to share C.MDBX_val values in this scenario unless
-			// there is a synchronized pool involved, which will increase
-			// overhead.  Further, allocating these values with C will add
-			// overhead both here and when the values are freed.
-			txn.key = new(C.MDBX_val)
-			txn.val = new(C.MDBX_val)
-		}
-	} else {
+	if parent != nil {
 		// Because parent Txn objects cannot be used while a sub-Txn is active
 		// it is OK for them to share their C.MDBX_val objects.
 		ptxn = parent._txn
-		txn.key = parent.key
-		txn.val = parent.val
 	}
 	ret := C.mdbx_txn_begin(env._env, ptxn, C.MDBX_txn_flags_t(flags), &txn._txn)
 	if ret != success {
@@ -593,15 +577,15 @@ func (txn *Txn) Get(dbi DBI, key []byte) ([]byte, error) {
 	ret := C.mdbxgo_get(
 		txn._txn, C.MDBX_dbi(dbi),
 		k, C.size_t(len(key)),
-		txn.val,
+		&txn.val,
 	)
 	err := operrno("mdbx_get", ret)
 	if err != nil {
-		*txn.val = C.MDBX_val{}
+		txn.val = C.MDBX_val{}
 		return nil, err
 	}
-	b := castToBytes(txn.val)
-	*txn.val = C.MDBX_val{}
+	b := castToBytes(&txn.val)
+	txn.val = C.MDBX_val{}
 	return b, nil
 }
 
@@ -637,16 +621,16 @@ func (txn *Txn) PutReserve(dbi DBI, key []byte, n int, flags uint) ([]byte, erro
 	ret := C.mdbxgo_put1(
 		txn._txn, C.MDBX_dbi(dbi),
 		k, C.size_t(len(key)),
-		txn.val,
+		&txn.val,
 		C.MDBX_put_flags_t(flags|C.MDBX_RESERVE),
 	)
 	err := operrno("mdbx_put", ret)
 	if err != nil {
-		*txn.val = C.MDBX_val{}
+		txn.val = C.MDBX_val{}
 		return nil, err
 	}
-	b := castToBytes(txn.val)
-	*txn.val = C.MDBX_val{}
+	b := castToBytes(&txn.val)
+	txn.val = C.MDBX_val{}
 	return b, nil
 }
 

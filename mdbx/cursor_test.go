@@ -3,8 +3,10 @@ package mdbx
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math/rand"
 	"os"
 	"reflect"
 	"runtime"
@@ -1081,7 +1083,7 @@ func TestDupCursor_EmptyKeyValues(t *testing.T) {
 		if !bytes.Equal(v, []byte{}) {
 			panic(fmt.Sprintf("%x", v))
 		}
-		k, v, err = cur.Get([]byte{}, nil, Set)
+		k, _, err = cur.Get([]byte{}, nil, Set)
 		if err == nil {
 			panic("expected 'not found' error")
 		}
@@ -1263,8 +1265,9 @@ func TestCursor_Del_DupSort(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("kk: %s\n", kk)
-		fmt.Printf("vv: %s\n", vv)
+		_, _ = kk, vv //TODO: add assert
+		//fmt.Printf("kk: %s\n", kk)
+		//fmt.Printf("vv: %s\n", vv)
 
 		return nil
 	})
@@ -1562,4 +1565,136 @@ func BenchmarkCursor_Renew(b *testing.B) {
 		})
 		return nil
 	})
+}
+
+func BenchmarkCursor_Set_OneKey(b *testing.B) {
+	env, _ := setup(b)
+
+	var db DBI
+	k := make([]byte, 8)
+	binary.BigEndian.PutUint64(k, uint64(1))
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		err = txn.Put(db, k, k, 0)
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("dbi: %v", err)
+		return
+	}
+
+	if err := env.View(func(txn *Txn) (err error) {
+		c, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _, err := c.Get(k, nil, Set)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("put: %v", err)
+	}
+}
+
+func BenchmarkCursor_Set_Sequence(b *testing.B) {
+	env, _ := setup(b)
+
+	var db DBI
+	keys := make([][]byte, b.N, b.N)
+	for i := range keys {
+		keys[i] = make([]byte, 8)
+		binary.BigEndian.PutUint64(keys[i], uint64(i))
+	}
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for _, k := range keys {
+			err = txn.Put(db, k, k, 0)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("dbi: %v", err)
+		return
+	}
+
+	if err := env.View(func(txn *Txn) (err error) {
+		c, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _, err = c.Get(keys[i], nil, Set)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("put: %v", err)
+	}
+}
+
+func BenchmarkCursor_Set_Random(b *testing.B) {
+	env, _ := setup(b)
+
+	var db DBI
+	keys := make([][]byte, b.N, b.N)
+	for i := range keys {
+		keys[i] = make([]byte, 8)
+		binary.BigEndian.PutUint64(keys[i], uint64(rand.Intn(100*b.N)))
+	}
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for _, k := range keys {
+			err = txn.Put(db, k, k, 0)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("dbi: %v", err)
+		return
+	}
+
+	if err := env.View(func(txn *Txn) (err error) {
+		b.ResetTimer()
+		c, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _, err = c.Get(keys[i], nil, Set)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("put: %v", err)
+	}
 }

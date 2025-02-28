@@ -40,7 +40,7 @@ func (err *OpError) Error() string {
 //	lmdb.IsErrnoFn(err, os.IsPermission)
 type Errno C.int
 
-// The most common error codes do not need to be handled explicity.  Errors can
+// The most common error codes do not need to be handled explicitly.  Errors can
 // be checked through helper functions IsNotFound, IsMapFull, etc, Otherwise
 // they should be checked using the IsErrno function instead of direct
 // comparison because they will typically be wrapped with an OpError.
@@ -84,15 +84,19 @@ var CorruptErrorHardwareRecommendations = "Maybe free space is over on disk. Oth
 var CorruptErrorBacktraceRecommendations = "Otherwise - please create issue in Application repo." // with backtrace or coredump. To create coredump set compile option 'MDBX_FORCE_ASSERTIONS=1' and env variable 'GOTRACEBACK=crash'."
 var CorruptErrorRecoveryRecommendations = "On default DURABLE mode, power outage can't cause this error. On other modes - power outage may break last transaction and mdbx_chk can recover db in this case, see '-t' and '-0|1|2' options."
 var CorruptErrorMessage = CorruptErrorHardwareRecommendations + " " + CorruptErrorBacktraceRecommendations + " " + CorruptErrorRecoveryRecommendations
+var MapFullErrorMessage = "The allocated database storage size limit has been reached."
 
 func (e Errno) Error() string {
-	if e == Corrupted {
-		return "MDBX_FATAL: " + CorruptErrorMessage
+	switch e {
+	case Corrupted:
+		return fmt.Sprintf("MDBX_FATAL(%d): ", int(e)) + CorruptErrorMessage
+	case Panic:
+		return fmt.Sprintf("MDBX_PANIC(%d): ", int(e)) + CorruptErrorMessage
+	case MapFull:
+		return fmt.Sprintf("MDBX_MAP_FULL(%d)", int(e)) + MapFullErrorMessage
+	default:
+		return C.GoString(C.mdbx_strerror(C.int(e)))
 	}
-	if e == Panic {
-		return "MDBX_PANIC: " + CorruptErrorMessage
-	}
-	return C.GoString(C.mdbx_strerror(C.int(e)))
 }
 
 // _operrno is for use by tests that can't import C
@@ -128,12 +132,12 @@ func IsMapFull(err error) bool {
 
 // IsErrno returns true if err's errno is the given errno.
 func IsErrno(err error, errno Errno) bool {
-	return IsErrnoFn(err, func(err error) bool { return err == errno }) //nolint:goerr113
+	return IsErrnoFn(err, func(err error) bool { return err == errno }) //nolint
 }
 
 // IsErrnoSys returns true if err's errno is the given errno.
 func IsErrnoSys(err error, errno syscall.Errno) bool {
-	return IsErrnoFn(err, func(err error) bool { return err == errno }) //nolint:goerr113
+	return IsErrnoFn(err, func(err error) bool { return err == errno }) //nolint
 }
 
 // IsErrnoFn calls fn on the error underlying err and returns the result.  If
@@ -143,7 +147,7 @@ func IsErrnoFn(err error, fn func(error) bool) bool {
 	if err == nil {
 		return false
 	}
-	if err, ok := err.(*OpError); ok {
+	if err, ok := err.(*OpError); ok { //nolint
 		return fn(err.Errno)
 	}
 	return fn(err)

@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+
+	_ "github.com/erigontech/mdbx-go/dbg"
 )
 
 // success is a value returned from the MDBX API to indicate a successful call.
@@ -121,8 +123,6 @@ type DBI C.MDBX_dbi
 // See MDBX_env.
 type Env struct {
 	_env *C.MDBX_env
-	ckey *C.MDBX_val
-	cval *C.MDBX_val
 
 	// closeLock is used to allow the Txn finalizer to check if the Env has
 	// been closed, so that it may know if it must abort.
@@ -138,8 +138,6 @@ func NewEnv() (*Env, error) {
 	if ret != success {
 		return nil, operrno("mdbx_env_create", ret)
 	}
-	env.ckey = (*C.MDBX_val)(C.malloc(C.size_t(unsafe.Sizeof(C.MDBX_val{}))))
-	env.cval = (*C.MDBX_val)(C.malloc(C.size_t(unsafe.Sizeof(C.MDBX_val{}))))
 	return env, nil
 }
 
@@ -232,11 +230,6 @@ func (env *Env) Close() {
 	C.mdbx_env_close(env._env)
 	env._env = nil
 	env.closeLock.Unlock()
-
-	C.free(unsafe.Pointer(env.ckey))
-	C.free(unsafe.Pointer(env.cval))
-	env.ckey = nil
-	env.cval = nil
 }
 
 // CopyFD copies env to the the file descriptor fd.
@@ -285,7 +278,7 @@ type Stat struct {
 	LeafPages     uint64 // Number of leaf pages
 	OverflowPages uint64 // Number of overflow pages
 	Entries       uint64 // Number of data items
-	LastTxId      uint64 // Transaction ID of commited last modification
+	LastTxId      uint64 // Transaction ID of committed last modification
 }
 
 // Stat returns statistics about the environment.
@@ -476,6 +469,19 @@ func (env *Env) GetSyncPeriod() (time.Duration, error) {
 	return Duration16dot16(res).ToDuration(), operrno("mdbx_env_get_syncperiod", ret)
 }
 
+func (env *Env) SetSyncBytes(threshold uint) error {
+	ret := C.mdbx_env_set_syncbytes(env._env, C.size_t(threshold))
+	return operrno("mdbx_env_set_syncbytes", ret)
+
+}
+
+func (env *Env) GetSyncBytes() (uint, error) {
+	var res C.size_t
+	ret := C.mdbx_env_get_syncbytes(env._env, &res)
+	return uint(res), operrno("mdbx_env_get_syncbytes", ret)
+
+}
+
 func (env *Env) SetGeometry(sizeLower int, sizeNow int, sizeUpper int, growthStep int, shrinkThreshold int, pageSize int) error {
 	ret := C.mdbx_env_set_geometry(env._env,
 		C.intptr_t(sizeLower),
@@ -532,7 +538,7 @@ func (env *Env) BeginTxn(parent *Txn, flags uint) (*Txn, error) {
 //
 // See mdbx_txn_begin.
 func (env *Env) RunTxn(flags uint, fn TxnOp) error {
-	return env.run(false, flags, fn)
+	return env.run(flags, fn)
 }
 
 // View creates a readonly transaction with a consistent view of the
@@ -546,7 +552,7 @@ func (env *Env) RunTxn(flags uint, fn TxnOp) error {
 // Any call to Commit, Abort, Reset or Renew on a Txn created by View will
 // panic.
 func (env *Env) View(fn TxnOp) error {
-	return env.run(false, Readonly, fn)
+	return env.run(Readonly, fn)
 }
 
 // Update calls fn with a writable transaction.  Update commits the transaction
@@ -573,7 +579,9 @@ func (env *Env) View(fn TxnOp) error {
 // Any call to Commit, Abort, Reset or Renew on a Txn created by Update will
 // panic.
 func (env *Env) Update(fn TxnOp) error {
-	return env.run(true, 0, fn)
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return env.run(0, fn)
 }
 
 // UpdateLocked behaves like Update but does not lock the calling goroutine to
@@ -594,14 +602,10 @@ func (env *Env) Update(fn TxnOp) error {
 // Any call to Commit, Abort, Reset or Renew on a Txn created by UpdateLocked
 // will panic.
 func (env *Env) UpdateLocked(fn TxnOp) error {
-	return env.run(false, 0, fn)
+	return env.run(0, fn)
 }
 
-func (env *Env) run(lock bool, flags uint, fn TxnOp) error {
-	if lock {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-	}
+func (env *Env) run(flags uint, fn TxnOp) error {
 	txn, err := beginTxn(env, nil, flags)
 	if err != nil {
 		return err

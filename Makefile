@@ -15,11 +15,12 @@ race:
 	go test -race ./mdbx ./exp/mdbxpool
 
 lint:
-	./build/bin/golangci-lint run --new-from-rev=$(MASTER_COMMIT) ./...
+	./build/bin/golangci-lint run ./...
+#//--new-from-rev=$(MASTER_COMMIT) ./...
 
 lintci-deps:
 	rm -f ./build/bin/golangci-lint
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./build/bin v1.55.2
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./build/bin v1.59.1
 
 clean:
 	cd mdbxdist && make clean

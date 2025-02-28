@@ -147,19 +147,13 @@ func (c *Cursor) DBI() DBI {
 //
 // See mdb_cursor_get.
 func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error) {
-	switch {
-	case len(setkey) == 0 && len(setval) == 0:
-		err = c.getVal0(op)
-	case len(setkey) == 0:
-		err = c.getVal01(setval, op)
-	case len(setval) == 0:
-		err = c.getVal1(setkey, op)
-	default:
-		err = c.getVal2(setkey, setval, op)
+	if len(setkey) != 0 || len(setval) != 0 {
+		err = c.getVal(setkey, setval, op)
+	} else {
+		err = c.getValEmpty(op)
 	}
 	if err != nil {
-		*c.txn.key = C.MDBX_val{}
-		*c.txn.val = C.MDBX_val{}
+		c.txn.key, c.txn.val = C.MDBX_val{}, C.MDBX_val{}
 		return nil, nil, err
 	}
 
@@ -171,66 +165,32 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 		key = setkey
 	} else {
 		if op != LastDup && op != FirstDup {
-			key = castToBytes(c.txn.key)
+			key = castToBytes(&c.txn.key)
 		}
 	}
-	val = castToBytes(c.txn.val)
+	val = castToBytes(&c.txn.val)
 
 	// Clear transaction storage record storage area for future use and to
 	// prevent dangling references.
-	*c.txn.key = C.MDBX_val{}
-	*c.txn.val = C.MDBX_val{}
+	c.txn.key, c.txn.val = C.MDBX_val{}, C.MDBX_val{}
 
 	return key, val, nil
 }
 
-// getVal0 retrieves items from the database without using given key or value
+// getValEmpty retrieves items from the database without using given key or value
 // data for reference (Next, First, Last, etc).
 //
 // See mdb_cursor_get.
-func (c *Cursor) getVal0(op uint) error {
-	ret := C.mdbx_cursor_get(c._c, c.txn.key, c.txn.val, C.MDBX_cursor_op(op))
+func (c *Cursor) getValEmpty(op uint) error {
+	ret := C.mdbx_cursor_get(c._c, &c.txn.key, &c.txn.val, C.MDBX_cursor_op(op))
 	return operrno("mdbx_cursor_get", ret)
 }
 
-// getVal1 retrieves items from the database using key data for reference
-// (Set, SetRange, etc).
-//
-// See mdb_cursor_get.
-func (c *Cursor) getVal1(setkey []byte, op uint) error {
-	var k *C.char
-	if len(setkey) > 0 {
-		k = (*C.char)(unsafe.Pointer(&setkey[0]))
-	}
-	ret := C.mdbxgo_cursor_get1(
-		c._c,
-		k, C.size_t(len(setkey)),
-		c.txn.key,
-		c.txn.val,
-		C.MDBX_cursor_op(op),
-	)
-	return operrno("mdbx_cursor_get", ret)
-}
-func (c *Cursor) getVal01(setval []byte, op uint) error {
-	var v *C.char
-	if len(setval) > 0 {
-		v = (*C.char)(unsafe.Pointer(&setval[0]))
-	}
-	ret := C.mdbxgo_cursor_get01(
-		c._c,
-		v, C.size_t(len(setval)),
-		c.txn.key,
-		c.txn.val,
-		C.MDBX_cursor_op(op),
-	)
-	return operrno("mdbx_cursor_get", ret)
-}
-
-// getVal2 retrieves items from the database using key and value data for
+// getVal retrieves items from the database using key and value data for
 // reference (GetBoth, GetBothRange, etc).
 //
 // See mdb_cursor_get.
-func (c *Cursor) getVal2(setkey, setval []byte, op uint) error {
+func (c *Cursor) getVal(setkey, setval []byte, op uint) error {
 	var k, v *C.char
 	if len(setkey) > 0 {
 		k = (*C.char)(unsafe.Pointer(&setkey[0]))
@@ -238,11 +198,11 @@ func (c *Cursor) getVal2(setkey, setval []byte, op uint) error {
 	if len(setval) > 0 {
 		v = (*C.char)(unsafe.Pointer(&setval[0]))
 	}
-	ret := C.mdbxgo_cursor_get2(
+	ret := C.mdbxgo_cursor_get(
 		c._c,
 		k, C.size_t(len(setkey)),
 		v, C.size_t(len(setval)),
-		c.txn.key, c.txn.val,
+		&c.txn.key, &c.txn.val,
 		C.MDBX_cursor_op(op),
 	)
 	return operrno("mdbx_cursor_get", ret)
@@ -280,16 +240,16 @@ func (c *Cursor) PutReserve(key []byte, n int, flags uint) ([]byte, error) {
 	ret := C.mdbxgo_cursor_put1(
 		c._c,
 		k, C.size_t(len(key)),
-		c.txn.val,
+		&c.txn.val,
 		C.MDBX_put_flags_t(flags|C.MDBX_RESERVE),
 	)
 	err := operrno("mdbx_cursor_put", ret)
 	if err != nil {
-		*c.txn.val = C.MDBX_val{}
+		c.txn.val = C.MDBX_val{}
 		return nil, err
 	}
-	b := castToBytes(c.txn.val)
-	*c.txn.val = C.MDBX_val{}
+	b := castToBytes(&c.txn.val)
+	c.txn.val = C.MDBX_val{}
 	return b, nil
 }
 

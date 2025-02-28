@@ -37,7 +37,7 @@ type msgfunc func(string) error
 // not contain pointers in their struct fields.  See the following language
 // proposal which discusses the restrictions on passing pointers to C.
 //
-//		https://github.com/golang/proposal/blob/master/design/12416-cgo-pointers.md
+//	https://github.com/golang/proposal/blob/master/design/12416-cgo-pointers.md
 type msgctx uintptr
 type _msgctx struct {
 	fn  msgfunc

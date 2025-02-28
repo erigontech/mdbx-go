@@ -16,7 +16,7 @@ linters:
     - govet
     - stylecheck
     - staticcheck
-#    - goerr113
+#    - err113
     - unconvert
     - unparam
     - nakedret
@@ -24,9 +24,10 @@ linters:
     - gosimple
     - gosec
     - ineffassign
-    - depguard
     - typecheck
     - misspell
+    - bodyclose
+    - noctx
 
 linters-settings:
   gofmt:
@@ -46,7 +47,7 @@ issues:
         - golint
       text: "should be"
     - linters:
-        - goerr113
+        - err113
       text: "do not define dynamic errors"
     - linters:
         - stylecheck
