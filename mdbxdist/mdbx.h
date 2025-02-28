@@ -25,7 +25,7 @@ _The Future will (be) [Positive](https://www.ptsecurity.com). Всё будет 
 
 \section copyright LICENSE & COPYRIGHT
 
-\authors Copyright (c) 2015-2023, Leonid Yuriev <leo@yuriev.ru>
+\authors Copyright (c) 2015-2024, Leonid Yuriev <leo@yuriev.ru>
 and other _libmdbx_ authors: please see [AUTHORS](./AUTHORS) file.
 
 \copyright Redistribution and use in source and binary forms, with or without
@@ -343,13 +343,14 @@ typedef mode_t mdbx_mode_t;
 #ifdef __deprecated
 #define MDBX_DEPRECATED __deprecated
 #elif defined(DOXYGEN) ||                                                      \
-    (defined(__cplusplus) && __cplusplus >= 201603L &&                         \
-     __has_cpp_attribute(maybe_unused) &&                                      \
-     __has_cpp_attribute(maybe_unused) >= 201603L) ||                          \
+    (defined(__cplusplus) && __cplusplus >= 201403L &&                         \
+     __has_cpp_attribute(deprecated) &&                                        \
+     __has_cpp_attribute(deprecated) >= 201309L) ||                            \
     (!defined(__cplusplus) && defined(__STDC_VERSION__) &&                     \
-     __STDC_VERSION__ > 202005L)
+     __STDC_VERSION__ >= 202304L)
 #define MDBX_DEPRECATED [[deprecated]]
-#elif defined(__GNUC__) || __has_attribute(__deprecated__)
+#elif (defined(__GNUC__) && __GNUC__ > 5) ||                                   \
+    (__has_attribute(__deprecated__) && !defined(__GNUC__))
 #define MDBX_DEPRECATED __attribute__((__deprecated__))
 #elif defined(_MSC_VER)
 #define MDBX_DEPRECATED __declspec(deprecated)
@@ -2161,7 +2162,8 @@ enum MDBX_option_t {
    * spill to disk instead.
    *
    * The `MDBX_opt_txn_dp_limit` controls described threshold for the current
-   * process. Default is 65536, it is usually enough for most cases. */
+   * process. Default is 1/42 of the sum of whole and currently available RAM
+   * size, which the same ones are reported by \ref mdbx_get_sysraminfo(). */
   MDBX_opt_txn_dp_limit,
 
   /** \brief Controls the in-process initial allocation size for dirty pages
@@ -2389,7 +2391,7 @@ enum MDBX_env_delete_mode_t {
   /** \brief Just delete the environment's files and directory if any.
    * \note On POSIX systems, processes already working with the database will
    * continue to work without interference until it close the environment.
-   * \note On Windows, the behavior of `MDB_ENV_JUST_DELETE` is different
+   * \note On Windows, the behavior of `MDBX_ENV_JUST_DELETE` is different
    * because the system does not support deleting files that are currently
    * memory mapped. */
   MDBX_ENV_JUST_DELETE = 0,
@@ -5037,7 +5039,7 @@ LIBMDBX_API int mdbx_cursor_del(MDBX_cursor *cursor, MDBX_put_flags_t flags);
  * sorted duplicate data items \ref MDBX_DUPSORT.
  *
  * \param [in] cursor    A cursor handle returned by \ref mdbx_cursor_open().
- * \param [out] pcount   Address where the count will be stored.
+ * \param [out] count    Address where the count will be stored.
  *
  * \returns A non-zero error value on failure and 0 on success,
  *          some possible errors are:
@@ -5045,7 +5047,7 @@ LIBMDBX_API int mdbx_cursor_del(MDBX_cursor *cursor, MDBX_put_flags_t flags);
  *                               by current thread.
  * \retval MDBX_EINVAL   Cursor is not initialized, or an invalid parameter
  *                       was specified. */
-LIBMDBX_API int mdbx_cursor_count(const MDBX_cursor *cursor, size_t *pcount);
+LIBMDBX_API int mdbx_cursor_count(const MDBX_cursor *cursor, size_t *count);
 
 /** \brief Determines whether the cursor is pointed to a key-value pair or not,
  * i.e. was not positioned or points to the end of data.
