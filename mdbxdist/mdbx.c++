@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 7cb1c589f1bfe46d430cbe46d3e2ccc98052bd983754d652b828af8e6030d5fc_v0_12_13_0_g9529d7d3
+#define MDBX_BUILD_SOURCERY e156c1a97c017ce89d6541cd9464ae5a9761d76b3fd2f1696521f5f3792904fc_v0_12_13_0_g1fff1f67
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -4065,10 +4065,14 @@ MDBX_MAYBE_UNUSED static void static_checks(void) {
 #endif /* MinGW */
 
 /* Workaround for MSVC' header `extern "C"` vs `std::` redefinition bug */
-#if defined(_MSC_VER) && defined(__SANITIZE_ADDRESS__) &&                      \
-    !defined(_DISABLE_VECTOR_ANNOTATION)
+#if defined(_MSC_VER)
+#if defined(__SANITIZE_ADDRESS__) && !defined(_DISABLE_VECTOR_ANNOTATION)
 #define _DISABLE_VECTOR_ANNOTATION
 #endif /* _DISABLE_VECTOR_ANNOTATION */
+#ifndef _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#endif /* #define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING */
+#endif /* _MSC_VER */
 
 
 

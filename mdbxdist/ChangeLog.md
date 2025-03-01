@@ -12,7 +12,7 @@ and [by Yandex](https://translated.turbopages.org/proxy_u/ru-en.en/https/gitflic
 лет после выпуска 0.12.1.
 
 ```
-git diff' stat: 14 commits, 5 files changed, 163 insertions(+), 68 deletions(-)
+git diff' stat: 14 commits, 7 files changed, 256 insertions(+), 103 deletions(-)
 Signed-off-by: Леонид Юрьев (Leonid Yuriev) <leo@yuriev.ru>
 ```
 
@@ -56,6 +56,8 @@ Signed-off-by: Леонид Юрьев (Leonid Yuriev) <leo@yuriev.ru>
 
  - Теперь при попытке запуска вложенных транзакций в режиме `MDBX_WRITEMAP` производится
    логирование и возврат ошибки `MDBX_INCOMPATIBLE`.
+
+ - Доработано использование `std::experimental::filesystem` для решения проблем со сборкой в старых компиляторах.
 
 
 --------------------------------------------------------------------------------
