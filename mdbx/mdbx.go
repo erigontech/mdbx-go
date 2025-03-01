@@ -133,6 +133,8 @@ package mdbx
 #cgo windows LDFLAGS: -lntdll
 #cgo !android,linux LDFLAGS: -lrt
 
+#include "../mdbxdist/mdbx.c"
+
 #include "mdbxgo.h"
 */
 import "C"
