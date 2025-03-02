@@ -46,7 +46,7 @@ func TestTxn_ID(t *testing.T) {
 	}
 
 	err = env.Update(func(txn *Txn) (err error) {
-		dbi, err := txn.OpenDBI("test", Create, nil, nil)
+		dbi, err := txn.OpenDBISimple("test", Create)
 		if err != nil {
 			return err
 		}
@@ -556,7 +556,7 @@ func TestTxn_Flags(t *testing.T) {
 
 	dbflags := uint(ReverseKey | ReverseDup | DupSort | DupFixed)
 	err := env.Update(func(txn *Txn) (err error) {
-		db, err := txn.OpenDBI("testdb", dbflags|Create, nil, nil)
+		db, err := txn.OpenDBISimple("testdb", dbflags|Create)
 		if err != nil {
 			return err
 		}
@@ -613,7 +613,7 @@ func TestTxn_Flags(t *testing.T) {
 		return
 	}
 	err = env.View(func(txn *Txn) (err error) {
-		db, err := txn.OpenDBI("testdb", 0, nil, nil)
+		db, err := txn.OpenDBISimple("testdb", 0)
 		if err != nil {
 			return err
 		}
@@ -1280,7 +1280,7 @@ func openRoot(env *Env, flags uint) (DBI, error) {
 func openDBI(env *Env, key string, flags uint) (DBI, error) {
 	var db DBI
 	err := env.Update(func(txn *Txn) (err error) {
-		db, err = txn.OpenDBI(key, flags, nil, nil)
+		db, err = txn.OpenDBISimple(key, flags)
 		return err
 	})
 	if err != nil {

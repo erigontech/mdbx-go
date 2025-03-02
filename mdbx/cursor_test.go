@@ -51,7 +51,7 @@ func TestCursor_DBI(t *testing.T) {
 	env, _ := setup(t)
 
 	err := env.Update(func(txn *Txn) (err error) {
-		db, err := txn.OpenDBI("db", Create, nil, nil)
+		db, err := txn.OpenDBISimple("db", Create)
 		if err != nil {
 			return err
 		}
@@ -91,7 +91,7 @@ func TestCursor_Close(t *testing.T) {
 	}
 	defer txn.Abort()
 
-	db, err := txn.OpenDBI("testing", Create, nil, nil)
+	db, err := txn.OpenDBISimple("testing", Create)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestCursor_Get_KV(t *testing.T) {
 
 	var dbi DBI
 	err := env.Update(func(txn *Txn) (err error) {
-		dbi, err = txn.OpenDBI("testdb", Create|DupSort, nil, nil)
+		dbi, err = txn.OpenDBISimple("testdb", Create|DupSort)
 		return err
 	})
 	if err != nil {
@@ -277,7 +277,7 @@ func TestLastDup(t *testing.T) {
 
 	var dbi DBI
 	err := env.Update(func(txn *Txn) (err error) {
-		dbi, err = txn.OpenDBI("testdb", Create|DupSort, nil, nil)
+		dbi, err = txn.OpenDBISimple("testdb", Create|DupSort)
 		if err != nil {
 			return err
 		}
@@ -356,7 +356,7 @@ func TestCursor_Get_op_Set_bytesBuffer(t *testing.T) {
 
 	var dbi DBI
 	err := env.Update(func(txn *Txn) (err error) {
-		dbi, err = txn.OpenDBI("testdb", Create|DupSort, nil, nil)
+		dbi, err = txn.OpenDBISimple("testdb", Create|DupSort)
 		return err
 	})
 	if err != nil {
@@ -436,7 +436,7 @@ func TestCursor_Get_DupFixed(t *testing.T) {
 	var dbi DBI
 	key := []byte("key")
 	err := env.Update(func(txn *Txn) (err error) {
-		dbi, err = txn.OpenDBI("test", DupSort|DupFixed|Create, nil, nil)
+		dbi, err = txn.OpenDBISimple("test", DupSort|DupFixed|Create)
 		if err != nil {
 			return err
 		}
@@ -737,7 +737,7 @@ func TestDupCursor_EmptyKeyValues1(t *testing.T) {
 
 	var db DBI
 	err := env.Update(func(txn *Txn) (err error) {
-		db, err = txn.OpenDBI("testingdup", Create|DupSort, nil, nil)
+		db, err = txn.OpenDBISimple("testingdup", Create|DupSort)
 		if err != nil {
 			return err
 		}
@@ -812,7 +812,7 @@ func TestDupCursor_EmptyKeyValues2(t *testing.T) {
 
 	var db DBI
 	err := env.Update(func(txn *Txn) (err error) {
-		db, err = txn.OpenDBI("testingdup", Create|DupSort, nil, nil)
+		db, err = txn.OpenDBISimple("testingdup", Create|DupSort)
 		if err != nil {
 			return err
 		}
@@ -916,7 +916,7 @@ func TestDupCursor_EmptyKeyValues3(t *testing.T) {
 
 	var db DBI
 	err := env.Update(func(txn *Txn) (err error) {
-		db, err = txn.OpenDBI("testingdup", Create|DupSort, nil, nil)
+		db, err = txn.OpenDBISimple("testingdup", Create|DupSort)
 		if err != nil {
 			return err
 		}
@@ -1029,7 +1029,7 @@ func TestDupCursor_EmptyKeyValues(t *testing.T) {
 
 	var db DBI
 	err := env.Update(func(txn *Txn) (err error) {
-		db, err = txn.OpenDBI("testingdup", Create|DupSort, nil, nil)
+		db, err = txn.OpenDBISimple("testingdup", Create|DupSort)
 		if err != nil {
 			return err
 		}
@@ -1157,7 +1157,7 @@ func TestCursor_Count_DupSort(t *testing.T) {
 
 	var db DBI
 	err := env.Update(func(txn *Txn) (err error) {
-		db, err = txn.OpenDBI("testingdup", Create|DupSort, nil, nil)
+		db, err = txn.OpenDBISimple("testingdup", Create|DupSort)
 		if err != nil {
 			return err
 		}
@@ -1209,7 +1209,7 @@ func TestCursor_Del_DupSort(t *testing.T) {
 
 	var db DBI
 	err := env.Update(func(txn *Txn) (err error) {
-		db, err = txn.OpenDBI("testingdup", Create|DupSort, nil, nil)
+		db, err = txn.OpenDBISimple("testingdup", Create|DupSort)
 		if err != nil {
 			return err
 		}
