@@ -13,7 +13,7 @@ import (
 	"unsafe"
 )
 
-// This flags are used exclusively for Txn.OpenDBI and Txn.OpenRoot.  The
+// This flags are used exclusively for Txn.OpenDBISimple and Txn.OpenRoot.  The
 // Create flag must always be supplied when opening a non-root DBI for the
 // first time.
 //
@@ -418,6 +418,7 @@ func (txn *Txn) renew() error {
 // null bytes in the name argument.
 //
 // See mdbx_dbi_open.
+// Deprecated: use OpenDBISimple instead
 func (txn *Txn) OpenDBI(name string, flags uint, cmp, dcmp CmpFunc) (DBI, error) {
 	cname := C.CString(name)
 	dbi, err := txn.openDBI(cname, flags, (*C.MDBX_cmp_func)(unsafe.Pointer(cmp)), (*C.MDBX_cmp_func)(unsafe.Pointer(dcmp)))
@@ -425,6 +426,18 @@ func (txn *Txn) OpenDBI(name string, flags uint, cmp, dcmp CmpFunc) (DBI, error)
 	return dbi, err
 }
 
+// OpenDBISimple opens a named database in the environment.  An error is returned if
+// name is empty.  The DBI returned by OpenDBISimple can be used in other
+// transactions but not before Txn has terminated.
+//
+// OpenDBISimple can only be called after env.SetMaxDBs() has been called to set the
+// maximum number of named databases.
+//
+// The C API uses null terminated strings for database names.  A consequence is
+// that names cannot contain null bytes themselves. OpenDBISimple does not check for
+// null bytes in the name argument.
+//
+// See mdbx_dbi_open.
 func (txn *Txn) OpenDBISimple(name string, flags uint) (DBI, error) {
 	cname := C.CString(name)
 	dbi, err := txn.openDBISimple(cname, flags)
@@ -432,9 +445,9 @@ func (txn *Txn) OpenDBISimple(name string, flags uint) (DBI, error) {
 	return dbi, err
 }
 
-// CreateDBI is a shorthand for OpenDBI that passed the flag lmdb.Create.
+// CreateDBI is a shorthand for OpenDBISimple that passed the flag lmdb.Create.
 func (txn *Txn) CreateDBI(name string) (DBI, error) {
-	return txn.OpenDBI(name, Create, nil, nil)
+	return txn.OpenDBISimple(name, Create)
 }
 
 // Flags returns the database flags for handle dbi.
@@ -444,20 +457,21 @@ func (txn *Txn) Flags(dbi DBI) (uint, error) {
 	return uint(cflags), operrno("mdbx_dbi_flags", ret)
 }
 
-// OpenRoot opens the root database.  OpenRoot behaves similarly to OpenDBI but
+// OpenRoot opens the root database.  OpenRoot behaves similarly to OpenDBISimple but
 // does not require env.SetMaxDBs() to be called beforehand.  And, OpenRoot can
 // be called without flags in a View transaction.
 func (txn *Txn) OpenRoot(flags uint) (DBI, error) {
-	return txn.openDBI(nil, flags, nil, nil)
+	return txn.openDBISimple(nil, flags)
 }
 
 type Cmp func(k1, k2 []byte) int
 
-// openDBI returns returns whatever DBI value was set by mdbx_open_dbi.  In an
+// openDBI returns whatever DBI value was set by mdbx_open_dbi.  In an
 // error case, LMDB does not currently set DBI in case of failure, so zero is
 // returned in those cases.  This is not a big deal for now because
 // applications are expected to handle any error encountered opening a
 // database.
+// Deprecated: openDBISimple instead because using comparators now is a deprecated
 func (txn *Txn) openDBI(cname *C.char, flags uint, cmp, dcmp *C.MDBX_cmp_func) (DBI, error) {
 	var dbi C.MDBX_dbi
 	ret := C.mdbx_dbi_open_ex(txn._txn, cname, C.MDBX_db_flags_t(flags), &dbi, cmp, dcmp)
