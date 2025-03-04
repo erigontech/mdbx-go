@@ -16,7 +16,6 @@ race:
 
 lint:
 	./build/bin/golangci-lint run ./...
-#//--new-from-rev=$(MASTER_COMMIT) ./...
 
 lintci-deps:
 	rm -f ./build/bin/golangci-lint
