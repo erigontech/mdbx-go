@@ -1612,7 +1612,7 @@ func BenchmarkCursor_Set_Sequence(b *testing.B) {
 	env, _ := setup(b)
 
 	var db DBI
-	keys := make([][]byte, b.N, b.N)
+	keys := make([][]byte, b.N)
 	for i := range keys {
 		keys[i] = make([]byte, 8)
 		binary.BigEndian.PutUint64(keys[i], uint64(i))
@@ -1657,7 +1657,7 @@ func BenchmarkCursor_Set_Random(b *testing.B) {
 	env, _ := setup(b)
 
 	var db DBI
-	keys := make([][]byte, b.N, b.N)
+	keys := make([][]byte, b.N)
 	for i := range keys {
 		keys[i] = make([]byte, 8)
 		binary.BigEndian.PutUint64(keys[i], uint64(rand.Intn(100*b.N)))

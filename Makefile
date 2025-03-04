@@ -3,7 +3,7 @@
 
 MASTER_COMMIT=`git rev-parse --short origin/master`
 
-deps: lintci-deps
+deps: lint-deps
 	go get ./...
 
 all: deps
@@ -16,11 +16,10 @@ race:
 
 lint:
 	./build/bin/golangci-lint run ./...
-#//--new-from-rev=$(MASTER_COMMIT) ./...
 
-lintci-deps:
+lint-deps:
 	rm -f ./build/bin/golangci-lint
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./build/bin v1.62.2
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./build/bin v1.64.6
 
 clean:
 	cd mdbxdist && make clean

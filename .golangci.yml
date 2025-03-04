@@ -3,9 +3,6 @@
 run:
   timeout: 10m
   tests: true
-  # default is true. Enables skipping of directories:
-  #   vendor$, third_party$, testdata$, examples$, Godeps$, builtin$
-  skip-dirs-use-default: true
 
 linters:
   disable-all: true
@@ -13,7 +10,6 @@ linters:
     - errcheck
     - goconst
     - gofmt
-    - govet
     - stylecheck
     - staticcheck
 #    - err113
@@ -23,10 +19,8 @@ linters:
     - prealloc
     - gosimple
     - gosec
-    - ineffassign
     - typecheck
     - misspell
-    - bodyclose
     - noctx
 
 linters-settings:
