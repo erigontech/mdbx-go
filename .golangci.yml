@@ -10,7 +10,6 @@ linters:
     - errcheck
     - goconst
     - gofmt
-    - govet
     - stylecheck
     - staticcheck
 #    - err113
