@@ -1,16 +1,20 @@
 package mdbx
 
-/*
-#include <stdlib.h>
-#include <stdio.h>
-#include "mdbxgo.h"
-*/
 import "C"
 import (
 	"fmt"
 	"sync"
 	"unsafe"
 )
+
+/*
+#cgo nocallback mdbxgo_cursor_get
+#cgo noescape mdbxgo_cursor_get
+#include <stdlib.h>
+#include <stdio.h>
+#include "mdbxgo.h"
+*/
+import "C"
 
 const (
 	// Flags for Cursor.Get

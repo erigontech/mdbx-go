@@ -1,6 +1,12 @@
 package mdbx
 
 /*
+#cgo nocallback mdbxgo_get
+#cgo noescape mdbxgo_get
+#cgo nocallback mdbxgo_put2
+#cgo noescape mdbxgo_put2
+#cgo nocallback mdbxgo_put1
+#cgo noescape mdbxgo_put1
 #include <stdlib.h>
 #include <stdio.h>
 #include "mdbxgo.h"
