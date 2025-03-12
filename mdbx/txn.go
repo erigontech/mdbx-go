@@ -90,7 +90,7 @@ func beginTxn(env *Env, parent *Txn, flags uint) (*Txn, error) {
 		readonly: flags&Readonly != 0,
 		env:      env,
 	}
-	if env.StrictThreadCheck {
+	if env.strictThreadCheck {
 		txn.tid = threads.CurrentThreadID()
 	}
 
@@ -306,7 +306,7 @@ func (txn *Txn) Abort() {
 }
 
 func (txn *Txn) strictThreadCheck() {
-	if !txn.env.StrictThreadCheck {
+	if !txn.env.strictThreadCheck {
 		return
 	}
 	currentThread := threads.CurrentThreadID()
@@ -324,7 +324,9 @@ func (txn *Txn) abort() {
 	// Get a read-lock on the environment so we can abort txn if needed.
 	// txn.env **should** terminate all readers otherwise when it closes.
 	txn.env.closeLock.RLock()
-	txn.strictThreadCheck()
+	if txn.env.strictThreadCheck {
+		txn.strictThreadCheck()
+	}
 	if txn.env._env != nil {
 		C.mdbx_txn_abort(txn._txn)
 	}
