@@ -8,6 +8,8 @@ package mdbx
 import "C"
 
 import (
+	"fmt"
+	"github.com/erigontech/mdbx-go/mdbx/threads"
 	"log"
 	"time"
 	"unsafe"
@@ -77,6 +79,8 @@ type Txn struct {
 	// be paid.  The id of a Txn cannot change over its life, even if it is
 	// reset/renewed
 	id uint64
+
+	tid uint64
 }
 
 // beginTxn does not lock the OS thread which is a prerequisite for creating a
@@ -86,6 +90,7 @@ func beginTxn(env *Env, parent *Txn, flags uint) (*Txn, error) {
 		readonly: flags&Readonly != 0,
 		env:      env,
 	}
+	txn.tid = threads.CurrentThreadID()
 
 	var ptxn *C.MDBX_txn
 	if parent != nil {
@@ -243,6 +248,7 @@ type CommitLatencyGC struct {
 
 func (txn *Txn) commit() (CommitLatency, error) {
 	var _stat C.MDBX_commit_latency
+	txn.strictThreadCheck()
 	ret := C.mdbx_txn_commit_ex(txn._txn, &_stat)
 	txn.clearTxn()
 	s := CommitLatency{
@@ -297,6 +303,14 @@ func (txn *Txn) Abort() {
 	txn.abort()
 }
 
+func (txn *Txn) strictThreadCheck() {
+	currentThread := threads.CurrentThreadID()
+	if currentThread != txn.tid {
+		msg := fmt.Sprintf("thread mismatch. not allowed current %d, open in %d", currentThread, txn.tid)
+		panic(msg)
+	}
+}
+
 func (txn *Txn) abort() {
 	if txn._txn == nil {
 		return
@@ -305,6 +319,7 @@ func (txn *Txn) abort() {
 	// Get a read-lock on the environment so we can abort txn if needed.
 	// txn.env **should** terminate all readers otherwise when it closes.
 	txn.env.closeLock.RLock()
+	txn.strictThreadCheck()
 	if txn.env._env != nil {
 		C.mdbx_txn_abort(txn._txn)
 	}
