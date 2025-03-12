@@ -90,7 +90,9 @@ func beginTxn(env *Env, parent *Txn, flags uint) (*Txn, error) {
 		readonly: flags&Readonly != 0,
 		env:      env,
 	}
-	txn.tid = threads.CurrentThreadID()
+	if env.StrictThreadCheck {
+		txn.tid = threads.CurrentThreadID()
+	}
 
 	var ptxn *C.MDBX_txn
 	if parent != nil {
@@ -304,6 +306,9 @@ func (txn *Txn) Abort() {
 }
 
 func (txn *Txn) strictThreadCheck() {
+	if !txn.env.StrictThreadCheck {
+		return
+	}
 	currentThread := threads.CurrentThreadID()
 	if currentThread != txn.tid {
 		msg := fmt.Sprintf("thread mismatch. not allowed current %d, open in %d", currentThread, txn.tid)
