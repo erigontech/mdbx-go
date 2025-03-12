@@ -138,6 +138,8 @@ type Env struct {
 	// closeLock is used to allow the Txn finalizer to check if the Env has
 	// been closed, so that it may know if it must abort.
 	closeLock sync.RWMutex
+
+	strictThreadCheck bool
 }
 
 // NewEnv allocates and initializes a new Env.
@@ -163,6 +165,11 @@ func (env *Env) Open(path string, flags uint, mode os.FileMode) error {
 	return operrno("mdbx_env_open", ret)
 }
 func (env *Env) Label() Label { return env.label }
+
+// SetStrictThreadMode in this mode mdbx panics when tx opening and closing are happening in different threads
+func (env *Env) SetStrictThreadMode(mode bool) {
+	env.strictThreadCheck = mode
+}
 
 var errNotOpen = errors.New("enivornment is not open")
 
