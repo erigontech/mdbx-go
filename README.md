@@ -183,3 +183,26 @@ specifically declared to merely be
 
 The API of an unstable package may change in subtle ways between minor release versions. But deprecations will be
 indicated at least one release in advance and all functionality will remain available through some method.
+
+## Benchmark Notice
+It's noticed that GODEBUG=cgocheck=0 significantly increase mdbx-go perfomance (but be aware of misuse, it's 
+cgoCheckPointer disable, so of course it could be dangerous DIOR)
+```shell
+goos: darwin
+goarch: arm64
+pkg: github.com/erigontech/mdbx-go/mdbx
+cpu: Apple M3 Max
+                     │   old.txt   │               new.txt               │
+                     │   sec/op    │   sec/op     vs base                │
+Cursor_Set_OneKey-16   57.58n ± 2%   40.53n ± 0%  -29.61% (p=0.000 n=10)
+
+                     │  old.txt   │            new.txt             │
+                     │    B/op    │    B/op     vs base            │
+Cursor_Set_OneKey-16   0.000 ± 0%   0.000 ± 0%  ~ (p=1.000 n=10) ¹
+¹ all samples are equal
+
+                     │  old.txt   │            new.txt             │
+                     │ allocs/op  │ allocs/op   vs base            │
+Cursor_Set_OneKey-16   0.000 ± 0%   0.000 ± 0%  ~ (p=1.000 n=10) ¹
+¹ all samples are equal
+```
