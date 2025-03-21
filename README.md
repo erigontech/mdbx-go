@@ -270,5 +270,4 @@ Txn_Get_Random-16          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
 geomean                               ²               +0.00%                ²
 ¹ all samples are equal
 ² summaries must be >0 to compute geomean
-
 ```
