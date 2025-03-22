@@ -1407,6 +1407,15 @@ func TestCursor_Bind(t *testing.T) {
 	}
 
 	err = env.Update(func(txn *Txn) (err error) {
+		db2, err = txn.CreateDBI("testing2")
+		return err
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	err = env.Update(func(txn *Txn) (err error) {
 		put := func(k, v string) {
 			if err == nil {
 				err = txn.Put(db1, []byte(k), []byte(v), 0)
@@ -1435,6 +1444,7 @@ func TestCursor_Bind(t *testing.T) {
 
 	err = env.View(func(txn *Txn) (err error) {
 		{
+			println("dbi1", db1, "dbi2", db2)
 			err = cur.Bind(txn, db1)
 			if err != nil {
 				return err
@@ -1468,6 +1478,45 @@ func TestCursor_Bind(t *testing.T) {
 			}
 			if string(v) != "v1" {
 				return fmt.Errorf("val: %q", v)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestCursor_BindOnEmptyDbi(t *testing.T) {
+	env, _ := setup(t)
+
+	var db1, db2 DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		db1, err = txn.CreateDBI("testing1")
+		return err
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	var cur *Cursor
+	err = env.View(func(txn *Txn) (err error) {
+		cur, err = txn.OpenCursor(db2)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = env.View(func(txn *Txn) (err error) {
+		{
+			err = cur.Bind(txn, db1)
+			if err != nil {
+				return err
 			}
 		}
 		return nil
