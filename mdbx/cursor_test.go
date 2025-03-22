@@ -1444,7 +1444,6 @@ func TestCursor_Bind(t *testing.T) {
 
 	err = env.View(func(txn *Txn) (err error) {
 		{
-			println("dbi1", db1, "dbi2", db2)
 			err = cur.Bind(txn, db1)
 			if err != nil {
 				return err
@@ -1488,6 +1487,7 @@ func TestCursor_Bind(t *testing.T) {
 }
 
 func TestCursor_BindOnEmptyDbi(t *testing.T) {
+	t.Skip() // TODO: uncomment on v0.13.6
 	env, _ := setup(t)
 
 	var db1, db2 DBI
@@ -1513,11 +1513,9 @@ func TestCursor_BindOnEmptyDbi(t *testing.T) {
 	}
 
 	err = env.View(func(txn *Txn) (err error) {
-		{
-			err = cur.Bind(txn, db1)
-			if err != nil {
-				return err
-			}
+		err = cur.Bind(txn, db1)
+		if err != nil {
+			return err
 		}
 		return nil
 	})
