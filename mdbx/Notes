@@ -1,3 +1,3 @@
 This package contains only mdbx.h and mdbx.c - to minimize go build time/size.
-But full version of libmdbx (produced by it's `make dist` command) is in `./../mdbxdist/`. License is also there.
+But full version of libmdbx (produced by it's `make dist` command) is in `./../libmdbx/`. License is also there.
 

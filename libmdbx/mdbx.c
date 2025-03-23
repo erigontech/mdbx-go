@@ -4,7 +4,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 678b8abfbcd2c27ef2c5da9ff730ef8ab7996c28097731154f8bdb538b2a5f96_v0_13_5_0_ge3324cef
+#define MDBX_BUILD_SOURCERY 6e1f37805e5bdfbcef845b7ac45aeb86869b081ca8365196d5589b11275c5aca_v0_13_5_6_g19dc93fc
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -35788,8 +35788,7 @@ __hot txnid_t txn_snapshot_oldest(const MDBX_txn *const txn) {
 }
 
 void txn_done_cursors(MDBX_txn *txn, const bool merge) {
-  tASSERT(txn, txn->cursors[FREE_DBI] == nullptr);
-  TXN_FOREACH_DBI_FROM(txn, i, /* skip FREE_DBI */ 1) {
+  TXN_FOREACH_DBI_ALL(txn, i) {
     MDBX_cursor *mc = txn->cursors[i];
     if (mc) {
       txn->cursors[i] = nullptr;
@@ -37353,10 +37352,10 @@ __dll_export
         0,
         13,
         5,
-        0,
+        6,
         "", /* pre-release suffix of SemVer
-                                        0.13.5 */
-        {"2025-03-21T21:14:00+03:00", "eaa12f8b818d12a92de2b9a3bde3b5ea223953a0", "e3324cef918407fe48c90e513577ec99a0d15b62", "v0.13.5-0-ge3324cef"},
+                                        0.13.5.6 */
+        {"2025-03-23T17:46:28+03:00", "85af2a025731d4f83e6cc576b1b335db54992781", "19dc93fc76590dd309660fc10802b1f9e3f71f4c", "v0.13.5-6-g19dc93fc"},
         sourcery};
 
 __dll_export

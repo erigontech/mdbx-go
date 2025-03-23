@@ -20,7 +20,7 @@
 Go bindings to the libmdbx: <https://libmdbx.dqdkfa.ru>
 
 **Notice**: page `./mdbx` contains only `mdbx.h` and `mdbx.c` - to minimize go build time/size.
-But full version of libmdbx (produced by it's `make dist` command) is in `./../mdbxdist/`.
+But full version of libmdbx (produced by it's `make dist` command) is in `./../libmdbx/`.
 License is also there.
 
 Most of articles in internet about LMDB are applicable to MDBX. But mdbx has more features.
@@ -145,7 +145,7 @@ On FreeBSD 10, you must explicitly set `CC` (otherwise it will fail with a crypt
 
 ## Update C code
 
-In `libmdbx` repo: `make dist && cp -R ./dist/* ./../mdbx-go/mdbxdist/`. Then in mdbx-go repo: `make cp`
+In `libmdbx` repo: `make dist && cp -R ./dist/* ./../mdbx-go/libmdbx/`. Then in mdbx-go repo: `make cp`
 
 On mac: 
 ```

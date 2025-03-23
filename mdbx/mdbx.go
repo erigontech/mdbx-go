@@ -134,7 +134,7 @@ package mdbx
 #cgo !android,linux LDFLAGS: -lrt
 
 #define MDBX_BUILD_FLAGS "${CFLAGS}"
-#include "../mdbxdist/mdbx.c"
+#include "../libmdbx/mdbx.c"
 */
 import "C"
 
