@@ -183,3 +183,91 @@ specifically declared to merely be
 
 The API of an unstable package may change in subtle ways between minor release versions. But deprecations will be
 indicated at least one release in advance and all functionality will remain available through some method.
+
+## Benchmark Notice
+It's noticed that GODEBUG=cgocheck=0 significantly increase mdbx-go perfomance (but be aware of misuse, it's 
+cgoCheckPointer disable, so of course it could be dangerous DIOR)
+```shell
+goos: darwin
+goarch: arm64
+pkg: github.com/erigontech/mdbx-go/mdbx
+cpu: Apple M3 Max
+                         │  master.txt   │        master_cgocheck0.txt         │
+                         │    sec/op     │   sec/op     vs base                │
+Cursor-16                   107.2n ±  0%   103.5n ± 1%   -3.40% (p=0.000 n=10)
+Cursor_Renew/1-16           37.23n ±  2%   35.54n ± 1%   -4.54% (p=0.000 n=10)
+Cursor_Renew/2-16           36.11n ±  2%   34.54n ± 0%   -4.36% (p=0.000 n=10)
+Cursor_Renew/3-16           112.4n ±  2%   102.8n ± 0%   -8.54% (p=0.000 n=10)
+Cursor_Renew/4-16           43.85n ±  2%   41.12n ± 1%   -6.21% (p=0.000 n=10)
+Cursor_Set_OneKey-16        59.98n ±  1%   42.81n ± 1%  -28.63% (p=0.000 n=10)
+Cursor_Set_Sequence-16     106.50n ±  0%   90.60n ± 1%  -14.93% (p=0.000 n=10)
+Cursor_Set_Random-16        475.6n ±  2%   461.6n ± 8%   -2.95% (p=0.034 n=10)
+Errno_Error-16              207.2n ±  2%   202.4n ± 0%   -2.32% (p=0.000 n=10)
+Txn_abort-16                170.3n ±  0%   158.9n ± 1%   -6.75% (p=0.000 n=10)
+Txn_commit-16               49.10µ ±  3%   51.04µ ± 9%        ~ (p=0.105 n=10)
+Txn_ro-16                   207.3n ±  0%   196.8n ± 1%   -5.04% (p=0.000 n=10)
+Txn_unmanaged_abort-16      164.6n ±  1%   152.3n ± 1%   -7.44% (p=0.000 n=10)
+Txn_unmanaged_commit-16     164.3n ±  1%   152.1n ± 1%   -7.45% (p=0.000 n=10)
+Txn_unmanaged_ro-16         156.1n ±  3%   147.0n ± 1%   -5.83% (p=0.000 n=10)
+Txn_renew-16                85.16n ±  0%   80.72n ± 0%   -5.21% (p=0.000 n=10)
+Txn_Put_append-16           195.7n ±  0%   200.0n ± 3%        ~ (p=0.159 n=10)
+Txn_Put_append_noflag-16    226.8n ±  0%   225.9n ± 1%        ~ (p=0.092 n=10)
+Txn_Get_OneKey-16           55.67n ±  0%   44.70n ± 1%  -19.70% (p=0.000 n=10)
+Txn_Get_Sequence-16         149.1n ±  1%   135.1n ± 0%   -9.42% (p=0.000 n=10)
+Txn_Get_Random-16           476.8n ± 11%   445.6n ± 1%   -6.53% (p=0.000 n=10)
+geomean                     167.2n         155.3n        -7.12%
+
+                         │  master.txt  │        master_cgocheck0.txt         │
+                         │     B/op     │    B/op     vs base                 │
+Cursor-16                  16.00 ± 0%     16.00 ± 0%       ~ (p=1.000 n=10) ¹
+Cursor_Renew/1-16          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Cursor_Renew/2-16          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Cursor_Renew/3-16          16.00 ± 0%     16.00 ± 0%       ~ (p=1.000 n=10) ¹
+Cursor_Renew/4-16          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Cursor_Set_OneKey-16       0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Cursor_Set_Sequence-16     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Cursor_Set_Random-16       0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Errno_Error-16             320.0 ± 0%     320.0 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_abort-16               80.00 ± 0%     80.00 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_commit-16              248.0 ± 0%     248.0 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_ro-16                  240.0 ± 0%     240.0 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_unmanaged_abort-16     80.00 ± 0%     80.00 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_unmanaged_commit-16    80.00 ± 0%     80.00 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_unmanaged_ro-16        80.00 ± 0%     80.00 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_renew-16               0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_Put_append-16          8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_Put_append_noflag-16   0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_Get_OneKey-16          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_Get_Sequence-16        0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_Get_Random-16          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+geomean                               ²               +0.00%                ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+
+                         │  master.txt  │        master_cgocheck0.txt         │
+                         │  allocs/op   │ allocs/op   vs base                 │
+Cursor-16                  1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+Cursor_Renew/1-16          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Cursor_Renew/2-16          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Cursor_Renew/3-16          1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+Cursor_Renew/4-16          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Cursor_Set_OneKey-16       0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Cursor_Set_Sequence-16     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Cursor_Set_Random-16       0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Errno_Error-16             6.000 ± 0%     6.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_abort-16               1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_commit-16              3.000 ± 0%     3.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_ro-16                  2.000 ± 0%     2.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_unmanaged_abort-16     1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_unmanaged_commit-16    1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_unmanaged_ro-16        1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_renew-16               0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_Put_append-16          1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_Put_append_noflag-16   0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_Get_OneKey-16          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_Get_Sequence-16        0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Txn_Get_Random-16          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+geomean                               ²               +0.00%                ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+```
