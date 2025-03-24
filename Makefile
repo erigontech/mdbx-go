@@ -22,11 +22,11 @@ lint-deps:
 	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./build/bin v1.64.6
 
 clean:
-	cd mdbxdist && make clean
+	cd libmdbx && make clean
 
 tools: clean
-	cd mdbxdist && MDBX_BUILD_TIMESTAMP=unknown CFLAGS="${CFLAGS} -Wno-unknown-warning-option -Wno-enum-int-mismatch -Wno-strict-prototypes -Wno-unused-but-set-variable" make tools
+	cd libmdbx && MDBX_BUILD_TIMESTAMP=unknown CFLAGS="${CFLAGS} -Wno-unknown-warning-option -Wno-enum-int-mismatch -Wno-strict-prototypes -Wno-unused-but-set-variable" make tools
 
 cp:
 	#cd ../libmdbx && make dist
-	cp -R ./../libmdbx/dist/* ./mdbxdist/
+	cp -R ./../libmdbx/dist/* ./libmdbx/
