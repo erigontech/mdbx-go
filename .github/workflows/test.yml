@@ -5,21 +5,21 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ ubuntu-20.04, macos-13 ] # list of os: https://github.com/actions/virtual-environments
+        os: [ ubuntu-latest, macos-latest ] # list of os: https://github.com/actions/virtual-environments
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.24'
 
       - run: make race
 
   win:
     strategy:
       matrix:
-        os: [ windows-2022 ] # list of os: https://github.com/actions/virtual-environments
+        os: [ windows-latest ] # list of os: https://github.com/actions/virtual-environments
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.24'
 
       - run: go test ./mdbx
       - run: go test ./exp/mdbxpool
