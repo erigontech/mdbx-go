@@ -5,7 +5,7 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ ubuntu-20.04, macos-13 ] # list of os: https://github.com/actions/virtual-environments
+        os: [ ubuntu-latest, macos-latest ] # list of os: https://github.com/actions/virtual-environments
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -19,7 +19,7 @@ jobs:
   win:
     strategy:
       matrix:
-        os: [ windows-2022 ] # list of os: https://github.com/actions/virtual-environments
+        os: [ windows-latest ] # list of os: https://github.com/actions/virtual-environments
     runs-on: ${{ matrix.os }}
 
     steps:
