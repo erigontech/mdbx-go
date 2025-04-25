@@ -11,12 +11,9 @@ jobs:
         with:
           go-version: '1.24'
 
-      - name: Install golangci-lint
-        uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v6
         with:
           version: v2.1.5
           skip-cache: true
 
-      - name: Lint
-        if: runner.os == 'Linux'
-        run: make lint
+      - run: make lint
