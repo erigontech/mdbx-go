@@ -1393,6 +1393,93 @@ func TestCursor_Renew(t *testing.T) {
 	}
 }
 
+func TestCursor_Get_OneKey_Parallel(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	k := make([]byte, 8)
+	binary.BigEndian.PutUint64(k, uint64(1))
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		c, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		err = txn.Put(db, k, k, 0)
+		if err != nil {
+			return err
+		}
+
+		ch := make(chan error)
+		go func() {
+			_, _, err = c.Get(k, nil, Set)
+			if err != nil {
+				ch <- err
+			}
+			ch <- nil
+		}()
+		err = <-ch
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		t.Errorf("dbi: %v", err)
+		return
+	}
+}
+
+func TestCursor_Get_OneKey_SeparateProcess(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	k := make([]byte, 8)
+	binary.BigEndian.PutUint64(k, uint64(1))
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		err = txn.Put(db, k, k, 0)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		t.Errorf("dbi: %v", err)
+		return
+	}
+
+	if err := env.View(func(txn *Txn) (err error) {
+		c, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		ch := make(chan error)
+		go func() {
+			_, _, err = c.Get(k, nil, Set)
+			if err != nil {
+				ch <- err
+			}
+			ch <- nil
+		}()
+		err = <-ch
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		t.Errorf("dbi: %v", err)
+		return
+	}
+}
+
 func TestCursor_Bind(t *testing.T) {
 	env, _ := setup(t)
 
