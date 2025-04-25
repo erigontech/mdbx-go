@@ -23,13 +23,13 @@ linters:
     - wastedassign
     - zerologlint
     - errorlint
+    - noctx
+    - nilerr
+    - unused
+    - makezero
+    - perfsprint
+    - gocritic
   disable:
-    - noctx #TODO: enable me
-    - nilerr #TODO: enable me
-    - unused #TODO: enable me
-    - makezero #TODO: enable me
-    - perfsprint #TODO: enable me
-    - gocritic #TODO: enable me
     - contextcheck
     - err113
     - errchkjson

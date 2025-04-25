@@ -2,6 +2,7 @@ package mdbx
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"testing"
 )
@@ -35,7 +36,7 @@ func TestEmptyKeysAndValues(t *testing.T) {
 			panic(err)
 		}
 		err = txn.Put(db, []byte{}, []byte{}, NoOverwrite)
-		if err == nil { //expect err: MDBX_KEYEXIST
+		if err == nil { // expect err: MDBX_KEYEXIST
 			panic(err)
 		}
 		err = txn.Put(db, []byte{1}, []byte{}, NoOverwrite)
@@ -67,35 +68,35 @@ func TestEmptyKeysAndValues(t *testing.T) {
 			panic(err)
 		}
 		if !bytes.Equal(v, []byte{}) {
-			panic(fmt.Sprintf("%x", v))
+			panic(hex.EncodeToString(v))
 		}
 		v, err = txn.Get(db, []byte{})
 		if err != nil {
 			panic(err)
 		}
 		if !bytes.Equal(v, []byte{}) {
-			panic(fmt.Sprintf("%x", v))
+			panic(hex.EncodeToString(v))
 		}
 		v, err = txn.Get(db, []byte{1})
 		if err != nil {
 			panic(err)
 		}
 		if !bytes.Equal(v, []byte{}) {
-			panic(fmt.Sprintf("%x", v))
+			panic(hex.EncodeToString(v))
 		}
 		v, err = txn.Get(db, []byte{2})
 		if err != nil {
 			panic(err)
 		}
 		if !bytes.Equal(v, []byte{}) {
-			panic(fmt.Sprintf("%x", v))
+			panic(hex.EncodeToString(v))
 		}
 		v, err = txn.Get(db, []byte{3})
 		if err != nil {
 			panic(err)
 		}
 		if !bytes.Equal(v, []byte{1}) {
-			panic(fmt.Sprintf("%x", v))
+			panic(hex.EncodeToString(v))
 		}
 		return nil
 	}); err != nil {
@@ -202,7 +203,7 @@ func TestTest1(t *testing.T) {
 	}
 }
 
-//func TestVersion(t *testing.T) {
+// func TestVersion(t *testing.T) {
 //	maj, min, patch, str := Version()
 //	if maj < 0 || min < 0 || patch < 0 {
 //		t.Error("invalid version number: ", maj, min, patch)
@@ -218,7 +219,7 @@ func TestTest1(t *testing.T) {
 //	if str == "" {
 //		t.Error("empty version string")
 //	}
-//}
+// }
 
 func TestGetSysRamInfo(t *testing.T) {
 	env, err1 := NewEnv(Default)
@@ -248,7 +249,7 @@ func TestGetSysRamInfo(t *testing.T) {
 			panic(err)
 		}
 		err = txn.Put(db, []byte{}, []byte{}, NoOverwrite)
-		if err == nil { //expect err: MDBX_KEYEXIST
+		if err == nil { // expect err: MDBX_KEYEXIST
 			panic(err)
 		}
 		err = txn.Put(db, []byte{1}, []byte{}, NoOverwrite)
@@ -273,5 +274,5 @@ func TestGetSysRamInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	println(pageSize, totalPages, availablePages) //no asserts because it's (at least avP) pretty random TODO: think about how to avoid it
+	println(pageSize, totalPages, availablePages) // no asserts because it's (at least avP) pretty random TODO: think about how to avoid it
 }

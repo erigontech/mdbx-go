@@ -14,10 +14,10 @@ import (
 )
 
 // Just for docs:
-//struct MDBX_val {
+// struct MDBX_val {
 //	void *iov_base; /**< pointer to some data */
 //	size_t iov_len; /**< the length of data in bytes */
-//};
+// };
 
 // valSizeBits is the number of bits which constraining the length of the
 // single values in an LMDB database, either 32 or 31 depending on the

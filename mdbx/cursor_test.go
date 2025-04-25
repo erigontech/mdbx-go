@@ -566,7 +566,7 @@ func TestCursor_Get_reverse(t *testing.T) {
 	}
 }
 
-//func TestCursor_PutMulti(t *testing.T) {
+// func TestCursor_PutMulti(t *testing.T) {
 //	env := setup(t)
 //
 //
@@ -786,10 +786,10 @@ func TestDupCursor_EmptyKeyValues1(t *testing.T) {
 			panic("nil")
 		}
 		if !bytes.Equal(k, []byte{1}) {
-			panic(fmt.Sprintf("%x", k))
+			panic(hex.EncodeToString(k))
 		}
 		if !bytes.Equal(v, []byte{}) {
-			panic(fmt.Sprintf("%x", v))
+			panic(hex.EncodeToString(k))
 		}
 		k, _, err = cur.Get([]byte{}, nil, Set)
 		if err == nil {
@@ -861,10 +861,10 @@ func TestDupCursor_EmptyKeyValues2(t *testing.T) {
 			panic("nil")
 		}
 		if !bytes.Equal(k, []byte{1}) {
-			panic(fmt.Sprintf("%x", k))
+			panic(hex.EncodeToString(k))
 		}
 		if !bytes.Equal(v, []byte{}) {
-			panic(fmt.Sprintf("%x", v))
+			panic(hex.EncodeToString(k))
 		}
 		k, _, err = cur.Get([]byte{}, nil, Set)
 		if err == nil {
@@ -965,10 +965,10 @@ func TestDupCursor_EmptyKeyValues3(t *testing.T) {
 			panic("nil")
 		}
 		if !bytes.Equal(k, []byte{1}) {
-			panic(fmt.Sprintf("%x", k))
+			panic(hex.EncodeToString(k))
 		}
 		if !bytes.Equal(v, []byte{}) {
-			panic(fmt.Sprintf("%x", v))
+			panic(hex.EncodeToString(k))
 		}
 		k, _, err = cur.Get([]byte{}, nil, Set)
 		if err == nil {
@@ -1078,10 +1078,10 @@ func TestDupCursor_EmptyKeyValues(t *testing.T) {
 			panic("nil")
 		}
 		if !bytes.Equal(k, []byte{1}) {
-			panic(fmt.Sprintf("%x", k))
+			panic(hex.EncodeToString(v))
 		}
 		if !bytes.Equal(v, []byte{}) {
-			panic(fmt.Sprintf("%x", v))
+			panic(hex.EncodeToString(v))
 		}
 		k, _, err = cur.Get([]byte{}, nil, Set)
 		if err == nil {
@@ -1253,21 +1253,13 @@ func TestCursor_Del_DupSort(t *testing.T) {
 			panic(err)
 		}
 
-		//numdup, err = cur.Count()
-		//if err != nil {
-		//	return err
-		//}
-		//
-		//if numdup != 1 {
-		//	t.Errorf("unexpected count: %d != %d", numdup, 2)
-		//}
 		kk, vv, err := cur.Get(nil, nil, NextDup)
 		if err != nil {
 			panic(err)
 		}
 		_, _ = kk, vv //TODO: add assert
-		//fmt.Printf("kk: %s\n", kk)
-		//fmt.Printf("vv: %s\n", vv)
+		// fmt.Printf("kk: %s\n", kk)
+		// fmt.Printf("vv: %s\n", vv)
 
 		return nil
 	})

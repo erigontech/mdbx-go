@@ -7,7 +7,7 @@ package mdbx
 */
 import "C"
 import (
-	"fmt"
+	"errors"
 	"sync"
 	"unsafe"
 )
@@ -66,6 +66,7 @@ type Cursor struct {
 	_c  *C.MDBX_cursor
 }
 
+//nolint:gocritic // reason: false positive on dupSubExpr
 func openCursor(txn *Txn, db DBI) (*Cursor, error) {
 	c := &Cursor{txn: txn}
 	ret := C.mdbx_cursor_open(txn._txn, C.MDBX_dbi(db), &c._c)
@@ -176,10 +177,8 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 	// (panic or potentially garbage memory reference).
 	if op == Set {
 		key = setkey
-	} else {
-		if op != LastDup && op != FirstDup {
-			key = castToBytes(&c.txn.key)
-		}
+	} else if op != LastDup && op != FirstDup {
+		key = castToBytes(&c.txn.key)
 	}
 	val = castToBytes(&c.txn.val)
 
@@ -194,6 +193,8 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 // data for reference (Next, First, Last, etc).
 //
 // See mdb_cursor_get.
+//
+//nolint:gocritic // false positive on dupSubExpr
 func (c *Cursor) getValEmpty(op uint) error {
 	ret := C.mdbx_cursor_get(c._c, &c.txn.key, &c.txn.val, C.MDBX_cursor_op(op))
 	return operrno("mdbx_cursor_get", ret)
@@ -203,6 +204,8 @@ func (c *Cursor) getValEmpty(op uint) error {
 // reference (GetBoth, GetBothRange, etc).
 //
 // See mdb_cursor_get.
+//
+//nolint:gocritic // false positive on dupSubExpr
 func (c *Cursor) getVal(setkey, setval []byte, op uint) error {
 	var k, v *C.char
 	if len(setkey) > 0 {
@@ -244,6 +247,8 @@ func (c *Cursor) Put(key, val []byte, flags uint) error {
 // PutReserve returns a []byte of length n that can be written to, potentially
 // avoiding a memcopy.  The returned byte slice is only valid in txn's thread,
 // before it has terminated.
+//
+//nolint:gocritic // false positive on dupSubExpr
 func (c *Cursor) PutReserve(key []byte, n int, flags uint) ([]byte, error) {
 	var k *C.char
 	if len(key) > 0 {
@@ -322,7 +327,7 @@ func CursorToPool(c *Cursor)  { cursorPool.Put(c) }
 func CreateCursor() *Cursor {
 	c := &Cursor{_c: C.mdbx_cursor_create(nil)}
 	if c._c == nil {
-		panic(fmt.Errorf("mdbx.CreateCursor: OOM"))
+		panic(errors.New("mdbx.CreateCursor: OOM"))
 	}
 	return c
 }

@@ -2,13 +2,12 @@ package mdbx
 
 import (
 	"errors"
-	"fmt"
 	"syscall"
 	"testing"
 )
 
 func TestErrno_Error(t *testing.T) {
-	operr := &OpError{fmt.Errorf("testmsg"), "testop"}
+	operr := &OpError{errors.New("testmsg"), "testop"}
 	msg := operr.Error()
 	if msg != "testop: testmsg" {
 		t.Errorf("message: %q", msg)

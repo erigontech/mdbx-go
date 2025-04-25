@@ -31,7 +31,7 @@ const (
 
 	EnvDefaults = C.MDBX_ENV_DEFAULTS
 	LifoReclaim = C.MDBX_LIFORECLAIM
-	//FixedMap    = C.MDBX_FIXEDMAP   // Danger zone. Map memory at a fixed address.
+	// FixedMap    = C.MDBX_FIXEDMAP   // Danger zone. Map memory at a fixed address.
 	NoSubdir = C.MDBX_NOSUBDIR // Argument to Open is a file, not a directory.
 	Accede   = C.MDBX_ACCEDE
 	// Deprecated: always turned on since v0.12, deprecated since v0.13
@@ -45,7 +45,7 @@ const (
 	// Deprecated: use NoStickyThreads instead because now they're sharing the same functionality
 	NoTLS           = C.MDBX_NOTLS           // Danger zone. When unset reader locktable slots are tied to their thread.
 	NoStickyThreads = C.MDBX_NOSTICKYTHREADS // Danger zone. Like MDBX_NOTLS. But also allow move RwTx between threads. Still require to call Begin/Rollback in same thread.
-	//NoLock      = C.MDBX_NOLOCK     // Danger zone. MDBX does not use any locks.
+	// NoLock      = C.MDBX_NOLOCK     // Danger zone. MDBX does not use any locks.
 	NoReadahead = C.MDBX_NORDAHEAD // Disable readahead. Requires OS support.
 	NoMemInit   = C.MDBX_NOMEMINIT // Disable MDBX memory initialization.
 	Exclusive   = C.MDBX_EXCLUSIVE // Disable MDBX memory initialization.
@@ -145,6 +145,8 @@ type Env struct {
 // NewEnv allocates and initializes a new Env.
 //
 // See mdbx_env_create.
+//
+//nolint:gocritic // false positive on dupSubExpr
 func NewEnv(label Label) (*Env, error) {
 	env := &Env{label: label}
 	ret := C.mdbx_env_create(&env._env)
@@ -206,7 +208,7 @@ func (env *Env) FD() (uintptr, error) {
 // line.
 //
 // See mdbx_reader_list.
-//func (env *Env) ReaderList(fn func(string) error) error {
+// func (env *Env) ReaderList(fn func(string) error) error {
 //	ctx, done := newMsgFunc(fn)
 //	defer done()
 //	if fn == nil {
@@ -254,7 +256,7 @@ func (env *Env) Close() {
 // CopyFD copies env to the the file descriptor fd.
 //
 // See mdbx_env_copyfd.
-//func (env *Env) CopyFD(fd uintptr) error {
+// func (env *Env) CopyFD(fd uintptr) error {
 //	ret := C.mdbx_env_copyfd(env._env, C.mdbx_filehandle_t(fd))
 //	return operrno("mdbx_env_copyfd", ret)
 //}
@@ -262,7 +264,7 @@ func (env *Env) Close() {
 // CopyFDFlag copies env to the file descriptor fd, with options.
 //
 // See mdbx_env_copyfd2.
-//func (env *Env) CopyFDFlag(fd uintptr, flags uint) error {
+// func (env *Env) CopyFDFlag(fd uintptr, flags uint) error {
 //	ret := C.mdbx_env_copyfd2(env._env, C.mdbx_filehandle_t(fd), C.uint(flags))
 //	return operrno("mdbx_env_copyfd2", ret)
 //}
@@ -270,7 +272,7 @@ func (env *Env) Close() {
 // Copy copies the data in env to an environment at path.
 //
 // See mdbx_env_copy.
-//func (env *Env) Copy(path string) error {
+// func (env *Env) Copy(path string) error {
 //	cpath := C.CString(path)
 //	defer C.free(unsafe.Pointer(cpath))
 //	ret := C.mdbx_env_copy(env._env, cpath)
@@ -280,7 +282,7 @@ func (env *Env) Close() {
 // CopyFlag copies the data in env to an environment at path created with flags.
 //
 // See mdbx_env_copy2.
-//func (env *Env) CopyFlag(path string, flags uint) error {
+// func (env *Env) CopyFlag(path string, flags uint) error {
 //	cpath := C.CString(path)
 //	defer C.free(unsafe.Pointer(cpath))
 //	ret := C.mdbx_env_copy2(env._env, cpath, C.uint(flags))
