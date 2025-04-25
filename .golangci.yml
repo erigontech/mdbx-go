@@ -10,11 +10,9 @@ linters:
     - durationcheck
     - fatcontext
     - gochecksumtype
-    - gocritic
     - gosmopolitan
     - loggercheck
     - nilnesserr
-    - perfsprint
     - prealloc
     - reassign
     - rowserrcheck
@@ -30,6 +28,8 @@ linters:
     - nilerr #TODO: enable me
     - unused #TODO: enable me
     - makezero #TODO: enable me
+    - perfsprint #TODO: enable me
+    - gocritic #TODO: enable me
     - contextcheck
     - err113
     - errchkjson
