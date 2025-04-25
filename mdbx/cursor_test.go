@@ -688,7 +688,7 @@ func TestCursor_Del(t *testing.T) {
 
 		k, v, err = cur.Get(nil, nil, Next)
 		if err != nil {
-			return fmt.Errorf("post-delete: %v", err)
+			return fmt.Errorf("post-delete: %w", err)
 		}
 		item = items[2]
 		if !bytes.Equal(k, []byte(item.k)) {

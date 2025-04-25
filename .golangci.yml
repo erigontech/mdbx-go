@@ -22,8 +22,8 @@ linters:
     - unconvert
     - wastedassign
     - zerologlint
+    - errorlint
   disable:
-    - errorlint #TODO: enable me
     - noctx #TODO: enable me
     - nilerr #TODO: enable me
     - unused #TODO: enable me

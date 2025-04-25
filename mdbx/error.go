@@ -8,6 +8,7 @@ package mdbx
 import "C"
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"syscall"
@@ -24,6 +25,10 @@ type OpError struct {
 // Error implements the error interface.
 func (err *OpError) Error() string {
 	return err.Op + ": " + err.Errno.Error()
+}
+
+func (err *OpError) Is(target error) bool {
+	return errors.Is(err.Errno, target)
 }
 
 // Errno is an error type that represents the (unique) errno values defined by
@@ -151,4 +156,9 @@ func IsErrnoFn(err error, fn func(error) bool) bool {
 		return fn(err.Errno)
 	}
 	return fn(err)
+}
+
+func (e Errno) Is(target error) bool {
+	t, ok := target.(Errno)
+	return ok && t == e
 }

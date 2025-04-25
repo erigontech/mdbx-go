@@ -138,7 +138,7 @@ func TestTest1(t *testing.T) {
 		for k, v := range data {
 			err = txn.Put(db, []byte(k), []byte(v), NoOverwrite)
 			if err != nil {
-				return fmt.Errorf("put: %v", err)
+				return fmt.Errorf("put: %w", err)
 			}
 		}
 
@@ -159,7 +159,7 @@ func TestTest1(t *testing.T) {
 		cursor, err := txn.OpenCursor(db)
 		if err != nil {
 			cursor.Close()
-			return fmt.Errorf("cursor: %v", err)
+			return fmt.Errorf("cursor: %w", err)
 		}
 		var bkey, bval []byte
 		var bNumVal int
@@ -169,7 +169,7 @@ func TestTest1(t *testing.T) {
 				break
 			}
 			if err != nil {
-				return fmt.Errorf("cursor get: %v", err)
+				return fmt.Errorf("cursor get: %w", err)
 			}
 			bNumVal++
 			skey := string(bkey)
@@ -191,7 +191,7 @@ func TestTest1(t *testing.T) {
 		cursor.Close()
 		bval, err = txn.Get(db, []byte("Key-0"))
 		if err != nil {
-			return fmt.Errorf("get: %v", err)
+			return fmt.Errorf("get: %w", err)
 		}
 		if string(bval) != "Val-0" {
 			return fmt.Errorf("get: value %q does not match %q", bval, "Val-0")

@@ -1,6 +1,7 @@
 package mdbx
 
 import (
+	"errors"
 	"fmt"
 	"syscall"
 	"testing"
@@ -36,13 +37,11 @@ func TestErrno(t *testing.T) {
 		t.Errorf("errno(0) != nil: %#v", zeroerr)
 	}
 	syserr := _operrno("testop", int(syscall.EINVAL))
-	//nolint:err113
-	if syserr.(*OpError).Errno != syscall.EINVAL { // fails if error is Errno(syscall.EINVAL)
+	if !errors.Is(syserr, syscall.EINVAL) { // fails if error is Errno(syscall.EINVAL)
 		t.Errorf("errno(syscall.EINVAL) != syscall.EINVAL: %#v", syserr)
 	}
 	mdberr := _operrno("testop", int(KeyExist))
-	//nolint:err113
-	if mdberr.(*OpError).Errno != KeyExist {
+	if !errors.Is(mdberr, KeyExist) {
 		t.Errorf("errno(ErrKeyExist) != ErrKeyExist: %#v", syserr)
 	}
 }
