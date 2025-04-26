@@ -1,7 +1,7 @@
 package mdbxpool
 
 import (
-	"fmt"
+	"errors"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -90,7 +90,7 @@ func (p *TxnPool) BeginTxn(flags uint) (*mdbx.Txn, error) {
 	// instead of masking flags with mdbx.Readonly an equality comparison
 	// is necessary.
 	if flags != mdbx.Readonly {
-		return nil, fmt.Errorf("flag mdbx.Readonly not provided")
+		return nil, errors.New("flag mdbx.Readonly not provided")
 	}
 
 	return p.beginReadonly()

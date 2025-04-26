@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-//func TestEnv_Path_notOpen(t *testing.T) {
+// func TestEnv_Path_notOpen(t *testing.T) {
 //	env, err := NewEnv()
 //	if err != nil {
 //		t.Fatalf("create: %v", err)
@@ -22,7 +22,7 @@ import (
 //	}
 //}
 //
-//func TestEnv_Path(t *testing.T) {
+// func TestEnv_Path(t *testing.T) {
 //	env, err := NewEnv()
 //	if err != nil {
 //		t.Fatalf("create: %v", err)
@@ -145,9 +145,6 @@ func TestEnv_Flags(t *testing.T) {
 	if flags&NoTLS == 0 {
 		t.Errorf("NoTLS is not set")
 	}
-	//if flags&SafeNoSync != 0 {
-	//	t.Errorf("UtterlyNoSync is set")
-	//}
 
 	err = env.SetFlags(SafeNoSync)
 	if err != nil {
@@ -203,18 +200,6 @@ func TestEnv_SetMaxReader(t *testing.T) {
 		env.Close()
 		t.Error(err)
 	}
-	//
-	//err = env.SetOption(OptMaxReaders, uint64(126))
-	//if !IsErrnoSys(err, syscall.EPERM) {
-	//	t.Errorf("unexpected error: %v (!= %v)", err, syscall.EPERM)
-	//}
-	//_maxreaders, err = env.GetOption(OptMaxReaders)
-	//if err != nil {
-	//	t.Error(err)
-	//}
-	//if _maxreaders < maxreaders {
-	//	t.Errorf("unexpected MaxReaders: %v (!= %v)", _maxreaders, maxreaders)
-	//}
 }
 
 func TestEnv_SetDebug(t *testing.T) {
@@ -229,7 +214,7 @@ func TestEnv_SetDebug(t *testing.T) {
 	}
 }
 
-//func TestEnv_SetMapSize(t *testing.T) {
+// func TestEnv_SetMapSize(t *testing.T) {
 //	env := setup(t)
 //
 //
@@ -254,7 +239,7 @@ func TestEnv_SetDebug(t *testing.T) {
 //	}
 //}
 
-//func TestEnv_ReaderList(t *testing.T) {
+// func TestEnv_ReaderList(t *testing.T) {
 //	env := setup(t)
 //
 //
@@ -298,9 +283,9 @@ func TestEnv_SetDebug(t *testing.T) {
 //	if len(readers) != numreaders+1 {
 //		t.Errorf("unexpected reader list size: %d (!= %d)", len(readers), numreaders)
 //	}
-//}
+// }
 
-//func TestEnv_ReaderList_error(t *testing.T) {
+// func TestEnv_ReaderList_error(t *testing.T) {
 //	env := setup(t)
 //
 //
@@ -350,9 +335,9 @@ func TestEnv_SetDebug(t *testing.T) {
 //	if len(readers) != 1 {
 //		t.Errorf("unexpected reader list size: %d (!= %d)", len(readers), 1)
 //	}
-//}
+// }
 //
-//func TestEnv_ReaderList_envInvalid(t *testing.T) {
+// func TestEnv_ReaderList_envInvalid(t *testing.T) {
 //	err := (&Env{}).ReaderList(func(msg string) error {
 //		t.Logf("%s", msg)
 //		return nil
@@ -360,9 +345,9 @@ func TestEnv_SetDebug(t *testing.T) {
 //	if err == nil {
 //		t.Errorf("expected error")
 //	}
-//}
+// }
 //
-//func TestEnv_ReaderList_nilFunc(t *testing.T) {
+// func TestEnv_ReaderList_nilFunc(t *testing.T) {
 //	env, err := NewEnv()
 //	if err != nil {
 //		t.Fatal(err)
@@ -371,7 +356,7 @@ func TestEnv_SetDebug(t *testing.T) {
 //	if err == nil {
 //		t.Errorf("expected error")
 //	}
-//}
+// }
 
 func TestEnv_ReaderCheck(t *testing.T) {
 	env, _ := setup(t)
@@ -385,31 +370,31 @@ func TestEnv_ReaderCheck(t *testing.T) {
 	}
 }
 
-//func TestEnv_Copy(t *testing.T) {
+// func TestEnv_Copy(t *testing.T) {
 //	testEnvCopy(t, 0, false, false)
-//}
+// }
 //
-//func TestEnv_CopyFlags(t *testing.T) {
-//	testEnvCopy(t, CopyCompact, true, false)
-//}
+// func TestEnv_CopyFlags(t *testing.T) {
+//	 testEnvCopy(t, CopyCompact, true, false)
+// }
 //
-//func TestEnv_CopyFlags_zero(t *testing.T) {
-//	testEnvCopy(t, 0, true, false)
-//}
+// func TestEnv_CopyFlags_zero(t *testing.T) {
+//	 testEnvCopy(t, 0, true, false)
+// }
 //
-//func TestEnv_CopyFD(t *testing.T) {
-//	testEnvCopy(t, 0, false, true)
-//}
+// func TestEnv_CopyFD(t *testing.T) {
+//	 testEnvCopy(t, 0, false, true)
+// }
 //
-//func TestEnv_CopyFDFlags(t *testing.T) {
-//	testEnvCopy(t, CopyCompact, true, true)
-//}
+// func TestEnv_CopyFDFlags(t *testing.T) {
+//	 testEnvCopy(t, CopyCompact, true, true)
+// }
 //
-//func TestEnv_CopyFDFlags_zero(t *testing.T) {
-//	testEnvCopy(t, 0, true, true)
-//}
+// func TestEnv_CopyFDFlags_zero(t *testing.T) {
+//	 testEnvCopy(t, 0, true, true)
+// }
 //
-//func testEnvCopy(t *testing.T, flags uint, useflags bool, usefd bool) {
+// func testEnvCopy(t *testing.T, flags uint, useflags bool, usefd bool) {
 //	dircp, err := ioutil.TempDir("", "test-env-copy-")
 //	if err != nil {
 //		t.Fatal(err)
@@ -489,7 +474,7 @@ func TestEnv_ReaderCheck(t *testing.T) {
 //	if err != nil {
 //		t.Error(err)
 //	}
-//}
+// }
 
 func TestEnv_Sync(t *testing.T) {
 	env, _ := setupFlags(t, SafeNoSync)

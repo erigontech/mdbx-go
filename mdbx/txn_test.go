@@ -384,7 +384,7 @@ func TestTxn_Put_overwrite(t *testing.T) {
 			return err
 		}
 		if !bytes.Equal(v, []byte("world")) {
-			return fmt.Errorf("unexpected value")
+			return errors.New("unexpected value")
 		}
 		return nil
 	})
@@ -462,7 +462,7 @@ func TestTxn_Commit_managed(t *testing.T) {
 			}
 		}()
 		txn.Abort()
-		return fmt.Errorf("abort")
+		return errors.New("abort")
 	})
 	if err != nil {
 		t.Error(err)
@@ -487,7 +487,7 @@ func TestTxn_Commit_managed(t *testing.T) {
 			}
 		}()
 		txn.Reset()
-		return fmt.Errorf("reset")
+		return errors.New("reset")
 	})
 	if err != nil {
 		t.Error(err)
@@ -622,7 +622,7 @@ func TestTxn_Flags(t *testing.T) {
 			return err
 		}
 		if flags != dbflags {
-			return fmt.Errorf("unexpected flags")
+			return errors.New("unexpected flags")
 		}
 		cur, err := txn.OpenCursor(db)
 		if err != nil {
@@ -766,10 +766,8 @@ func TestTxn_Reset_writeTxn(t *testing.T) {
 	err = txn.Renew()
 	if runtime.GOOS == "windows" {
 		// todo
-	} else {
-		if !IsErrnoSys(err, syscall.EINVAL) {
-			t.Errorf("renew: %v", err)
-		}
+	} else if !IsErrnoSys(err, syscall.EINVAL) {
+		t.Errorf("renew: %v", err)
 	}
 
 	_, err = txn.Commit()
@@ -850,7 +848,7 @@ func TestTxn_RunTxn(t *testing.T) {
 		}
 		err = txn.Put(dbi, []byte("k1"), []byte("v1"), 0)
 		if err == nil {
-			return fmt.Errorf("allowed to Put in a readonly Txn")
+			return errors.New("allowed to Put in a readonly Txn")
 		}
 		return nil
 	})
@@ -1054,7 +1052,7 @@ func TestListDBI(t *testing.T) {
 func BenchmarkTxn_abort(b *testing.B) {
 	env, _ := setup(b)
 
-	var e = fmt.Errorf("abort")
+	var e = errors.New("abort")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

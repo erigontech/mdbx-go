@@ -85,6 +85,8 @@ type Txn struct {
 
 // beginTxn does not lock the OS thread which is a prerequisite for creating a
 // write transaction.
+//
+//nolint:gocritic // false positive on dupSubExpr
 func beginTxn(env *Env, parent *Txn, flags uint) (*Txn, error) {
 	txn := &Txn{
 		readonly: flags&Readonly != 0,
@@ -219,13 +221,13 @@ type CommitLatencyGC struct {
 	WorkCounter uint32
 	SelfCounter uint32
 
-	//WorkPnlMergeTime   time.Duration
-	//WorkPnlMergeVolume uint64
-	//WorkPnlMergeCalls  uint32
-	//
-	//SelfPnlMergeTime   time.Duration
-	//SelfPnlMergeVolume uint64
-	//SelfPnlMergeCalls  uint32
+	// WorkPnlMergeTime   time.Duration
+	// WorkPnlMergeVolume uint64
+	// WorkPnlMergeCalls  uint32
+
+	// SelfPnlMergeTime   time.Duration
+	// SelfPnlMergeVolume uint64
+	// SelfPnlMergeCalls  uint32
 
 	/** \brief Время затраченное на чтение и поиск внтури GC
 	 *  для целей поддержки и обновления самой GC. */
@@ -633,6 +635,8 @@ func (txn *Txn) bytes(val *C.MDBX_val) []byte {
 // accessed after txn has terminated.
 //
 // See mdbx_get.
+//
+//nolint:gocritic // false positive on dupSubExpr
 func (txn *Txn) Get(dbi DBI, key []byte) ([]byte, error) {
 	var k *C.char
 	if len(key) > 0 {
@@ -676,6 +680,8 @@ func (txn *Txn) Put(dbi DBI, key, val []byte, flags uint) error {
 // PutReserve returns a []byte of length n that can be written to, potentially
 // avoiding a memcopy.  The returned byte slice is only valid in txn's thread,
 // before it has terminated.
+//
+//nolint:gocritic // false positive on dupSubExpr
 func (txn *Txn) PutReserve(dbi DBI, key []byte, n int, flags uint) ([]byte, error) {
 	txn.val.iov_len = C.size_t(n)
 	var k *C.char

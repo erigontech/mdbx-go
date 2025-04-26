@@ -13,7 +13,7 @@ import "C"
 // if env.Open() was not previously called.
 //
 // See mdbx_env_get_path.
-//func (env *Env) Path() (string, error) {
+// func (env *Env) Path() (string, error) {
 //	var cpath *C.char
 //	ret := C.mdbx_env_get_path(env._env, &cpath)
 //	if ret != success {

@@ -8,6 +8,7 @@ package mdbx
 import "C"
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"syscall"
@@ -24,6 +25,10 @@ type OpError struct {
 // Error implements the error interface.
 func (err *OpError) Error() string {
 	return err.Op + ": " + err.Errno.Error()
+}
+
+func (err *OpError) Is(target error) bool {
+	return errors.Is(err.Errno, target)
 }
 
 // Errno is an error type that represents the (unique) errno values defined by
@@ -69,15 +74,15 @@ const (
 	BadValSize      Errno = C.MDBX_BAD_VALSIZE
 	BadDBI          Errno = C.MDBX_BAD_DBI
 	Perm            Errno = C.MDBX_EPERM
-	//TLSFull       Errno = C.MDBX_TLS_FULL
-	//MapResized    Errno = C.MDBX_MAP_RESIZED
+	// TLSFull       Errno = C.MDBX_TLS_FULL
+	// MapResized    Errno = C.MDBX_MAP_RESIZED
 )
 
 // minimum and maximum values produced for the Errno type. syscall.Errnos of
 // other values may still be produced.
 const minErrno, maxErrno C.int = C.MDBX_KEYEXIST, C.MDBX_LAST_ADDED_ERRCODE
 
-var ErrNotFound = fmt.Errorf("key not found")
+var ErrNotFound = errors.New("key not found")
 
 // App can re-define this messages from init() func
 var CorruptErrorHardwareRecommendations = "Maybe free space is over on disk. Otherwise it's hardware failure. Before creating issue please use tools like https://www.memtest86.com to test RAM and tools like https://www.smartmontools.org to test Disk. To handle hardware risks: use ECC RAM, use RAID of disks, run multiple application instances (or do backups). If hardware checks passed - check FS settings - 'fsync' and 'flock' must be enabled. "
@@ -126,7 +131,7 @@ func IsMapFull(err error) bool {
 
 // IsMapResized returns true if the environment has grown too large for the
 // current map after being resized by another process.
-//func IsMapResized(err error) bool {
+// func IsMapResized(err error) bool {
 //	return IsErrno(err, MapResized)
 //}
 
@@ -151,4 +156,9 @@ func IsErrnoFn(err error, fn func(error) bool) bool {
 		return fn(err.Errno)
 	}
 	return fn(err)
+}
+
+func (e Errno) Is(target error) bool {
+	t, ok := target.(Errno)
+	return ok && t == e
 }
