@@ -35,7 +35,6 @@ const (
 	NoSubdir = C.MDBX_NOSUBDIR // Argument to Open is a file, not a directory.
 	Accede   = C.MDBX_ACCEDE
 	// Deprecated: always turned on since v0.12, deprecated since v0.13
-	Coalesce      = C.MDBX_COALESCE
 	Readonly      = C.MDBX_RDONLY     // Used in several functions to denote an object as readonly.
 	WriteMap      = C.MDBX_WRITEMAP   // Use a writable memory map.
 	NoMetaSync    = C.MDBX_NOMETASYNC // Don't fsync metapage after commit.
