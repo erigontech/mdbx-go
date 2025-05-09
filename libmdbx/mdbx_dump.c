@@ -18,7 +18,7 @@
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
 
-#define MDBX_BUILD_SOURCERY 4df7f8f177aee7f9f94c4e72f0d732384e9a870d7d79b8142abdeb4633e710cd_v0_13_6_0_ga971c76a
+#define MDBX_BUILD_SOURCERY a10670e7693000026cb532e91a7b0bcaa06b0e747d4ec41f162bdc968dbdbe9d_v0_14_1_0_ga13147d1
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -1594,8 +1594,10 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 
 #if UINTPTR_MAX > 0xffffFFFFul || ULONG_MAX > 0xffffFFFFul || defined(_WIN64)
 #define MDBX_WORDBITS 64
+#define MDBX_WORDBITS_LN2 6
 #else
 #define MDBX_WORDBITS 32
+#define MDBX_WORDBITS_LN2 5
 #endif /* MDBX_WORDBITS */
 
 /*******************************************************************************
@@ -1849,6 +1851,14 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 #elif !(MDBX_HAVE_BUILTIN_CPU_SUPPORTS == 0 || MDBX_HAVE_BUILTIN_CPU_SUPPORTS == 1)
 #error MDBX_HAVE_BUILTIN_CPU_SUPPORTS must be defined as 0 or 1
 #endif /* MDBX_HAVE_BUILTIN_CPU_SUPPORTS */
+
+/** if enabled then treats the commit of pure (nothing changes) transactions as special
+ * cases and return \ref MDBX_RESULT_TRUE instead of \ref MDBX_SUCCESS. */
+#ifndef MDBX_NOSUCCESS_PURE_COMMIT
+#define MDBX_NOSUCCESS_PURE_COMMIT 0
+#elif !(MDBX_NOSUCCESS_PURE_COMMIT == 0 || MDBX_NOSUCCESS_PURE_COMMIT == 1)
+#error MDBX_NOSUCCESS_PURE_COMMIT must be defined as 0 or 1
+#endif /* MDBX_NOSUCCESS_PURE_COMMIT */
 
 /** if enabled then instead of the returned error `MDBX_REMOTE`, only a warning is issued, when
  * the database being opened in non-read-only mode is located in a file system exported via NFS. */
@@ -2676,7 +2686,7 @@ typedef struct reader_slot {
 /* The header for the reader table (a memory-mapped lock file). */
 typedef struct shared_lck {
   /* Stamp identifying this as an MDBX file.
-   * It must be set to MDBX_MAGIC with with MDBX_LOCK_VERSION. */
+   * It must be set to MDBX_MAGIC with MDBX_LOCK_VERSION. */
   uint64_t magic_and_version;
 
   /* Format of this lock file. Must be set to MDBX_LOCK_FORMAT. */
@@ -3040,6 +3050,8 @@ MDBX_NOTHROW_CONST_FUNCTION MDBX_MAYBE_UNUSED static inline size_t ceil_powerof2
 
 MDBX_NOTHROW_CONST_FUNCTION MDBX_MAYBE_UNUSED MDBX_INTERNAL unsigned log2n_powerof2(size_t value_uintptr);
 
+MDBX_NOTHROW_CONST_FUNCTION MDBX_MAYBE_UNUSED MDBX_INTERNAL unsigned ceil_log2n(size_t value_uintptr);
+
 MDBX_NOTHROW_CONST_FUNCTION MDBX_INTERNAL uint64_t rrxmrrxmsx_0(uint64_t v);
 
 struct monotime_cache {
@@ -3095,16 +3107,18 @@ typedef const pgno_t *const_pnl_t;
 #define MDBX_PNL_EDGE(pl) ((pl) + 1)
 #define MDBX_PNL_LEAST(pl) MDBX_PNL_FIRST(pl)
 #define MDBX_PNL_MOST(pl) MDBX_PNL_LAST(pl)
+#define MDBX_PNL_CONTIGUOUS(prev, next, span) ((next) - (prev)) == (span))
 #else
 #define MDBX_PNL_EDGE(pl) ((pl) + MDBX_PNL_GETSIZE(pl))
 #define MDBX_PNL_LEAST(pl) MDBX_PNL_LAST(pl)
 #define MDBX_PNL_MOST(pl) MDBX_PNL_FIRST(pl)
+#define MDBX_PNL_CONTIGUOUS(prev, next, span) (((prev) - (next)) == (span))
 #endif
 
 #define MDBX_PNL_SIZEOF(pl) ((MDBX_PNL_GETSIZE(pl) + 1) * sizeof(pgno_t))
 #define MDBX_PNL_IS_EMPTY(pl) (MDBX_PNL_GETSIZE(pl) == 0)
 
-MDBX_MAYBE_UNUSED static inline size_t pnl_size2bytes(size_t size) {
+MDBX_NOTHROW_PURE_FUNCTION MDBX_MAYBE_UNUSED static inline size_t pnl_size2bytes(size_t size) {
   assert(size > 0 && size <= PAGELIST_LIMIT);
 #if MDBX_PNL_PREALLOC_FOR_RADIXSORT
 
@@ -3119,7 +3133,7 @@ MDBX_MAYBE_UNUSED static inline size_t pnl_size2bytes(size_t size) {
   return bytes;
 }
 
-MDBX_MAYBE_UNUSED static inline pgno_t pnl_bytes2size(const size_t bytes) {
+MDBX_NOTHROW_PURE_FUNCTION MDBX_MAYBE_UNUSED static inline pgno_t pnl_bytes2size(const size_t bytes) {
   size_t size = bytes / sizeof(pgno_t);
   assert(size > 3 && size <= PAGELIST_LIMIT + /* alignment gap */ 65536);
   size -= 3;
@@ -3132,6 +3146,8 @@ MDBX_MAYBE_UNUSED static inline pgno_t pnl_bytes2size(const size_t bytes) {
 MDBX_INTERNAL pnl_t pnl_alloc(size_t size);
 
 MDBX_INTERNAL void pnl_free(pnl_t pnl);
+
+MDBX_MAYBE_UNUSED MDBX_INTERNAL pnl_t pnl_clone(const pnl_t src);
 
 MDBX_INTERNAL int pnl_reserve(pnl_t __restrict *__restrict ppnl, const size_t wanna);
 
@@ -3160,7 +3176,7 @@ MDBX_INTERNAL int __must_check_result pnl_append_span(__restrict pnl_t *ppnl, pg
 
 MDBX_INTERNAL int __must_check_result pnl_insert_span(__restrict pnl_t *ppnl, pgno_t pgno, size_t n);
 
-MDBX_INTERNAL size_t pnl_search_nochk(const pnl_t pnl, pgno_t pgno);
+MDBX_NOTHROW_PURE_FUNCTION MDBX_INTERNAL size_t pnl_search_nochk(const pnl_t pnl, pgno_t pgno);
 
 MDBX_INTERNAL void pnl_sort_nochk(pnl_t pnl);
 
@@ -3176,7 +3192,8 @@ MDBX_MAYBE_UNUSED static inline void pnl_sort(pnl_t pnl, size_t limit4check) {
   (void)limit4check;
 }
 
-MDBX_MAYBE_UNUSED static inline size_t pnl_search(const pnl_t pnl, pgno_t pgno, size_t limit) {
+MDBX_NOTHROW_PURE_FUNCTION MDBX_MAYBE_UNUSED static inline size_t pnl_search(const pnl_t pnl, pgno_t pgno,
+                                                                             size_t limit) {
   assert(pnl_check_allocated(pnl, limit));
   if (MDBX_HAVE_CMOV) {
     /* cmov-ускоренный бинарный поиск может читать (но не использовать) один
@@ -3194,6 +3211,8 @@ MDBX_MAYBE_UNUSED static inline size_t pnl_search(const pnl_t pnl, pgno_t pgno, 
 }
 
 MDBX_INTERNAL size_t pnl_merge(pnl_t dst, const pnl_t src);
+
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION MDBX_INTERNAL size_t pnl_maxspan(const pnl_t pnl);
 
 #ifdef __cplusplus
 }
@@ -3228,6 +3247,7 @@ MDBX_NOTHROW_CONST_FUNCTION MDBX_MAYBE_UNUSED static inline pgno_t pgno_sub(size
 
 #define PRINT 1
 #define GLOBAL 2
+#define CONCISE 4
 static int mode = GLOBAL;
 
 typedef struct flagbit {
@@ -3348,39 +3368,20 @@ static void signal_handler(int sig) {
 
 #endif /* !WINDOWS */
 
-static const char hexc[] = "0123456789abcdef";
-
-static void dumpbyte(unsigned char c) {
-  putchar(hexc[c >> 4]);
-  putchar(hexc[c & 15]);
-}
-
-static void text(MDBX_val *v) {
-  unsigned char *c, *end;
-
+static void dumpval(const MDBX_val *v) {
+  static const char digits[] = "0123456789abcdef";
   putchar(' ');
-  c = v->iov_base;
-  end = c + v->iov_len;
-  while (c < end) {
-    if (isprint(*c) && *c != '\\') {
-      putchar(*c);
-    } else {
-      putchar('\\');
-      dumpbyte(*c);
+  for (const unsigned char *c = v->iov_base, *end = c + v->iov_len; c < end; ++c) {
+    if (mode & PRINT) {
+      if (isprint(*c) && *c != '\\') {
+        putchar(*c);
+        continue;
+      } else
+        putchar('\\');
     }
-    c++;
+    putchar(digits[*c >> 4]);
+    putchar(digits[*c & 15]);
   }
-  putchar('\n');
-}
-
-static void dumpval(MDBX_val *v) {
-  unsigned char *c, *end;
-
-  putchar(' ');
-  c = v->iov_base;
-  end = c + v->iov_len;
-  while (c < end)
-    dumpbyte(*c++);
   putchar('\n');
 }
 
@@ -3478,12 +3479,19 @@ static int dump_tbl(MDBX_txn *txn, MDBX_dbi dbi, char *name) {
       rc = MDBX_EINTR;
       break;
     }
-    if (mode & PRINT) {
-      text(&key);
-      text(&data);
-    } else {
-      dumpval(&key);
-      dumpval(&data);
+    dumpval(&key);
+    dumpval(&data);
+    if ((flags & MDBX_DUPSORT) && (mode & CONCISE)) {
+      while ((rc = mdbx_cursor_get(cursor, &key, &data, MDBX_NEXT_DUP)) == MDBX_SUCCESS) {
+        if (user_break) {
+          rc = MDBX_EINTR;
+          break;
+        }
+        putchar(' ');
+        dumpval(&data);
+      }
+      if (rc != MDBX_NOTFOUND)
+        break;
     }
   }
   printf("DATA=END\n");
@@ -3499,10 +3507,12 @@ static int dump_tbl(MDBX_txn *txn, MDBX_dbi dbi, char *name) {
 static void usage(void) {
   fprintf(stderr,
           "usage: %s "
-          "[-V] [-q] [-f file] [-l] [-p] [-r] [-a|-s table] [-u|U] "
+          "[-V] [-q] [-c] [-f file] [-l] [-p] [-r] [-a|-s table] [-u|U] "
           "dbpath\n"
           "  -V\t\tprint version and exit\n"
           "  -q\t\tbe quiet\n"
+          "  -c\t\tconcise mode without repeating keys,\n"
+          "  \t\tbut incompatible with Berkeley DB and LMDB\n"
           "  -f\t\twrite to file instead of stdout\n"
           "  -l\t\tlist tables and exit\n"
           "  -p\t\tuse printable characters\n"
@@ -3561,6 +3571,7 @@ int main(int argc, char *argv[]) {
                      "s:"
                      "V"
                      "r"
+                     "c"
                      "q")) != EOF) {
     switch (i) {
     case 'V':
@@ -3590,6 +3601,9 @@ int main(int argc, char *argv[]) {
       }
       break;
     case 'n':
+      break;
+    case 'c':
+      mode |= CONCISE;
       break;
     case 'p':
       mode |= PRINT;
