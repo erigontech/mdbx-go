@@ -1,5 +1,17 @@
 <!-- Required extensions: pymdownx.betterem, pymdownx.tilde, pymdownx.emoji, pymdownx.tasklist, pymdownx.superfences -->
 
+> Please refer to the online [official libmdbx documentation site](https://libmdbx.dqdkfa.ru)
+> with [`C` API description](https://libmdbx.dqdkfa.ru/group__c__api.html)
+> and pay attention to the [`C++` API](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h%2B%2B#line-num-1).
+
+> Questions, feedback and suggestions are welcome to the [Telegram' group](https://t.me/libmdbx) (archive [1](https://libmdbx.dqdkfa.ru/tg-archive/messages1.html),
+> [2](https://libmdbx.dqdkfa.ru/tg-archive/messages2.html), [3](https://libmdbx.dqdkfa.ru/tg-archive/messages3.html), [4](https://libmdbx.dqdkfa.ru/tg-archive/messages4.html),
+> [5](https://libmdbx.dqdkfa.ru/tg-archive/messages5.html), [6](https://libmdbx.dqdkfa.ru/tg-archive/messages6.html), [7](https://libmdbx.dqdkfa.ru/tg-archive/messages7.html)).
+> See the [ChangeLog](https://gitflic.ru/project/erthink/libmdbx/blob?file=ChangeLog.md) for `NEWS` and latest updates.
+
+> Donations are welcome to the Ethereum/ERC-20 `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`.
+> Всё будет хорошо!
+
 libmdbx
 ========
 
@@ -26,43 +38,31 @@ tree](https://en.wikipedia.org/wiki/B%2B_tree).
 [WAL](https://en.wikipedia.org/wiki/Write-ahead_logging), but that might
 be a caveat for write-intensive workloads with durability requirements.
 
-4. Enforces [serializability](https://en.wikipedia.org/wiki/Serializability) for
+4. **Compact and friendly for fully embedding**. Only ≈25KLOC of `C11`,
+≈64K x86 binary code of core, no internal threads neither server process(es),
+but implements a simplified variant of the [Berkeley
+DB](https://en.wikipedia.org/wiki/Berkeley_DB) and
+[dbm](https://en.wikipedia.org/wiki/DBM_(computing)) API.
+
+5. Enforces [serializability](https://en.wikipedia.org/wiki/Serializability) for
 writers just by single
 [mutex](https://en.wikipedia.org/wiki/Mutual_exclusion) and affords
 [wait-free](https://en.wikipedia.org/wiki/Non-blocking_algorithm#Wait-freedom)
 for parallel readers without atomic/interlocked operations, while
 **writing and reading transactions do not block each other**.
 
-5. **Guarantee data integrity** after crash unless this was explicitly
+6. **Guarantee data integrity** after crash unless this was explicitly
 neglected in favour of write performance.
 
-6. Supports Linux, Windows, MacOS, Android, iOS, FreeBSD, DragonFly, Solaris,
+7. Supports Linux, Windows, MacOS, Android, iOS, FreeBSD, DragonFly, Solaris,
 OpenSolaris, OpenIndiana, NetBSD, OpenBSD and other systems compliant with
 **POSIX.1-2008**.
 
-7. **Compact and friendly for fully embedding**. Only ≈25KLOC of `C11`,
-≈64K x86 binary code of core, no internal threads neither server process(es),
-but implements a simplified variant of the [Berkeley
-DB](https://en.wikipedia.org/wiki/Berkeley_DB) and
-[dbm](https://en.wikipedia.org/wiki/DBM_(computing)) API.
-
 <!-- section-end -->
 
-Historically, _libmdbx_ is a deeply revised and extended descendant of the legendary
+Historically, _libmdbx_ is a deeply revised and extended descendant of the amazing
 [Lightning Memory-Mapped Database](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database).
 _libmdbx_ inherits all benefits from _LMDB_, but resolves some issues and adds [a set of improvements](#improvements-beyond-lmdb).
-
-[![Telergam: Support | Discussions | News](https://img.shields.io/endpoint?color=scarlet&logo=telegram&label=Support%20%7C%20Discussions%20%7C%20News&url=https%3A%2F%2Ftg.sumanjay.workers.dev%2Flibmdbx)](https://t.me/libmdbx)
-
-> Please refer to the online [documentation](https://libmdbx.dqdkfa.ru)
-> with [`C` API description](https://libmdbx.dqdkfa.ru/group__c__api.html)
-> and pay attention to the [`C++` API](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h%2B%2B#line-num-1).
-> Donations are welcome to the Ethereum/ERC-20 `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`.
-> Всё будет хорошо!
-
-Telegram Group archive: [1](https://libmdbx.dqdkfa.ru/tg-archive/messages1.html),
-[2](https://libmdbx.dqdkfa.ru/tg-archive/messages2.html), [3](https://libmdbx.dqdkfa.ru/tg-archive/messages3.html), [4](https://libmdbx.dqdkfa.ru/tg-archive/messages4.html),
-[5](https://libmdbx.dqdkfa.ru/tg-archive/messages5.html), [6](https://libmdbx.dqdkfa.ru/tg-archive/messages6.html), [7](https://libmdbx.dqdkfa.ru/tg-archive/messages7.html).
 
 ## Github
 
@@ -125,7 +125,8 @@ of the database. All fundamental architectural problems of libmdbx/LMDB
 have been solved there, but now the active development has been
 suspended for top-three reasons:
 
-1. For now _libmdbx_ mostly enough and I’m busy for scalability.
+1. For now _libmdbx_ «mostly» enough for all [our products](https://www.ptsecurity.com/ww-en/products/),
+and I’m busy in development of replication for scalability.
 2. Waiting for fresh [Elbrus CPU](https://wiki.elbrus.ru/) of [e2k architecture](https://en.wikipedia.org/wiki/Elbrus_2000),
 especially with hardware acceleration of [Streebog](https://en.wikipedia.org/wiki/Streebog) and
 [Kuznyechik](https://en.wikipedia.org/wiki/Kuznyechik), which are required for Merkle tree, etc.
@@ -550,9 +551,9 @@ Of course, in addition to this, your toolchain must ensure the reproducibility o
 For more information please refer to [reproducible-builds.org](https://reproducible-builds.org/).
 
 #### Containers
-There are no special traits nor quirks if you use _libmdbx_ ONLY inside
-the single container. But in a cross-container(s) or with a host-container(s)
-interoperability cases the three major things MUST be guaranteed:
+There are no special traits nor quirks if you use libmdbx ONLY inside the single container.
+But in a cross-container cases or with a host-container(s) mix the two major things MUST be
+guaranteed:
 
 1. Coherence of memory mapping content and unified page cache inside OS
 kernel for host and all container(s) operated with a DB. Basically this
@@ -567,12 +568,6 @@ in the system memory.
       I.e. the `OpenProcess(SYNCHRONIZE, ..., PID)` must return reasonable error,
       including `ERROR_ACCESS_DENIED`,
       but not the `ERROR_INVALID_PARAMETER` as for an invalid/non-existent PID.
-
-3. The versions/builds of _libmdbx_ and `libc`/`pthreads` (`glibc`, `musl`, etc) must be be compatible.
-   - Basically, the `options:` string in the output of `mdbx_chk -V` must be the same for host and container(s).
-     See `MDBX_LOCKING`, `MDBX_USE_OFDLOCKS` and other build options for details.
-   - Avoid using different versions of `libc`, especially mixing different implementations, i.e. `glibc` with `musl`, etc.
-     Prefer to use the same LTS version, or switch to full virtualization/isolation if in doubt.
 
 #### DSO/DLL unloading and destructors of Thread-Local-Storage objects
 When building _libmdbx_ as a shared library or use static _libmdbx_ as a

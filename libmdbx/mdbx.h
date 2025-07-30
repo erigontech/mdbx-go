@@ -579,10 +579,9 @@ typedef mode_t mdbx_mode_t;
 extern "C" {
 #endif
 
-/* MDBX version 0.14.x, but it is unstable/under-development yet. */
-#define MDBX_VERSION_UNSTABLE
+/* MDBX version 0.13.x */
 #define MDBX_VERSION_MAJOR 0
-#define MDBX_VERSION_MINOR 14
+#define MDBX_VERSION_MINOR 13
 
 #ifndef LIBMDBX_API
 #if defined(LIBMDBX_EXPORTS) || defined(DOXYGEN)
@@ -2773,10 +2772,10 @@ typedef struct MDBX_stat MDBX_stat;
  * Legacy mdbx_env_stat() correspond to calling \ref mdbx_env_stat_ex() with the
  * null `txn` argument.
  *
- * \param [in] env     An environment handle returned by \ref mdbx_env_create().
- * \param [in] txn     A transaction handle returned by \ref mdbx_txn_begin().
+ * \param [in] env     An environment handle returned by \ref mdbx_env_create()
+ * \param [in] txn     A transaction handle returned by \ref mdbx_txn_begin()
  * \param [out] stat   The address of an \ref MDBX_stat structure where
- *                     the statistics will be copied.
+ *                     the statistics will be copied
  * \param [in] bytes   The size of \ref MDBX_stat.
  *
  * \returns A non-zero error value on failure and 0 on success. */
@@ -4195,10 +4194,7 @@ LIBMDBX_API int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency);
  * \returns A non-zero error value on failure and 0 on success,
  *          some possible errors are:
  * \retval MDBX_RESULT_TRUE      Transaction was aborted since it should
- *                               be aborted due to previous errors,
- *                               either no changes were made during the transaction,
- *                               and the build time option
- *                               \ref MDBX_NOSUCCESS_PURE_COMMIT was enabled.
+ *                               be aborted due to previous errors.
  * \retval MDBX_PANIC            A fatal error occurred earlier
  *                               and the environment must be shut down.
  * \retval MDBX_BAD_TXN          Transaction is already finished or never began.
@@ -6540,8 +6536,6 @@ typedef struct MDBX_chk_table {
     struct MDBX_chk_histogram key_len;
     /// Values length histogram
     struct MDBX_chk_histogram val_len;
-    /// Number of multi-values (aka duplicates) histogram
-    struct MDBX_chk_histogram multival;
   } histogram;
 } MDBX_chk_table_t;
 
