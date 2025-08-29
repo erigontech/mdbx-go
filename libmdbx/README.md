@@ -1,7 +1,7 @@
 <!-- Required extensions: pymdownx.betterem, pymdownx.tilde, pymdownx.emoji, pymdownx.tasklist, pymdownx.superfences -->
 
 libmdbx
-========
+=======
 
 <!-- section-begin overview -->
 
@@ -54,7 +54,7 @@ _libmdbx_ inherits all benefits from _LMDB_, but resolves some issues and adds [
 
 [![Telergam: Support | Discussions | News](https://img.shields.io/endpoint?color=scarlet&logo=telegram&label=Support%20%7C%20Discussions%20%7C%20News&url=https%3A%2F%2Ftg.sumanjay.workers.dev%2Flibmdbx)](https://t.me/libmdbx)
 
-> Please refer to the online [documentation](https://libmdbx.dqdkfa.ru)
+> Please refer to the online [official libmdbx documentation site](https://libmdbx.dqdkfa.ru)
 > with [`C` API description](https://libmdbx.dqdkfa.ru/group__c__api.html)
 > and pay attention to the [`C++` API](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h%2B%2B#line-num-1).
 > Donations are welcome to the Ethereum/ERC-20 `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`.
@@ -455,6 +455,12 @@ Currently, libmdbx is only available in a
 [source code](https://en.wikipedia.org/wiki/Source_code) form.
 Packages support for common Linux distributions is planned in the future,
 since release the version 1.0.
+
+The source code is availale on
+[Gitflic](https://gitflic.ru/project/erthink/libmdbx) and mirrors on [abf.io](https://abf.io/erthink/libmdbx),
+[hub.mos.ru](https://hub.mos.ru/leo/libmdbx) and [Github](https://github.com/erthink/libmdbx).
+Please use the `stable` branch or the latest release for production environment through stagging
+and the `master` branch for development a derivative projects.
 
 ## Source code embedding
 

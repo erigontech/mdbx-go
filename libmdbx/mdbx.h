@@ -1664,7 +1664,7 @@ DEFINE_ENUM_FLAG_OPERATORS(MDBX_put_flags)
 
 /** \brief Environment copy flags
  * \ingroup c_extra
- * \see mdbx_env_copy() \see mdbx_env_copy2fd() */
+ * \see mdbx_env_copy() \see mdbx_env_copy2fd() \see mdbx_txn_copy2pathname() */
 typedef enum MDBX_copy_flags {
   MDBX_CP_DEFAULTS = 0,
 
@@ -1689,7 +1689,11 @@ typedef enum MDBX_copy_flags {
   /** Enable renew/restart read transaction in case it use outdated
    * MVCC shapshot, otherwise the \ref MDBX_MVCC_RETARDED will be returned
    * \see mdbx_txn_copy2fd() \see mdbx_txn_copy2pathname() */
-  MDBX_CP_RENEW_TXN = 32u
+  MDBX_CP_RENEW_TXN = 32u,
+
+  /** Silently overwrite the target file, if it exists, instead of returning an error
+   * \see mdbx_txn_copy2pathname() \see mdbx_env_copy() */
+  MDBX_CP_OVERWRITE = 64u
 
 } MDBX_copy_flags_t;
 DEFINE_ENUM_FLAG_OPERATORS(MDBX_copy_flags)
@@ -1991,7 +1995,7 @@ typedef enum MDBX_error {
   MDBX_EREMOTE = ERROR_REMOTE_STORAGE_MEDIA_ERROR,
   MDBX_EDEADLK = ERROR_POSSIBLE_DEADLOCK
 #else /* Windows */
-#ifdef ENODATA
+#if defined(ENODATA) || defined(DOXYGEN)
   MDBX_ENODATA = ENODATA,
 #else
   MDBX_ENODATA = 9919 /* for compatibility with LLVM's C++ libraries/headers */,
@@ -2000,7 +2004,11 @@ typedef enum MDBX_error {
   MDBX_EACCESS = EACCES,
   MDBX_ENOMEM = ENOMEM,
   MDBX_EROFS = EROFS,
+#if defined(ENOTSUP) || defined(DOXYGEN)
+  MDBX_ENOSYS = ENOTSUP,
+#else
   MDBX_ENOSYS = ENOSYS,
+#endif /* ENOTSUP */
   MDBX_EIO = EIO,
   MDBX_EPERM = EPERM,
   MDBX_EINTR = EINTR,
@@ -6542,6 +6550,10 @@ typedef struct MDBX_chk_table {
     struct MDBX_chk_histogram val_len;
     /// Number of multi-values (aka duplicates) histogram
     struct MDBX_chk_histogram multival;
+    /// Histogram of branch and leaf pages filling in percents
+    struct MDBX_chk_histogram tree_filling;
+    /// Histogram of nested tree(s) branch and leaf pages filling in percents
+    struct MDBX_chk_histogram nested_tree_filling;
   } histogram;
 } MDBX_chk_table_t;
 

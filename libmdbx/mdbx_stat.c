@@ -18,7 +18,7 @@
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
 
-#define MDBX_BUILD_SOURCERY a10670e7693000026cb532e91a7b0bcaa06b0e747d4ec41f162bdc968dbdbe9d_v0_14_1_0_ga13147d1
+#define MDBX_BUILD_SOURCERY 6d8d4d491b12b98cf69c1113eb10e55a332fd1bb68020a7d65e9250cb86e3e65_v0_14_1_74_gd6f65794
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -146,6 +146,8 @@
 #pragma warning(disable : 6235) /* <expression> is always a constant */
 #pragma warning(disable : 6237) /* <expression> is never evaluated and might                                           \
                                    have side effects */
+#pragma warning(disable : 5286) /* implicit conversion from enum type 'type 1' to enum type 'type 2' */
+#pragma warning(disable : 5287) /* operands are different enum types 'type 1' and 'type 2' */
 #endif
 #pragma warning(disable : 4710) /* 'xyz': function not inlined */
 #pragma warning(disable : 4711) /* function 'xyz' selected for automatic                                               \
@@ -455,11 +457,6 @@ __extern_C key_t ftok(const char *, int);
 #if __ANDROID_API__ >= 21
 #include <sys/sendfile.h>
 #endif
-#if defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS != MDBX_WORDBITS
-#error "_FILE_OFFSET_BITS != MDBX_WORDBITS" (_FILE_OFFSET_BITS != MDBX_WORDBITS)
-#elif defined(__FILE_OFFSET_BITS) && __FILE_OFFSET_BITS != MDBX_WORDBITS
-#error "__FILE_OFFSET_BITS != MDBX_WORDBITS" (__FILE_OFFSET_BITS != MDBX_WORDBITS)
-#endif
 #endif /* Android */
 
 #if defined(HAVE_SYS_STAT_H) || __has_include(<sys/stat.h>)
@@ -543,6 +540,14 @@ __extern_C key_t ftok(const char *, int);
 
 #endif
 #endif /* __BYTE_ORDER__ || __ORDER_LITTLE_ENDIAN__ || __ORDER_BIG_ENDIAN__ */
+
+#if UINTPTR_MAX > 0xffffFFFFul || ULONG_MAX > 0xffffFFFFul || defined(_WIN64)
+#define MDBX_WORDBITS 64
+#define MDBX_WORDBITS_LN2 6
+#else
+#define MDBX_WORDBITS 32
+#define MDBX_WORDBITS_LN2 5
+#endif /* MDBX_WORDBITS */
 
 /*----------------------------------------------------------------------------*/
 /* Availability of CMOV or equivalent */
@@ -1206,7 +1211,14 @@ typedef struct osal_mmap {
 #elif defined(__ANDROID_API__)
 
 #if __ANDROID_API__ < 24
+/* https://android-developers.googleblog.com/2017/09/introducing-android-native-development.html
+ * https://android.googlesource.com/platform/bionic/+/master/docs/32-bit-abi.md */
 #define MDBX_HAVE_PWRITEV 0
+#if defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS != MDBX_WORDBITS
+#error "_FILE_OFFSET_BITS != MDBX_WORDBITS and __ANDROID_API__ < 24" (_FILE_OFFSET_BITS != MDBX_WORDBITS)
+#elif defined(__FILE_OFFSET_BITS) && __FILE_OFFSET_BITS != MDBX_WORDBITS
+#error "__FILE_OFFSET_BITS != MDBX_WORDBITS and __ANDROID_API__ < 24" (__FILE_OFFSET_BITS != MDBX_WORDBITS)
+#endif
 #else
 #define MDBX_HAVE_PWRITEV 1
 #endif
@@ -1440,6 +1452,7 @@ enum osal_syncmode_bits {
 
 MDBX_INTERNAL int osal_fsync(mdbx_filehandle_t fd, const enum osal_syncmode_bits mode_bits);
 MDBX_INTERNAL int osal_ftruncate(mdbx_filehandle_t fd, uint64_t length);
+MDBX_INTERNAL int osal_fallocate(mdbx_filehandle_t fd, uint64_t length);
 MDBX_INTERNAL int osal_fseek(mdbx_filehandle_t fd, uint64_t pos);
 MDBX_INTERNAL int osal_filesize(mdbx_filehandle_t fd, uint64_t *length);
 
@@ -1452,8 +1465,9 @@ enum osal_openfile_purpose {
   MDBX_OPEN_DXB_OVERLAPPED_DIRECT,
 #endif /* Windows */
   MDBX_OPEN_LCK,
-  MDBX_OPEN_COPY,
-  MDBX_OPEN_DELETE
+  MDBX_OPEN_DELETE,
+  MDBX_OPEN_COPY_EXCL,
+  MDBX_OPEN_COPY_OVERWRITE,
 };
 
 MDBX_MAYBE_UNUSED static inline bool osal_isdirsep(pathchar_t c) {
@@ -1475,7 +1489,7 @@ MDBX_INTERNAL int osal_removedirectory(const pathchar_t *pathname);
 MDBX_INTERNAL int osal_is_pipe(mdbx_filehandle_t fd);
 MDBX_INTERNAL int osal_lockfile(mdbx_filehandle_t fd, bool wait);
 
-#define MMAP_OPTION_TRUNCATE 1
+#define MMAP_OPTION_SETLENGTH 1
 #define MMAP_OPTION_SEMAPHORE 2
 MDBX_INTERNAL int osal_mmap(const int flags, osal_mmap_t *map, size_t size, const size_t limit, const unsigned options,
                             const pathchar_t *pathname4logging);
@@ -1591,14 +1605,6 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
   return v << 24 | v >> 24 | ((v << 8) & UINT32_C(0x00ff0000)) | ((v >> 8) & UINT32_C(0x0000ff00));
 #endif
 }
-
-#if UINTPTR_MAX > 0xffffFFFFul || ULONG_MAX > 0xffffFFFFul || defined(_WIN64)
-#define MDBX_WORDBITS 64
-#define MDBX_WORDBITS_LN2 6
-#else
-#define MDBX_WORDBITS 32
-#define MDBX_WORDBITS_LN2 5
-#endif /* MDBX_WORDBITS */
 
 /*******************************************************************************
  *******************************************************************************
@@ -3090,18 +3096,19 @@ typedef const pgno_t *const_pnl_t;
 #define MDBX_PNL_GRANULATE (1 << MDBX_PNL_GRANULATE_LOG2)
 #define MDBX_PNL_INITIAL (MDBX_PNL_GRANULATE - 2 - MDBX_ASSUME_MALLOC_OVERHEAD / sizeof(pgno_t))
 
-#define MDBX_PNL_ALLOCLEN(pl) ((pl)[-1])
-#define MDBX_PNL_GETSIZE(pl) ((size_t)((pl)[0]))
-#define MDBX_PNL_SETSIZE(pl, size)                                                                                     \
-  do {                                                                                                                 \
-    const size_t __size = size;                                                                                        \
-    assert(__size < INT_MAX);                                                                                          \
-    (pl)[0] = (pgno_t)__size;                                                                                          \
-  } while (0)
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline size_t pnl_alloclen(const_pnl_t pnl) { return pnl[-1]; }
+
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline size_t pnl_size(const_pnl_t pnl) { return pnl[0]; }
+
+MDBX_MAYBE_UNUSED static inline void pnl_setsize(pnl_t pnl, size_t len) {
+  assert(len < INT_MAX);
+  pnl[0] = (pgno_t)len;
+}
+
 #define MDBX_PNL_FIRST(pl) ((pl)[1])
-#define MDBX_PNL_LAST(pl) ((pl)[MDBX_PNL_GETSIZE(pl)])
+#define MDBX_PNL_LAST(pl) ((pl)[pnl_size(pl)])
 #define MDBX_PNL_BEGIN(pl) (&(pl)[1])
-#define MDBX_PNL_END(pl) (&(pl)[MDBX_PNL_GETSIZE(pl) + 1])
+#define MDBX_PNL_END(pl) (&(pl)[pnl_size(pl) + 1])
 
 #if MDBX_PNL_ASCENDING
 #define MDBX_PNL_EDGE(pl) ((pl) + 1)
@@ -3109,29 +3116,14 @@ typedef const pgno_t *const_pnl_t;
 #define MDBX_PNL_MOST(pl) MDBX_PNL_LAST(pl)
 #define MDBX_PNL_CONTIGUOUS(prev, next, span) ((next) - (prev)) == (span))
 #else
-#define MDBX_PNL_EDGE(pl) ((pl) + MDBX_PNL_GETSIZE(pl))
+#define MDBX_PNL_EDGE(pl) ((pl) + pnl_size(pl))
 #define MDBX_PNL_LEAST(pl) MDBX_PNL_LAST(pl)
 #define MDBX_PNL_MOST(pl) MDBX_PNL_FIRST(pl)
 #define MDBX_PNL_CONTIGUOUS(prev, next, span) (((prev) - (next)) == (span))
 #endif
 
-#define MDBX_PNL_SIZEOF(pl) ((MDBX_PNL_GETSIZE(pl) + 1) * sizeof(pgno_t))
-#define MDBX_PNL_IS_EMPTY(pl) (MDBX_PNL_GETSIZE(pl) == 0)
-
-MDBX_NOTHROW_PURE_FUNCTION MDBX_MAYBE_UNUSED static inline size_t pnl_size2bytes(size_t size) {
-  assert(size > 0 && size <= PAGELIST_LIMIT);
-#if MDBX_PNL_PREALLOC_FOR_RADIXSORT
-
-  size += size;
-#endif /* MDBX_PNL_PREALLOC_FOR_RADIXSORT */
-  STATIC_ASSERT(MDBX_ASSUME_MALLOC_OVERHEAD +
-                    (PAGELIST_LIMIT * (MDBX_PNL_PREALLOC_FOR_RADIXSORT + 1) + MDBX_PNL_GRANULATE + 3) * sizeof(pgno_t) <
-                SIZE_MAX / 4 * 3);
-  size_t bytes =
-      ceil_powerof2(MDBX_ASSUME_MALLOC_OVERHEAD + sizeof(pgno_t) * (size + 3), MDBX_PNL_GRANULATE * sizeof(pgno_t)) -
-      MDBX_ASSUME_MALLOC_OVERHEAD;
-  return bytes;
-}
+#define MDBX_PNL_SIZEOF(pl) ((pnl_size(pl) + 1) * sizeof(pgno_t))
+#define MDBX_PNL_IS_EMPTY(pl) (pnl_size(pl) == 0)
 
 MDBX_NOTHROW_PURE_FUNCTION MDBX_MAYBE_UNUSED static inline pgno_t pnl_bytes2size(const size_t bytes) {
   size_t size = bytes / sizeof(pgno_t);
@@ -3143,6 +3135,22 @@ MDBX_NOTHROW_PURE_FUNCTION MDBX_MAYBE_UNUSED static inline pgno_t pnl_bytes2size
   return (pgno_t)size;
 }
 
+MDBX_NOTHROW_PURE_FUNCTION MDBX_MAYBE_UNUSED static inline size_t pnl_size2bytes(size_t wanna_size) {
+  size_t size = wanna_size;
+  assert(size > 0 && size <= PAGELIST_LIMIT);
+#if MDBX_PNL_PREALLOC_FOR_RADIXSORT
+  size += size;
+#endif /* MDBX_PNL_PREALLOC_FOR_RADIXSORT */
+  STATIC_ASSERT(MDBX_ASSUME_MALLOC_OVERHEAD +
+                    (PAGELIST_LIMIT * (MDBX_PNL_PREALLOC_FOR_RADIXSORT + 1) + MDBX_PNL_GRANULATE + 3) * sizeof(pgno_t) <
+                SIZE_MAX / 4 * 3);
+  size_t bytes =
+      ceil_powerof2(MDBX_ASSUME_MALLOC_OVERHEAD + sizeof(pgno_t) * (size + 3), MDBX_PNL_GRANULATE * sizeof(pgno_t)) -
+      MDBX_ASSUME_MALLOC_OVERHEAD;
+  assert(pnl_bytes2size(bytes) >= wanna_size);
+  return bytes;
+}
+
 MDBX_INTERNAL pnl_t pnl_alloc(size_t size);
 
 MDBX_INTERNAL void pnl_free(pnl_t pnl);
@@ -3152,20 +3160,27 @@ MDBX_MAYBE_UNUSED MDBX_INTERNAL pnl_t pnl_clone(const pnl_t src);
 MDBX_INTERNAL int pnl_reserve(pnl_t __restrict *__restrict ppnl, const size_t wanna);
 
 MDBX_MAYBE_UNUSED static inline int __must_check_result pnl_need(pnl_t __restrict *__restrict ppnl, size_t num) {
-  assert(MDBX_PNL_GETSIZE(*ppnl) <= PAGELIST_LIMIT && MDBX_PNL_ALLOCLEN(*ppnl) >= MDBX_PNL_GETSIZE(*ppnl));
+  assert(pnl_size(*ppnl) <= PAGELIST_LIMIT && pnl_alloclen(*ppnl) >= pnl_size(*ppnl));
   assert(num <= PAGELIST_LIMIT);
-  const size_t wanna = MDBX_PNL_GETSIZE(*ppnl) + num;
-  return likely(MDBX_PNL_ALLOCLEN(*ppnl) >= wanna) ? MDBX_SUCCESS : pnl_reserve(ppnl, wanna);
+  const size_t wanna = pnl_size(*ppnl) + num;
+  return likely(pnl_alloclen(*ppnl) >= wanna) ? MDBX_SUCCESS : pnl_reserve(ppnl, wanna);
 }
 
 MDBX_MAYBE_UNUSED static inline void pnl_append_prereserved(__restrict pnl_t pnl, pgno_t pgno) {
-  assert(MDBX_PNL_GETSIZE(pnl) < MDBX_PNL_ALLOCLEN(pnl));
+  assert(pnl_size(pnl) < pnl_alloclen(pnl));
   if (AUDIT_ENABLED()) {
-    for (size_t i = MDBX_PNL_GETSIZE(pnl); i > 0; --i)
+    for (size_t i = pnl_size(pnl); i > 0; --i)
       assert(pgno != pnl[i]);
   }
   *pnl += 1;
   MDBX_PNL_LAST(pnl) = pgno;
+}
+
+MDBX_MAYBE_UNUSED static inline int __must_check_result pnl_append(__restrict pnl_t *ppnl, pgno_t pgno) {
+  int rc = pnl_need(ppnl, 1);
+  if (likely(rc == MDBX_SUCCESS))
+    pnl_append_prereserved(*ppnl, pgno);
+  return rc;
 }
 
 MDBX_INTERNAL void pnl_shrink(pnl_t __restrict *__restrict ppnl);
@@ -3183,7 +3198,7 @@ MDBX_INTERNAL void pnl_sort_nochk(pnl_t pnl);
 MDBX_INTERNAL bool pnl_check(const const_pnl_t pnl, const size_t limit);
 
 MDBX_MAYBE_UNUSED static inline bool pnl_check_allocated(const const_pnl_t pnl, const size_t limit) {
-  return pnl == nullptr || (MDBX_PNL_ALLOCLEN(pnl) >= MDBX_PNL_GETSIZE(pnl) && pnl_check(pnl, limit));
+  return pnl == nullptr || (pnl_alloclen(pnl) >= pnl_size(pnl) && pnl_check(pnl, limit));
 }
 
 MDBX_MAYBE_UNUSED static inline void pnl_sort(pnl_t pnl, size_t limit4check) {

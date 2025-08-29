@@ -266,9 +266,9 @@ lib-shared libmdbx.$(SO_SUFFIX): mdbx-dylib.o $(call select_by,MDBX_BUILD_CXX,md
 	@echo '  LD $@'
 	$(QUIET)$(call select_by,MDBX_BUILD_CXX,$(CXX) $(CXXFLAGS),$(CC) $(CFLAGS)) $^ -pthread -shared $(LDFLAGS) $(call select_by,MDBX_BUILD_CXX,$(LIB_STDCXXFS)) $(LIBS) -o $@
 
-ninja-assertions: CMAKE_OPT += -DMDBX_FORCE_ASSERTIONS=ON
+ninja-assertions: CMAKE_OPT += -DMDBX_FORCE_ASSERTIONS=ON $(MDBX_BUILD_OPTIONS)
 ninja-assertions: cmake-build
-ninja-debug: CMAKE_OPT += -DCMAKE_BUILD_TYPE=Debug
+ninja-debug: CMAKE_OPT += -DCMAKE_BUILD_TYPE=Debug $(MDBX_BUILD_OPTIONS)
 ninja-debug: cmake-build
 ninja: cmake-build
 cmake-build:
