@@ -4,6 +4,10 @@ package mdbx
 #include "mdbxgo.h"
 */
 import "C"
+import (
+	"syscall"
+	"unsafe"
+)
 
 // TODO: fix me please
 func (env *Env) Path() (string, error) {
@@ -15,5 +19,6 @@ func (env *Env) Path() (string, error) {
 	if cpath == nil {
 		return "", errNotOpen
 	}
-	return C.GoString(cpath), nil
+
+	return syscall.UTF16PtrToString((*uint16)(unsafe.Pointer(cpath))), nil
 }
