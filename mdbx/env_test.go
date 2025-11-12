@@ -5,22 +5,23 @@ import (
 	"testing"
 )
 
-//	func TestEnv_Path_notOpen(t *testing.T) {
-//		env, err := NewEnv()
-//		if err != nil {
-//			t.Fatalf("create: %v", err)
-//		}
-//		defer env.Close()
-//
-//		// before Open the Path method returns "" and a non-nil error.
-//		path, err := env.Path()
-//		if err == nil {
-//			t.Errorf("no error returned before Open")
-//		}
-//		if path != "" {
-//			t.Errorf("non-zero path returned before Open")
-//		}
-//	}
+func TestEnv_Path_notOpen(t *testing.T) {
+	env, err := NewEnv(Default)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	defer env.Close()
+
+	// before Open the Path method returns "" and a non-nil error.
+	path, err := env.Path()
+	if err == nil {
+		t.Errorf("no error returned before Open")
+	}
+	if path != "" {
+		t.Errorf("non-zero path returned before Open")
+	}
+}
+
 func TestEnv_Path(t *testing.T) {
 	env, err := NewEnv(Default)
 	if err != nil {
