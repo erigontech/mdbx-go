@@ -5,8 +5,9 @@ package mdbx
 */
 import "C"
 import (
-	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 // TODO: fix me please
@@ -20,5 +21,5 @@ func (env *Env) Path() (string, error) {
 		return "", errNotOpen
 	}
 
-	return syscall.UTF16PtrToString((*uint16)(unsafe.Pointer(cpath))), nil
+	return windows.UTF16PtrToString((*uint16)(unsafe.Pointer(cpath))), nil
 }
