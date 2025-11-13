@@ -4,20 +4,24 @@ package mdbx
 #include "mdbxgo.h"
 */
 import "C"
-import "unsafe"
+import (
+	"unsafe"
 
-// TODO: fix me please
-//func (env *Env) Path() (string, error) {
-//	var cpath *C.wchar_t
-//	ret := C.mdbx_env_get_pathW(env._env, &cpath)
-//	if ret != success {
-//		return "", operrno("mdbx_env_get_path", ret)
-//	}
-//	if cpath == nil {
-//		return "", errNotOpen
-//	}
-//	return C.GoString(cpath), nil
-//}
+	"golang.org/x/sys/windows"
+)
+
+func (env *Env) Path() (string, error) {
+	var cpath *C.wchar_t
+	ret := C.mdbx_env_get_pathW(env._env, &cpath)
+	if ret != success {
+		return "", operrno("mdbx_env_get_path", ret)
+	}
+	if cpath == nil {
+		return "", errNotOpen
+	}
+
+	return windows.UTF16PtrToString((*uint16)(unsafe.Pointer(cpath))), nil
+}
 
 // FD returns the open file descriptor (or Windows file handle) for the given
 // environment.  An error is returned if the environment has not been
