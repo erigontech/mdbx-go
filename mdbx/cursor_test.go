@@ -1566,7 +1566,6 @@ func TestCursor_Bind(t *testing.T) {
 }
 
 func TestCursor_BindOnEmptyDbi(t *testing.T) {
-	t.Skip() // TODO: uncomment on v0.13.6
 	env, _ := setup(t)
 
 	var db1, db2 DBI
