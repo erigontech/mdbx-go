@@ -31,7 +31,7 @@ func (env *Env) FD() (uintptr, error) {
 	const fdInvalid = ^uintptr(0)
 
 	var fh C.mdbx_filehandle_t
-	ret := C.mdbx_env_get_fd(env._env, fh)
+	ret := C.mdbx_env_get_fd(env._env, &fh)
 	err := operrno("mdbx_env_get_fd", ret)
 	if err != nil {
 		return 0, err
