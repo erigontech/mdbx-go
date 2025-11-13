@@ -2,6 +2,8 @@ package mdbx
 
 import (
 	"fmt"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -99,12 +101,11 @@ func TestEnv_PreOpen(t *testing.T) {
 
 }
 
-/*
 func TestEnv_FD(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("FD funcs not supported on windows")
 	}
-	env, err1 := NewEnv()
+	env, err1 := NewEnv(Default)
 	if err1 != nil {
 		t.Error(err1)
 		return
@@ -131,7 +132,6 @@ func TestEnv_FD(t *testing.T) {
 		t.Errorf("fd: %x", fd)
 	}
 }
-*/
 
 func TestEnv_Flags(t *testing.T) {
 	env, _ := setup(t)

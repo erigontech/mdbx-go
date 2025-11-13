@@ -173,34 +173,6 @@ func (env *Env) SetStrictThreadMode(mode bool) {
 
 var errNotOpen = errors.New("enivornment is not open")
 
-/* TODO: fix error: cannot convert *mf (variable of type _Ctype_HANDLE) to type uintptr
-
-// FD returns the open file descriptor (or Windows file handle) for the given
-// environment.  An error is returned if the environment has not been
-// successfully Opened (where C API just retruns an invalid handle).
-//
-// See mdbx_env_get_fd.
-func (env *Env) FD() (uintptr, error) {
-	// fdInvalid is the value -1 as a uintptr, which is used by MDBX in the
-	// case that env has not been opened yet.  the strange construction is done
-	// to avoid constant value overflow errors at compile time.
-	const fdInvalid = ^uintptr(0)
-
-	mf := new(C.mdbx_filehandle_t)
-	ret := C.mdbx_env_get_fd(env._env, mf)
-	err := operrno("mdbx_env_get_fd", ret)
-	if err != nil {
-		return 0, err
-	}
-	fd := uintptr(*mf)
-
-	if fd == fdInvalid {
-		return 0, errNotOpen
-	}
-	return fd, nil
-}
-*/
-
 // ReaderList dumps the contents of the reader lock table as text.  Readers
 // start on the second line as space-delimited fields described by the first
 // line.
