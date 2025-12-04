@@ -4,7 +4,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 03121f339aed20efa3ed7edf725dd21859f4615135354c1f135de638af7ee0d7_v0_13_9_4_g60ad6cf0
+#define MDBX_BUILD_SOURCERY 648c7ef67a7078c4630265cc5cb1a0d7cb40a1edf01f6e80ff87390bfa35865f_v0_13_9_22_g4cafa438
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -3386,8 +3386,7 @@ MDBX_MAYBE_UNUSED static
 #if MDBX_64BIT_ATOMIC
     __always_inline
 #endif /* MDBX_64BIT_ATOMIC */
-        uint64_t
-        atomic_load64(const volatile mdbx_atomic_uint64_t *p, enum mdbx_memory_order order) {
+        uint64_t atomic_load64(const volatile mdbx_atomic_uint64_t *p, enum mdbx_memory_order order) {
   STATIC_ASSERT(sizeof(mdbx_atomic_uint64_t) == 8);
 #if MDBX_64BIT_ATOMIC
 #ifdef MDBX_HAVE_C11ATOMICS
@@ -3624,8 +3623,7 @@ MDBX_MAYBE_UNUSED static
 #if MDBX_64BIT_ATOMIC
     __always_inline
 #endif /* MDBX_64BIT_ATOMIC */
-    void
-    safe64_inc(mdbx_atomic_uint64_t *p, const uint64_t v) {
+    void safe64_inc(mdbx_atomic_uint64_t *p, const uint64_t v) {
   assert(v > 0);
   safe64_update(p, safe64_read(p) + v);
 }
@@ -10354,14 +10352,13 @@ __cold int mdbx_env_set_geometry(MDBX_env *env, intptr_t size_lower, intptr_t si
     /* is requested some auto-value for pagesize ? */
     if (pagesize >= INT_MAX /* maximal */)
       pagesize = MDBX_MAX_PAGESIZE;
-    else if (pagesize <= 0) {
-      if (pagesize < 0 /* default */) {
-        pagesize = globals.sys_pagesize;
-        if ((uintptr_t)pagesize > MDBX_MAX_PAGESIZE)
-          pagesize = MDBX_MAX_PAGESIZE;
-        eASSERT(env, (uintptr_t)pagesize >= MDBX_MIN_PAGESIZE);
-      } else if (pagesize == 0 /* minimal */)
-        pagesize = MDBX_MIN_PAGESIZE;
+    else if (pagesize == 0 /* minimal */)
+      pagesize = MDBX_MIN_PAGESIZE;
+    else if (pagesize < 0 /* default */) {
+      pagesize = globals.sys_pagesize;
+      if ((uintptr_t)pagesize > MDBX_MAX_PAGESIZE)
+        pagesize = MDBX_MAX_PAGESIZE;
+      eASSERT(env, (uintptr_t)pagesize >= MDBX_MIN_PAGESIZE);
 
       /* choose pagesize */
       intptr_t top = (size_now > size_lower) ? size_now : size_lower;
@@ -12804,8 +12801,7 @@ int mdbx_replace(MDBX_txn *txn, MDBX_dbi dbi, const MDBX_val *key, MDBX_val *new
 /* LY: avoid tsan-trap by txn, mm_last_pg and geo.first_unallocated */
 __attribute__((__no_sanitize_thread__, __noinline__))
 #endif
-int mdbx_txn_straggler(const MDBX_txn *txn, int *percent)
-{
+int mdbx_txn_straggler(const MDBX_txn *txn, int *percent) {
   int rc = check_txn(txn, MDBX_TXN_BLOCKED - MDBX_TXN_PARKED);
   if (unlikely(rc != MDBX_SUCCESS))
     return LOG_IFERR((rc > 0) ? -rc : rc);
@@ -23947,8 +23943,7 @@ BOOL APIENTRY DllMain(HANDLE module, DWORD reason, LPVOID reserved)
 #if !MDBX_MANUAL_MODULE_HANDLER
 static
 #endif /* !MDBX_MANUAL_MODULE_HANDLER */
-    void NTAPI
-    mdbx_module_handler(PVOID module, DWORD reason, PVOID reserved)
+    void NTAPI mdbx_module_handler(PVOID module, DWORD reason, PVOID reserved)
 #endif /* MDBX_BUILD_SHARED_LIBRARY */
 {
   (void)reserved;
@@ -24142,6 +24137,8 @@ __dll_export
 #else
   #if defined(__ANDROID_API__)
     "Android" MDBX_STRINGIFY(__ANDROID_API__)
+  #elif defined(__OHOS__)
+    "Harmony OS"
   #elif defined(__linux__) || defined(__gnu_linux__)
     "Linux"
   #elif defined(EMSCRIPTEN) || defined(__EMSCRIPTEN__)
@@ -24189,7 +24186,9 @@ __dll_export
 
     "-"
 
-  #if defined(__amd64__)
+  #if defined(__e2k__) || defined(__elbrus__)
+    "Elbrus"
+  #elif defined(__amd64__)
     "AMD64"
   #elif defined(__ia32__)
     "IA32"
@@ -24226,6 +24225,8 @@ __dll_export
     "SPARC"
   #elif defined(__s390__) || defined(__s390) || defined(__zarch__) || defined(__zarch)
     "S390"
+  #elif defined(__riscv) || defined(__riscv__) || defined(__RISCV) || defined(__RISCV__)
+    "RISC-V (стеклянные бусы)"
   #else
     "UnknownARCH"
   #endif
@@ -29113,8 +29114,14 @@ int osal_pread(mdbx_filehandle_t fd, void *buf, size_t bytes, uint64_t offset) {
 
   DWORD read = 0;
   if (unlikely(!ReadFile(fd, buf, (DWORD)bytes, &read, &ov))) {
-    int rc = (int)GetLastError();
-    return (rc == MDBX_SUCCESS) ? /* paranoia */ ERROR_READ_FAULT : rc;
+    int err = (int)GetLastError();
+    if (err != ERROR_IO_PENDING)
+      return (err == MDBX_SUCCESS) ? /* paranoia */ ERROR_READ_FAULT : err;
+    if (!GetOverlappedResult(fd, &ov, &read, true)) {
+      err = (int)GetLastError();
+      CancelIo(fd);
+      return (err == MDBX_SUCCESS) ? /* paranoia */ ERROR_READ_FAULT : err;
+    }
   }
 #else
   STATIC_ASSERT_MSG(sizeof(off_t) >= sizeof(size_t), "libmdbx requires 64-bit file I/O on 64-bit systems");
@@ -29358,6 +29365,16 @@ int osal_fsetsize(mdbx_filehandle_t fd, const uint64_t length) {
   if (length == (uint64_t)info.st_size)
     return MDBX_SUCCESS;
 #endif
+
+#if defined(__linux__) || defined(__gnu_linux__)
+  if (globals.linux_kernel_version < 0x05110000 && globals.linux_kernel_version >= 0x050a0000) {
+    struct statfs statfs_info;
+    if (fstatfs(fd, &statfs_info))
+      return errno;
+    if (statfs_info.f_type == 0xEF53 /* EXT4_SUPER_MAGIC */ && unlikely(fdatasync(fd)))
+      return errno;
+  }
+#endif /* Linux */
 
   return unlikely(ftruncate(fd, length)) ? errno : MDBX_SUCCESS;
 
@@ -33997,25 +34014,27 @@ __cold static int rthc_drown(MDBX_env *const env) {
   int rc = MDBX_SUCCESS;
   MDBX_env *inprocess_neighbor = nullptr;
   if (likely(env->lck_mmap.lck && current_pid == env->pid)) {
-    reader_slot_t *const begin = &env->lck_mmap.lck->rdt[0];
-    reader_slot_t *const end = &env->lck_mmap.lck->rdt[env->max_readers];
-    TRACE("== %s env %p pid %d, readers %p ...%p, current-pid %d", (current_pid == env->pid) ? "cleanup" : "skip",
-          __Wpedantic_format_voidptr(env), env->pid, __Wpedantic_format_voidptr(begin), __Wpedantic_format_voidptr(end),
-          current_pid);
-    bool cleaned = false;
-    for (reader_slot_t *r = begin; r < end; ++r) {
-      if (atomic_load32(&r->pid, mo_Relaxed) == current_pid) {
-        atomic_store32(&r->pid, 0, mo_AcquireRelease);
-        TRACE("== cleanup %p", __Wpedantic_format_voidptr(r));
-        cleaned = true;
-      }
-    }
-    if (cleaned)
-      atomic_store32(&env->lck_mmap.lck->rdt_refresh_flag, true, mo_Relaxed);
     rc = rthc_uniq_check(&env->lck_mmap, &inprocess_neighbor);
-    if (!inprocess_neighbor && env->registered_reader_pid && env->lck_mmap.fd != INVALID_HANDLE_VALUE) {
-      int err = lck_rpid_clear(env);
-      rc = rc ? rc : err;
+    if (!inprocess_neighbor) {
+      reader_slot_t *const begin = &env->lck_mmap.lck->rdt[0];
+      reader_slot_t *const end = &env->lck_mmap.lck->rdt[env->max_readers];
+      TRACE("== %s env %p pid %d, readers %p ...%p, current-pid %d", (current_pid == env->pid) ? "cleanup" : "skip",
+            __Wpedantic_format_voidptr(env), env->pid, __Wpedantic_format_voidptr(begin),
+            __Wpedantic_format_voidptr(end), current_pid);
+      bool cleaned = false;
+      for (reader_slot_t *r = begin; r < end; ++r) {
+        if (atomic_load32(&r->pid, mo_Relaxed) == current_pid) {
+          atomic_store32(&r->pid, 0, mo_AcquireRelease);
+          TRACE("== cleanup %p", __Wpedantic_format_voidptr(r));
+          cleaned = true;
+        }
+      }
+      if (cleaned)
+        atomic_store32(&env->lck_mmap.lck->rdt_refresh_flag, true, mo_Relaxed);
+      if (env->registered_reader_pid && env->lck_mmap.fd != INVALID_HANDLE_VALUE) {
+        int err = lck_rpid_clear(env);
+        rc = rc ? rc : err;
+      }
     }
   }
   int err = lck_destroy(env, inprocess_neighbor, current_pid);
@@ -34137,7 +34156,9 @@ __cold void rthc_dtor(const uint32_t current_pid) {
     MDBX_env *const env = rthc_table[i].env;
     if (env->pid != current_pid)
       continue;
-    if (!(env->flags & ENV_TXKEY))
+    if (!env->lck_mmap.lck || env->lck_mmap.base == MAP_FAILED)
+      continue;
+    if (!(env->flags & ENV_TXKEY) || !env->lck_mmap.lck)
       continue;
     env->flags -= ENV_TXKEY;
     reader_slot_t *const begin = &env->lck_mmap.lck->rdt[0];
@@ -37533,10 +37554,10 @@ __dll_export
         0,
         13,
         9,
-        4,
+        22,
         "", /* pre-release suffix of SemVer
-                                        0.13.9.4 */
-        {"2025-10-31T23:44:07+03:00", "7f3393c0bad4e7020bd4bb8226d3ba20fef96743", "60ad6cf030aa94ece45d364b4e75c0d640d75d0c", "v0.13.9-4-g60ad6cf0"},
+                                        0.13.9.22 */
+        {"2025-12-04T00:15:53+03:00", "c5b9af29ee8d0d9402c8014dfe8045e97bed03b2", "4cafa438bcd7cfcc69ff062fb92ee160af1209bc", "v0.13.9-22-g4cafa438"},
         sourcery};
 
 __dll_export
