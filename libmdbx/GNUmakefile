@@ -106,11 +106,12 @@ endef
 define uname2ldflags
   case "$(UNAME)" in
     CYGWIN*|MINGW*|MSYS*|Windows*)
-      echo '-Wl,--gc-sections,-O1';
+      echo '-Wl,--gc-sections,-O1,--as-needed';
       ;;
     *)
       $(LD) --help 2>/dev/null | grep -q -- --gc-sections && echo '-Wl,--gc-sections,-z,relro,-O1';
       $(LD) --help 2>/dev/null | grep -q -- -dead_strip && echo '-Wl,-dead_strip';
+      $(LD) --help 2>/dev/null | grep -q -- --as-needed && echo '-Wl,--as-needed';
       ;;
   esac
 endef
@@ -119,16 +120,16 @@ endef
 define uname2libs
   case "$(UNAME)" in
     CYGWIN*|MINGW*|MSYS*|Windows*)
-      echo '-lm -lntdll -lwinmm';
+      echo '-lntdll -lwinmm';
       ;;
     *SunOS*|*Solaris*)
-      echo '-lm -lkstat -lrt';
+      echo '-lkstat -lrt';
       ;;
     *Darwin*|OpenBSD*)
-      echo '-lm';
+      echo '';
       ;;
     *)
-      echo '-lm -lrt';
+      echo '-lrt';
       ;;
   esac
 endef
@@ -266,9 +267,9 @@ lib-shared libmdbx.$(SO_SUFFIX): mdbx-dylib.o $(call select_by,MDBX_BUILD_CXX,md
 	@echo '  LD $@'
 	$(QUIET)$(call select_by,MDBX_BUILD_CXX,$(CXX) $(CXXFLAGS),$(CC) $(CFLAGS)) $^ -pthread -shared $(LDFLAGS) $(call select_by,MDBX_BUILD_CXX,$(LIB_STDCXXFS)) $(LIBS) -o $@
 
-ninja-assertions: CMAKE_OPT += -DMDBX_FORCE_ASSERTIONS=ON
+ninja-assertions: CMAKE_OPT += -DMDBX_FORCE_ASSERTIONS=ON $(MDBX_BUILD_OPTIONS)
 ninja-assertions: cmake-build
-ninja-debug: CMAKE_OPT += -DCMAKE_BUILD_TYPE=Debug
+ninja-debug: CMAKE_OPT += -DCMAKE_BUILD_TYPE=Debug $(MDBX_BUILD_OPTIONS)
 ninja-debug: cmake-build
 ninja: cmake-build
 cmake-build:
