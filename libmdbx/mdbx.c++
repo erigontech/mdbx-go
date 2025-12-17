@@ -2,7 +2,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
 /* clang-format off */
 
-#define MDBX_BUILD_SOURCERY 9b6b81c7c621271e64906a33054a5b885bc1e7555254ca815392cc604e8f3922_v0_14_1_180_g51f890cd
+#define MDBX_BUILD_SOURCERY 077c895c78ce6578f864dd3759e7b20fe682b28697e67a3b8774d105aae1703e_v0_14_1_194_g123e5c44
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -3821,6 +3821,7 @@ MDBX_INTERNAL int __must_check_result tbl_create(MDBX_txn *txn, MDBX_cursor *mc,
                                                  unsigned db_flags);
 MDBX_INTERNAL int __must_check_result tbl_setup(const MDBX_env *env, volatile kvx_t *const kvx, const tree_t *const db);
 MDBX_INTERNAL int __must_check_result tbl_refresh(MDBX_txn *txn, size_t dbi);
+MDBX_INTERNAL int __must_check_result tbl_purge(MDBX_cursor *mc);
 
 /* coherency.c */
 MDBX_INTERNAL bool coherency_check_meta(const MDBX_env *env, const volatile meta_t *meta, bool report);

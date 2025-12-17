@@ -17,11 +17,9 @@
 ///
 
 ///
-/// The origin has been migrated to https://gitflic.ru/project/erthink/libmdbx
-/// since on 2022-04-15 the Github administration, without any warning nor
-/// explanation, deleted libmdbx along with a lot of other projects,
-/// simultaneously blocking access for many developers.
-/// For the same reason Github is blacklisted forever.
+/// The libmdbx project has been completely relocated to the jurisdiction of the Russian Federation.
+/// Please refer to https://libmdbx.dqdkfa.ru for documentation
+/// and https://sourcecraft.dev/dqdkfa/libmdbx for the source code (it is still open and provided with first-class free support).
 ///
 
 #pragma once

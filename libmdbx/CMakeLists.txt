@@ -3,8 +3,8 @@
 #
 # Donations are welcome to ETH `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`. Всё будет хорошо!
 
-# libmdbx = { Revised and extended descendant of Symas LMDB. } Please see README.md at
-# https://gitflic.ru/project/erthink/libmdbx
+# libmdbx = { Revised and extended descendant of Symas LMDB. }
+# Please see README.md at https://sourcecraft.dev/dqdkfa/libmdbx
 #
 # Libmdbx is superior to LMDB in terms of features and reliability, not inferior in performance. libmdbx works on Linux,
 # FreeBSD, MacOS X and other systems compliant with POSIX.1-2008, but also support Windows as a complementary platform.
@@ -763,7 +763,7 @@ endif()
 
 # sources list
 set(LIBMDBX_PUBLIC_HEADERS mdbx.h)
-set(LIBMDBX_SOURCES mdbx.h "${CMAKE_CURRENT_BINARY_DIR}/config.h")
+set(LIBMDBX_SOURCES mdbx.h "${CMAKE_CURRENT_BINARY_DIR}/config-cmake.h")
 if(MDBX_AMALGAMATED_SOURCE)
   list(APPEND LIBMDBX_SOURCES mdbx.c)
 else()
@@ -1253,10 +1253,10 @@ foreach(item IN LISTS options)
   message(STATUS "${item}: ${value}")
 endforeach(item)
 
-# provide config.h for library build info
-file(REMOVE "${MDBX_SOURCE_DIR}/config.h")
-configure_file("${MDBX_SOURCE_DIR}/config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/config.h" ESCAPE_QUOTES)
-add_definitions(-DMDBX_CONFIG_H="${CMAKE_CURRENT_BINARY_DIR}/config.h")
+# provide config-cmake.h for library build info
+file(REMOVE "${MDBX_SOURCE_DIR}/config-cmake.h")
+configure_file("${MDBX_SOURCE_DIR}/config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/config-cmake.h" ESCAPE_QUOTES)
+add_definitions(-DMDBX_CONFIG_H="${CMAKE_CURRENT_BINARY_DIR}/config-cmake.h")
 
 # ######################################################################################################################
 

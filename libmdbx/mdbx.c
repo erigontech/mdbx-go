@@ -4,7 +4,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 9b6b81c7c621271e64906a33054a5b885bc1e7555254ca815392cc604e8f3922_v0_14_1_180_g51f890cd
+#define MDBX_BUILD_SOURCERY 077c895c78ce6578f864dd3759e7b20fe682b28697e67a3b8774d105aae1703e_v0_14_1_194_g123e5c44
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -3823,6 +3823,7 @@ MDBX_INTERNAL int __must_check_result tbl_create(MDBX_txn *txn, MDBX_cursor *mc,
                                                  unsigned db_flags);
 MDBX_INTERNAL int __must_check_result tbl_setup(const MDBX_env *env, volatile kvx_t *const kvx, const tree_t *const db);
 MDBX_INTERNAL int __must_check_result tbl_refresh(MDBX_txn *txn, size_t dbi);
+MDBX_INTERNAL int __must_check_result tbl_purge(MDBX_cursor *mc);
 
 /* coherency.c */
 MDBX_INTERNAL bool coherency_check_meta(const MDBX_env *env, const volatile meta_t *meta, bool report);
@@ -9375,33 +9376,12 @@ __cold int mdbx_drop(MDBX_txn *txn, MDBX_dbi dbi, bool del) {
   if (unlikely(rc != MDBX_SUCCESS))
     return LOG_IFERR(rc);
 
-  if (txn->dbs[dbi].height) {
-    cx.outer.next = txn->cursors[dbi];
-    txn->cursors[dbi] = &cx.outer;
-    rc = tree_drop(&cx.outer, dbi == MAIN_DBI || (cx.outer.tree->flags & MDBX_DUPSORT));
-    txn->cursors[dbi] = cx.outer.next;
-    if (unlikely(rc != MDBX_SUCCESS))
-      return LOG_IFERR(rc);
-  }
+  rc = tbl_purge(&cx.outer);
+  if (unlikely(rc != MDBX_SUCCESS))
+    return LOG_IFERR(rc);
 
-  /* Invalidate the dropped DB's cursors */
-  for (MDBX_cursor *mc = txn->cursors[dbi]; mc; mc = mc->next)
-    be_poor(mc);
-
-  if (!del || dbi < CORE_DBS) {
-    /* reset the DB record, mark it dirty */
-    txn->dbi_state[dbi] |= DBI_DIRTY;
-    txn->dbs[dbi].height = 0;
-    txn->dbs[dbi].branch_pages = 0;
-    txn->dbs[dbi].leaf_pages = 0;
-    txn->dbs[dbi].large_pages = 0;
-    txn->dbs[dbi].items = 0;
-    txn->dbs[dbi].root = P_INVALID;
-    txn->dbs[dbi].sequence = 0;
-    /* txn->dbs[dbi].mod_txnid = txn->txnid; */
-    txn->flags |= MDBX_TXN_DIRTY;
+  if (!del || dbi < CORE_DBS)
     return MDBX_SUCCESS;
-  }
 
   MDBX_env *const env = txn->env;
   MDBX_val name = env->kvs[dbi].name;
@@ -35489,6 +35469,33 @@ int tbl_refresh(MDBX_txn *txn, size_t dbi) {
   txn->dbi_state[dbi] &= ~DBI_STALE;
   return MDBX_SUCCESS;
 }
+
+int tbl_purge(MDBX_cursor *mc) {
+  if (mc->tree->height) {
+    int err = tree_drop(mc, cursor_is_main(mc) || (mc->tree->flags & MDBX_DUPSORT));
+    if (unlikely(err != MDBX_SUCCESS))
+      return err;
+
+    /* reset the DB record, mark it dirty */
+    *mc->dbi_state |= DBI_DIRTY;
+    mc->tree->height = 0;
+    mc->tree->branch_pages = 0;
+    mc->tree->leaf_pages = 0;
+    mc->tree->large_pages = 0;
+    mc->tree->items = 0;
+    mc->tree->root = P_INVALID;
+    mc->tree->sequence = 0;
+    /* mc->tree->mod_txnid = txn->txnid; */
+    mc->txn->flags |= MDBX_TXN_DIRTY;
+
+    /* Invalidate the dropped DB's cursors */
+    const size_t dbi = cursor_dbi(mc);
+    for (mc = mc->txn->cursors[dbi]; mc; mc = mc->next)
+      be_poor(mc);
+  }
+
+  return MDBX_SUCCESS;
+}
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
 
@@ -40152,10 +40159,10 @@ __dll_export
         0,
         14,
         1,
-        180,
+        194,
         "", /* pre-release suffix of SemVer
-                                        0.14.1.180 */
-        {"2025-12-03T22:23:52+03:00", "8bac54386d30195d22a3aa3b6595ea4e50d8e6a6", "51f890cd51c726662e025ac9c66267c4a743eb11", "v0.14.1-180-g51f890cd"},
+                                        0.14.1.194 */
+        {"2025-12-17T15:53:23+03:00", "141b96b676ce1c87b4cb584e91b5615ca7be2287", "123e5c446e19710bab27cc5db9982f063325c3c1", "v0.14.1-194-g123e5c44"},
         sourcery};
 
 __dll_export
