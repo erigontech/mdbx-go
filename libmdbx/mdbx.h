@@ -575,10 +575,9 @@ typedef mode_t mdbx_mode_t;
 extern "C" {
 #endif
 
-/* MDBX version 0.14.x, but it is unstable/under-development yet. */
-#define MDBX_VERSION_UNSTABLE
+/* MDBX version 0.13.x */
 #define MDBX_VERSION_MAJOR 0
-#define MDBX_VERSION_MINOR 14
+#define MDBX_VERSION_MINOR 13
 
 #ifndef LIBMDBX_API
 #if defined(LIBMDBX_EXPORTS) || defined(DOXYGEN)
@@ -831,9 +830,7 @@ enum MDBX_constants {
 
 /** Log level
  * \note Levels detailed than (great than) \ref MDBX_LOG_NOTICE
- * requires build libmdbx with \ref MDBX_DEBUG option.
- *
- * \see mdbx_setup_debug() \see MDBX_log_level_t */
+ * requires build libmdbx with \ref MDBX_DEBUG option. */
 typedef enum MDBX_log_level {
   /** Critical conditions, i.e. assertion failures.
    * \note libmdbx always produces such messages regardless
@@ -890,26 +887,24 @@ typedef enum MDBX_log_level {
  *
  * \details `MDBX_DBG_DUMP` and `MDBX_DBG_LEGACY_MULTIOPEN` always have an
  * effect, but `MDBX_DBG_ASSERT`, `MDBX_DBG_AUDIT` and `MDBX_DBG_JITTER` only if
- * libmdbx built with \ref MDBX_DEBUG.
- *
- * \see mdbx_setup_debug() \see MDBX_debug_flags_t */
+ * libmdbx built with \ref MDBX_DEBUG. */
 typedef enum MDBX_debug_flags {
   MDBX_DBG_NONE = 0,
 
-  /** Enables assertion checks.
+  /** Enable assertion checks.
    * \note Always enabled for builds with `MDBX_FORCE_ASSERTIONS` option,
    * otherwise requires build with \ref MDBX_DEBUG > 0 */
   MDBX_DBG_ASSERT = 1,
 
-  /** Enables pages usage audit at commit transactions.
+  /** Enable pages usage audit at commit transactions.
    * \note Requires build with \ref MDBX_DEBUG > 0 */
   MDBX_DBG_AUDIT = 2,
 
-  /** Enables small random delays in critical points.
+  /** Enable small random delays in critical points.
    * \note Requires build with \ref MDBX_DEBUG > 0 */
   MDBX_DBG_JITTER = 4,
 
-  /** Controls including of a database(s) meta-pages in coredump files.
+  /** Include or not meta-pages in coredump files.
    * \note May affect performance in \ref MDBX_WRITEMAP mode */
   MDBX_DBG_DUMP = 8,
 
@@ -919,8 +914,9 @@ typedef enum MDBX_debug_flags {
   /** Allow read and write transactions overlapping for the same thread. */
   MDBX_DBG_LEGACY_OVERLAP = 32,
 
-  /** Disables automatic updating of the database format signature, i.e. upgrade database format on a media.
-   * \note Nonetheless a new write transactions will use and store the last signature regardless this flag */
+  /** Don't auto-upgrade format signature.
+   * \note However a new write transactions will use and store
+   * the last signature regardless this flag */
   MDBX_DBG_DONT_UPGRADE = 64,
 
 #ifdef ENABLE_UBSAN
@@ -955,9 +951,7 @@ typedef void MDBX_debug_func(MDBX_log_level_t loglevel, const char *function, in
 
 /** \brief Setup global log-level, debug options and debug logger.
  * \returns The previously `debug_flags` in the 0-15 bits
- *          and `log_level` in the 16-31 bits.
- *
- * \see MDBX_log_level_t \see MDBX_debug_flags_t */
+ *          and `log_level` in the 16-31 bits. */
 LIBMDBX_API int mdbx_setup_debug(MDBX_log_level_t log_level, MDBX_debug_flags_t debug_flags, MDBX_debug_func *logger);
 
 typedef void MDBX_debug_func_nofmt(MDBX_log_level_t loglevel, const char *function, int line, const char *msg,
@@ -1006,10 +1000,7 @@ MDBX_NORETURN LIBMDBX_API void mdbx_panic(const char *fmt, ...) MDBX_PRINTF_ARGS
 
 /** \brief Panics with asserton failed message and causes abnormal process
  * termination. */
-#if !((defined(_WIN32) || defined(_WIN64)) && !MDBX_WITHOUT_MSVC_CRT)
-MDBX_NORETURN
-#endif /* MDBX_WITHOUT_MSVC_CRT */
-LIBMDBX_API void mdbx_assert_fail(const MDBX_env *env, const char *msg, const char *func, unsigned line);
+MDBX_NORETURN LIBMDBX_API void mdbx_assert_fail(const MDBX_env *env, const char *msg, const char *func, unsigned line);
 /** end of c_debug @} */
 
 /** \brief Environment flags
@@ -1668,7 +1659,7 @@ DEFINE_ENUM_FLAG_OPERATORS(MDBX_put_flags)
 
 /** \brief Environment copy flags
  * \ingroup c_extra
- * \see mdbx_env_copy() \see mdbx_env_copy2fd() \see mdbx_txn_copy2pathname() */
+ * \see mdbx_env_copy() \see mdbx_env_copy2fd() */
 typedef enum MDBX_copy_flags {
   MDBX_CP_DEFAULTS = 0,
 
@@ -1693,11 +1684,7 @@ typedef enum MDBX_copy_flags {
   /** Enable renew/restart read transaction in case it use outdated
    * MVCC shapshot, otherwise the \ref MDBX_MVCC_RETARDED will be returned
    * \see mdbx_txn_copy2fd() \see mdbx_txn_copy2pathname() */
-  MDBX_CP_RENEW_TXN = 32u,
-
-  /** Silently overwrite the target file, if it exists, instead of returning an error
-   * \see mdbx_txn_copy2pathname() \see mdbx_env_copy() */
-  MDBX_CP_OVERWRITE = 64u
+  MDBX_CP_RENEW_TXN = 32u
 
 } MDBX_copy_flags_t;
 DEFINE_ENUM_FLAG_OPERATORS(MDBX_copy_flags)
@@ -1906,7 +1893,8 @@ typedef enum MDBX_error {
    *  - The table was dropped and recreated with different flags. */
   MDBX_INCOMPATIBLE = -30784,
 
-  /** Reader locktable slot was unexpectly reused or cleared by an enemy thread */
+  /** Invalid reuse of reader locktable slot,
+   * e.g. read-transaction already run for current thread */
   MDBX_BAD_RSLOT = -30783,
 
   /** Transaction is not valid for requested operation,
@@ -1998,7 +1986,7 @@ typedef enum MDBX_error {
   MDBX_EREMOTE = ERROR_REMOTE_STORAGE_MEDIA_ERROR,
   MDBX_EDEADLK = ERROR_POSSIBLE_DEADLOCK
 #else /* Windows */
-#if defined(ENODATA) || defined(DOXYGEN)
+#ifdef ENODATA
   MDBX_ENODATA = ENODATA,
 #else
   MDBX_ENODATA = 9919 /* for compatibility with LLVM's C++ libraries/headers */,
@@ -2007,11 +1995,7 @@ typedef enum MDBX_error {
   MDBX_EACCESS = EACCES,
   MDBX_ENOMEM = ENOMEM,
   MDBX_EROFS = EROFS,
-#if defined(ENOTSUP) || defined(DOXYGEN)
-  MDBX_ENOSYS = ENOTSUP,
-#else
   MDBX_ENOSYS = ENOSYS,
-#endif /* ENOTSUP */
   MDBX_EIO = EIO,
   MDBX_EPERM = EPERM,
   MDBX_EINTR = EINTR,
@@ -2784,10 +2768,10 @@ typedef struct MDBX_stat MDBX_stat;
  * Legacy mdbx_env_stat() correspond to calling \ref mdbx_env_stat_ex() with the
  * null `txn` argument.
  *
- * \param [in] env     An environment handle returned by \ref mdbx_env_create().
- * \param [in] txn     A transaction handle returned by \ref mdbx_txn_begin().
+ * \param [in] env     An environment handle returned by \ref mdbx_env_create()
+ * \param [in] txn     A transaction handle returned by \ref mdbx_txn_begin()
  * \param [out] stat   The address of an \ref MDBX_stat structure where
- *                     the statistics will be copied.
+ *                     the statistics will be copied
  * \param [in] bytes   The size of \ref MDBX_stat.
  *
  * \returns A non-zero error value on failure and 0 on success. */
@@ -2811,20 +2795,17 @@ struct MDBX_envinfo {
     uint64_t shrink;  /**< Shrink threshold for datafile */
     uint64_t grow;    /**< Growth step for datafile */
   } mi_geo;
-  uint64_t mi_mapsize;                  /**< Size of the database memory map */
-  uint64_t mi_dxb_fsize;                /**< Current database file size */
-  uint64_t mi_dxb_fallocated;           /**< Space allocated for the database file in a filesystem */
+  uint64_t mi_mapsize;                  /**< Size of the data memory map */
   uint64_t mi_last_pgno;                /**< Number of the last used page */
   uint64_t mi_recent_txnid;             /**< ID of the last committed transaction */
   uint64_t mi_latter_reader_txnid;      /**< ID of the last reader transaction */
-  uint64_t mi_self_latter_reader_txnid; /**< ID of the last reader transaction of this/current process */
+  uint64_t mi_self_latter_reader_txnid; /**< ID of the last reader transaction
+                                           of caller process */
   uint64_t mi_meta_txnid[3], mi_meta_sign[3];
   uint32_t mi_maxreaders;   /**< Total reader slots in the environment */
   uint32_t mi_numreaders;   /**< Max reader slots used in the environment */
   uint32_t mi_dxb_pagesize; /**< Database pagesize */
   uint32_t mi_sys_pagesize; /**< System pagesize */
-  uint32_t mi_sys_upcblk;   /**< System "Unified Page Cache" block size */
-  uint32_t mi_sys_ioblk;    /**< Filesystem I/O block size */
 
   /** \brief A mostly unique ID that is regenerated on each boot.
 
@@ -4209,10 +4190,7 @@ LIBMDBX_API int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency);
  * \returns A non-zero error value on failure and 0 on success,
  *          some possible errors are:
  * \retval MDBX_RESULT_TRUE      Transaction was aborted since it should
- *                               be aborted due to previous errors,
- *                               either no changes were made during the transaction,
- *                               and the build time option
- *                               \ref MDBX_NOSUCCESS_PURE_COMMIT was enabled.
+ *                               be aborted due to previous errors.
  * \retval MDBX_PANIC            A fatal error occurred earlier
  *                               and the environment must be shut down.
  * \retval MDBX_BAD_TXN          Transaction is already finished or never began.
@@ -4566,10 +4544,6 @@ typedef int(MDBX_cmp_func)(const MDBX_val *a, const MDBX_val *b) MDBX_CXX17_NOEX
  * \param [out] dbi     Address where the new \ref MDBX_dbi handle
  *                      will be stored.
  *
- * The name in \ref mdbx_dbi_open() is a null terminated string. While
- * \ref mdbx_dbi_open2() supports arbitrary length keys which are not
- * truncated, for example to support a fixed width integer type.
- *
  * For \ref mdbx_dbi_open_ex() additional arguments allow you to set custom
  * comparison functions for keys and values (for multimaps).
  * \see avoid_custom_comparators
@@ -4602,8 +4576,6 @@ LIBMDBX_API int mdbx_dbi_open2(MDBX_txn *txn, const MDBX_val *name, MDBX_db_flag
  * \param [in] name   The name of the table to open. If only a single
  *                    table is needed in the environment,
  *                    this value may be NULL.
- *                    The name in \ref mdbx_dbi_open_ex() is null terminated,
- *                    while \ref mdbx_dbi_open_ex2() supports an arbitrary length.
  * \param [in] flags  Special options for this table.
  * \param [in] keycmp  Optional custom key comparison function for a table.
  * \param [in] datacmp Optional custom data comparison function for a table.
@@ -6053,10 +6025,11 @@ MDBX_NOTHROW_PURE_FUNCTION LIBMDBX_API int mdbx_is_dirty(const MDBX_txn *txn, co
 /** \brief Sequence generation for a table.
  * \ingroup c_crud
  *
- * The function provides a linear sequence of unique positive integers for each table with acquire/allocate semantics.
- * The function can be called for a read transaction to retrieve the current sequence value while the increment must be
- * zero. Sequence changes become visible outside the current write transaction after it is committed, and discarded on
- * abort.
+ * The function allows to create a linear sequence of unique positive integers
+ * for each table. The function can be called for a read transaction to
+ * retrieve the current sequence value, and the increment must be zero.
+ * Sequence changes become visible outside the current write transaction after
+ * it is committed, and discarded on abort.
  *
  * \param [in] txn        A transaction handle returned
  *                        by \ref mdbx_txn_begin().
@@ -6069,7 +6042,7 @@ MDBX_NOTHROW_PURE_FUNCTION LIBMDBX_API int mdbx_is_dirty(const MDBX_txn *txn, co
  * \returns A non-zero error value on failure and 0 on success,
  *          some possible errors are:
  * \retval MDBX_RESULT_TRUE   Increasing the sequence has resulted in an
- *                            overflow and therefore cannot be performed. */
+ *                            overflow and therefore cannot be executed. */
 LIBMDBX_API int mdbx_dbi_sequence(MDBX_txn *txn, MDBX_dbi dbi, uint64_t *result, uint64_t increment);
 
 /** \brief Compare two keys according to a particular table.
@@ -6544,27 +6517,21 @@ typedef struct MDBX_chk_table {
 
   size_t payload_bytes, lost_bytes;
   struct {
-    size_t all, empty, broken;
+    size_t all, empty, other;
     size_t branch, leaf;
     size_t nested_branch, nested_leaf, nested_subleaf;
   } pages;
   struct {
     /// Tree deep histogram
-    struct MDBX_chk_histogram height;
+    struct MDBX_chk_histogram deep;
     /// Histogram of large/overflow pages length
     struct MDBX_chk_histogram large_pages;
     /// Histogram of nested trees height, span length for GC
-    struct MDBX_chk_histogram nested_height;
+    struct MDBX_chk_histogram nested_tree;
     /// Keys length histogram
     struct MDBX_chk_histogram key_len;
     /// Values length histogram
     struct MDBX_chk_histogram val_len;
-    /// Number of multi-values (aka duplicates) histogram
-    struct MDBX_chk_histogram multival;
-    /// Histogram of branch and leaf pages filling in percents
-    struct MDBX_chk_histogram tree_density;
-    /// Histogram of nested tree(s) branch and leaf pages filling in percents
-    struct MDBX_chk_histogram large_or_nested_density;
   } histogram;
 } MDBX_chk_table_t;
 
@@ -6670,11 +6637,6 @@ LIBMDBX_API int mdbx_env_chk(MDBX_env *env, const MDBX_chk_callbacks_t *cb, MDBX
  * \see MDBX_debug_func
  * \returns Нулевое значение в случае успеха, иначе код ошибки. */
 LIBMDBX_API int mdbx_env_chk_encount_problem(MDBX_chk_context_t *ctx);
-
-LIBMDBX_API const char *mdbx_ratio2digits(uint64_t numerator, uint64_t denominator, int precision, char *buffer,
-                                          size_t buffer_size);
-
-LIBMDBX_API const char *mdbx_ratio2percents(uint64_t value, uint64_t whole, char *buffer, size_t buffer_size);
 
 /** end of chk @} */
 

@@ -132,8 +132,6 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/preface.h"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/proto.h"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/refund.c"
-   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/rkl.c"
-   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/rkl.h"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sort.h"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/spill.c"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/spill.h"
@@ -151,9 +149,6 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/tree-ops.c"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txl.c"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txl.h"
-   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txn-basal.c"
-   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txn-nested.c"
-   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txn-ro.c"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txn.c"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/unaligned.h"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/utils.c"
@@ -328,6 +323,19 @@ if(NOT APPLE
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -pthread")
     set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -pthread")
+  endif()
+endif()
+
+check_function_exists(pow NOT_NEED_LIBM)
+if(NOT_NEED_LIBM)
+  set(LIB_MATH "")
+else()
+  set(CMAKE_REQUIRED_LIBRARIES m)
+  check_function_exists(pow HAVE_LIBM)
+  if(HAVE_LIBM)
+    set(LIB_MATH m)
+  else()
+    message(FATAL_ERROR "No libm found for math support")
   endif()
 endif()
 
@@ -838,8 +846,6 @@ else()
       "${MDBX_SOURCE_DIR}/preface.h"
       "${MDBX_SOURCE_DIR}/proto.h"
       "${MDBX_SOURCE_DIR}/refund.c"
-      "${MDBX_SOURCE_DIR}/rkl.c"
-      "${MDBX_SOURCE_DIR}/rkl.h"
       "${MDBX_SOURCE_DIR}/sort.h"
       "${MDBX_SOURCE_DIR}/spill.c"
       "${MDBX_SOURCE_DIR}/spill.h"
@@ -849,9 +855,6 @@ else()
       "${MDBX_SOURCE_DIR}/tree-ops.c"
       "${MDBX_SOURCE_DIR}/txl.c"
       "${MDBX_SOURCE_DIR}/txl.h"
-      "${MDBX_SOURCE_DIR}/txn-basal.c"
-      "${MDBX_SOURCE_DIR}/txn-nested.c"
-      "${MDBX_SOURCE_DIR}/txn-ro.c"
       "${MDBX_SOURCE_DIR}/txn.c"
       "${MDBX_SOURCE_DIR}/unaligned.h"
       "${MDBX_SOURCE_DIR}/utils.c"
@@ -1040,6 +1043,10 @@ if(MDBX_BUILD_TOOLS)
     target_setup_options(mdbx_${TOOL})
     target_link_libraries(mdbx_${TOOL} ${TOOL_MDBX_LIB})
   endforeach()
+  if(LIB_MATH)
+    target_link_libraries(mdbx_chk ${LIB_MATH})
+    target_link_libraries(mdbx_stat ${LIB_MATH})
+  endif()
 endif()
 
 # ######################################################################################################################
