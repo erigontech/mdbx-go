@@ -3,8 +3,8 @@
 #
 # Donations are welcome to ETH `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`. Всё будет хорошо!
 
-# libmdbx = { Revised and extended descendant of Symas LMDB. } Please see README.md at
-# https://gitflic.ru/project/erthink/libmdbx
+# libmdbx = { Revised and extended descendant of Symas LMDB. }
+# Please see README.md at https://sourcecraft.dev/dqdkfa/libmdbx
 #
 # Libmdbx is superior to LMDB in terms of features and reliability, not inferior in performance. libmdbx works on Linux,
 # FreeBSD, MacOS X and other systems compliant with POSIX.1-2008, but also support Windows as a complementary platform.
@@ -132,6 +132,8 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/preface.h"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/proto.h"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/refund.c"
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/rkl.c"
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/rkl.h"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sort.h"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/spill.c"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/spill.h"
@@ -149,6 +151,9 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/tree-ops.c"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txl.c"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txl.h"
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txn-basal.c"
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txn-nested.c"
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txn-ro.c"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/txn.c"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/unaligned.h"
    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/utils.c"
@@ -228,15 +233,11 @@ else()
   endif()
 
   project(libmdbx C)
-  if(NOT MDBX_AMALGAMATED_SOURCE AND NOT DEFINED BUILD_TESTING)
-    set(BUILD_TESTING ON)
-  endif()
 endif()
 
-if(NOT MDBX_AMALGAMATED_SOURCE)
-  include(CTest)
-  option(MDBX_ENABLE_TESTS "Build libmdbx tests." ${BUILD_TESTING})
-elseif(DEFINED MDBX_ENABLE_TESTS AND MDBX_ENABLE_TESTS)
+if(MDBX_AMALGAMATED_SOURCE
+   AND DEFINED MDBX_ENABLE_TESTS
+   AND MDBX_ENABLE_TESTS)
   message(WARNING "MDBX_ENABLE_TESTS=${MDBX_ENABLE_TESTS}: But amalgamated source code don't includes tests.")
   set(MDBX_ENABLE_TESTS OFF)
 endif()
@@ -327,19 +328,6 @@ if(NOT APPLE
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -pthread")
     set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -pthread")
-  endif()
-endif()
-
-check_function_exists(pow NOT_NEED_LIBM)
-if(NOT_NEED_LIBM)
-  set(LIB_MATH "")
-else()
-  set(CMAKE_REQUIRED_LIBRARIES m)
-  check_function_exists(pow HAVE_LIBM)
-  if(HAVE_LIBM)
-    set(LIB_MATH m)
-  else()
-    message(FATAL_ERROR "No libm found for math support")
   endif()
 endif()
 
@@ -444,19 +432,23 @@ else()
   endif()
 
   if(NOT MDBX_AMALGAMATED_SOURCE)
-    find_program(VALGRIND valgrind)
-    if(VALGRIND)
-      # (LY) cmake is ugly and nasty. Therefore memcheck-options should be defined before including ctest. Otherwise
-      # ctest may ignore it.
-      set(MEMORYCHECK_SUPPRESSIONS_FILE
-          "${CMAKE_CURRENT_SOURCE_DIR}/test/valgrind_suppress.txt"
-          CACHE FILEPATH "Suppressions file for Valgrind" FORCE)
-      set(MEMORYCHECK_COMMAND_OPTIONS
-          "--trace-children=yes --leak-check=full --track-origins=yes --track-origins=yes --error-exitcode=42 --error-markers=@ --errors-for-leak-kinds=definite --fair-sched=yes --suppressions=${MEMORYCHECK_SUPPRESSIONS_FILE}"
-          CACHE STRING "Valgrind options" FORCE)
-      set(VALGRIND_COMMAND_OPTIONS
-          "${MEMORYCHECK_COMMAND_OPTIONS}"
-          CACHE STRING "Valgrind options" FORCE)
+    if(NOT WIN32)
+      if(NOT MEMORYCHECK_COMMAND)
+        find_program(MEMORYCHECK_COMMAND valgrind)
+      endif()
+      if(MEMORYCHECK_COMMAND)
+        # (LY) cmake is ugly and nasty. Therefore memcheck-options should be defined before including ctest. Otherwise
+        # ctest may ignore it.
+        set(MEMORYCHECK_SUPPRESSIONS_FILE
+            "${CMAKE_CURRENT_SOURCE_DIR}/test/valgrind_suppress.txt"
+            CACHE FILEPATH "Suppressions file for Valgrind" FORCE)
+        set(MEMORYCHECK_COMMAND_OPTIONS
+            "--trace-children=yes --leak-check=full --track-origins=yes --expensive-definedness-checks=yes --error-exitcode=42 --error-markers=@VALGRIND --errors-for-leak-kinds=definite --fair-sched=yes --suppressions=${MEMORYCHECK_SUPPRESSIONS_FILE}"
+            CACHE STRING "Valgrind options" FORCE)
+        set(MEMORYCHECK_COMMAND_OPTIONS
+            "${MEMORYCHECK_COMMAND_OPTIONS}"
+            CACHE STRING "Valgrind options" FORCE)
+      endif()
     endif()
 
     # Enable 'make tags' target.
@@ -574,9 +566,8 @@ if(WIN32 AND EXISTS "${MDBX_SOURCE_DIR}/ntdll.def")
   if(MSVC)
     if(NOT MSVC_LIB_EXE)
       # Find lib.exe
-      get_filename_component(CL_NAME ${CMAKE_C_COMPILER} NAME)
-      string(REPLACE cl.exe lib.exe MSVC_LIB_EXE ${CL_NAME})
-      find_program(MSVC_LIB_EXE ${MSVC_LIB_EXE})
+      get_filename_component(CC_DIR ${CMAKE_C_COMPILER} DIRECTORY)
+      find_program(MSVC_LIB_EXE "lib.exe" HINTS ${CC_DIR})
     endif()
     if(MSVC_LIB_EXE)
       message(STATUS "Found MSVC's lib tool: ${MSVC_LIB_EXE}")
@@ -588,25 +579,24 @@ if(WIN32 AND EXISTS "${MDBX_SOURCE_DIR}/ntdll.def")
         COMMAND ${MSVC_LIB_EXE} /def:"${MDBX_SOURCE_DIR}/ntdll.def" /out:"${MDBX_NTDLL_EXTRA_IMPLIB}"
                 ${INITIAL_CMAKE_STATIC_LINKER_FLAGS})
     else()
-      message(WARNING "MSVC's lib tool not found")
+      message(WARNING "MSVC's lib.exe not found")
     endif()
   elseif(MINGW OR MINGW64)
-    if(NOT DLLTOOL)
-      # Find dlltool
-      get_filename_component(GCC_NAME ${CMAKE_C_COMPILER} NAME)
-      string(REPLACE gcc dlltool DLLTOOL_NAME ${GCC_NAME})
-      find_program(DLLTOOL NAMES ${DLLTOOL_NAME})
+    if(NOT MINGW_DLLTOOL_EXE)
+      # Find dlltool.exe
+      get_filename_component(CC_DIR ${CMAKE_C_COMPILER} DIRECTORY)
+      find_program(MINGW_DLLTOOL_EXE "dlltool.exe" HINTS ${CC_DIR})
     endif()
-    if(DLLTOOL)
-      message(STATUS "Found dlltool: ${DLLTOOL}")
+    if(MINGW_DLLTOOL_EXE)
+      message(STATUS "Found MINGW's dlltool: ${MINGW_DLLTOOL_EXE}")
       set(MDBX_NTDLL_EXTRA_IMPLIB "${CMAKE_CURRENT_BINARY_DIR}/mdbx_ntdll_extra.a")
       add_custom_command(
         OUTPUT "${MDBX_NTDLL_EXTRA_IMPLIB}"
         COMMENT "Create extra-import-library for ntdll.dll"
         MAIN_DEPENDENCY "${MDBX_SOURCE_DIR}/ntdll.def"
-        COMMAND ${DLLTOOL} -d "${MDBX_SOURCE_DIR}/ntdll.def" -l "${MDBX_NTDLL_EXTRA_IMPLIB}")
+        COMMAND ${MINGW_DLLTOOL_EXE} -d "${MDBX_SOURCE_DIR}/ntdll.def" -l "${MDBX_NTDLL_EXTRA_IMPLIB}")
     else()
-      message(WARNING "dlltool not found")
+      message(WARNING "MINGW's dlltool.exe not found")
     endif()
   endif()
 
@@ -688,8 +678,7 @@ add_option(MDBX TRUST_RTC "Does a system have battery-backed Real-Time Clock or 
 mark_as_advanced(MDBX_TRUST_RTC)
 add_option(MDBX FORCE_ASSERTIONS "Force enable assertion checking" OFF)
 add_option(
-  MDBX
-  DISABLE_VALIDATION
+  MDBX DISABLE_VALIDATION
   "Disable some checks to reduce an overhead and detection probability of database corruption to a values closer to the LMDB"
   OFF)
 mark_as_advanced(MDBX_DISABLE_VALIDATION)
@@ -702,6 +691,8 @@ mark_as_advanced(MDBX_ENABLE_PROFGC)
 add_option(MDBX ENABLE_DBI_SPARSE
            "Support for sparse sets of DBI handles to reduce overhead when starting and processing transactions" ON)
 add_option(MDBX ENABLE_DBI_LOCKFREE "Support for deferred releasing and a lockfree path to quickly open DBI handles" ON)
+add_option(MDBX USE_FALLOCATE "Using posix_fallocate() or fcntl(F_PREALLOCATE) on OSX" AUTO)
+mark_as_advanced(MDBX_USE_FALLOCATE)
 
 if(NOT MDBX_AMALGAMATED_SOURCE)
   if(CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE_UPPERCASE STREQUAL "DEBUG")
@@ -722,6 +713,7 @@ if(CMAKE_CXX_COMPILER_LOADED
    AND MDBX_CXX_STANDARD LESS 83
    AND NOT MDBX_CXX_STANDARD LESS 11)
   if(NOT MDBX_AMALGAMATED_SOURCE)
+    include(CTest)
     option(MDBX_ENABLE_TESTS "Build MDBX tests" ${BUILD_TESTING})
   endif()
   if(NOT MDBX_WITHOUT_MSVC_CRT
@@ -730,11 +722,27 @@ if(CMAKE_CXX_COMPILER_LOADED
      AND NOT (MSVC AND MSVC_VERSION LESS 1900))
     option(MDBX_BUILD_CXX "Build C++ portion" ON)
   else()
+    if(DEFINED MDBX_BUILD_CXX AND MDBX_BUILD_CXX)
+      if(MDBX_WITHOUT_MSVC_CRT)
+        message(
+          WARNING
+            "MDBX_BUILD_CXX=${MDBX_BUILD_CXX}: But MDBX_WITHOUT_MSVC_CRT=${MDBX_WITHOUT_MSVC_CRT} which does not allow the use of C++."
+        )
+      else()
+        message(WARNING "MDBX_BUILD_CXX=${MDBX_BUILD_CXX}: But there is no suitable C++ compiler available.")
+      endif()
+    endif()
     set(MDBX_BUILD_CXX FALSE)
   endif()
 else()
-  set(MDBX_BUILD_CXX FALSE)
-  set(MDBX_ENABLE_TESTS FALSE)
+  if(DEFINED MDBX_BUILD_CXX AND MDBX_BUILD_CXX)
+    message(WARNING "MDBX_BUILD_CXX=${MDBX_BUILD_CXX}: But there is no suitable C++ compiler available.")
+  endif()
+  if(DEFINED MDBX_ENABLE_TESTS AND MDBX_ENABLE_TESTS)
+    message(WARNING "MDBX_ENABLE_TESTS=${MDBX_ENABLE_TESTS}: But there is no suitable C++ compiler available.")
+  endif()
+  set(MDBX_ENABLE_TESTS OFF)
+  set(MDBX_BUILD_CXX OFF)
 endif()
 
 if(CI)
@@ -754,11 +762,12 @@ endif()
 
 # sources list
 set(LIBMDBX_PUBLIC_HEADERS mdbx.h)
-set(LIBMDBX_SOURCES mdbx.h "${CMAKE_CURRENT_BINARY_DIR}/config.h")
+set(LIBMDBX_SOURCES mdbx.h "${CMAKE_CURRENT_BINARY_DIR}/config-cmake.h")
 if(MDBX_AMALGAMATED_SOURCE)
   list(APPEND LIBMDBX_SOURCES mdbx.c)
 else()
   # generate version file
+  file(REMOVE "${MDBX_SOURCE_DIR}/version.c")
   configure_file("${MDBX_SOURCE_DIR}/version.c.in" "${CMAKE_CURRENT_BINARY_DIR}/version.c" ESCAPE_QUOTES)
   file(SHA256 "${CMAKE_CURRENT_BINARY_DIR}/version.c" MDBX_SOURCERY_DIGEST)
   string(MAKE_C_IDENTIFIER "${MDBX_GIT_DESCRIBE}" MDBX_SOURCERY_SUFFIX)
@@ -829,6 +838,8 @@ else()
       "${MDBX_SOURCE_DIR}/preface.h"
       "${MDBX_SOURCE_DIR}/proto.h"
       "${MDBX_SOURCE_DIR}/refund.c"
+      "${MDBX_SOURCE_DIR}/rkl.c"
+      "${MDBX_SOURCE_DIR}/rkl.h"
       "${MDBX_SOURCE_DIR}/sort.h"
       "${MDBX_SOURCE_DIR}/spill.c"
       "${MDBX_SOURCE_DIR}/spill.h"
@@ -838,6 +849,9 @@ else()
       "${MDBX_SOURCE_DIR}/tree-ops.c"
       "${MDBX_SOURCE_DIR}/txl.c"
       "${MDBX_SOURCE_DIR}/txl.h"
+      "${MDBX_SOURCE_DIR}/txn-basal.c"
+      "${MDBX_SOURCE_DIR}/txn-nested.c"
+      "${MDBX_SOURCE_DIR}/txn-ro.c"
       "${MDBX_SOURCE_DIR}/txn.c"
       "${MDBX_SOURCE_DIR}/unaligned.h"
       "${MDBX_SOURCE_DIR}/utils.c"
@@ -1026,10 +1040,6 @@ if(MDBX_BUILD_TOOLS)
     target_setup_options(mdbx_${TOOL})
     target_link_libraries(mdbx_${TOOL} ${TOOL_MDBX_LIB})
   endforeach()
-  if(LIB_MATH)
-    target_link_libraries(mdbx_chk ${LIB_MATH})
-    target_link_libraries(mdbx_stat ${LIB_MATH})
-  endif()
 endif()
 
 # ######################################################################################################################
@@ -1241,9 +1251,10 @@ foreach(item IN LISTS options)
   message(STATUS "${item}: ${value}")
 endforeach(item)
 
-# provide config.h for library build info
-configure_file("${MDBX_SOURCE_DIR}/config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/config.h" ESCAPE_QUOTES)
-add_definitions(-DMDBX_CONFIG_H="${CMAKE_CURRENT_BINARY_DIR}/config.h")
+# provide config-cmake.h for library build info
+file(REMOVE "${MDBX_SOURCE_DIR}/config-cmake.h")
+configure_file("${MDBX_SOURCE_DIR}/config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/config-cmake.h" ESCAPE_QUOTES)
+add_definitions(-DMDBX_CONFIG_H="${CMAKE_CURRENT_BINARY_DIR}/config-cmake.h")
 
 # ######################################################################################################################
 
