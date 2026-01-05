@@ -29,4 +29,4 @@ tools: clean
 
 cp:
 	#cd ../libmdbx && make dist
-	cp -R ./../libmdbx/dist/* ./libmdbx/
+	cp -R ./../libmdbx/* ./libmdbx/

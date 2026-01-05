@@ -9,10 +9,11 @@ import "C"
 
 import (
 	"fmt"
-	"github.com/erigontech/mdbx-go/mdbx/threads"
 	"log"
 	"time"
 	"unsafe"
+
+	"github.com/erigontech/mdbx-go/mdbx/threads"
 )
 
 // This flags are used exclusively for Txn.OpenDBISimple and Txn.OpenRoot.  The
