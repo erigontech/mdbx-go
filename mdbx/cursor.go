@@ -57,6 +57,23 @@ const (
 	AllDups     = C.MDBX_ALLDUPS
 )
 
+const (
+	// Flags for Cursor.RangeDel
+	//
+	// See mdbx_cursor_bunch_delete.
+	DeleteCurrentValue                   = C.MDBX_DELETE_CURRENT_VALUE
+	DeleteCurrentMultiValBeforeExcluding = C.MDBX_DELETE_CURRENT_MULTIVAL_BEFORE_EXCLUDING
+	DeleteCurrentMultiValBeforeIncluding = C.MDBX_DELETE_CURRENT_MULTIVAL_BEFORE_INCLUDING
+	DeleteCurrentMultiValAfterIncluding  = C.MDBX_DELETE_CURRENT_MULTIVAL_AFTER_INCLUDING
+	DeleteCurrentMultiValAfterExcluding  = C.MDBX_DELETE_CURRENT_MULTIVAL_AFTER_EXCLUDING
+	DeleteCurrentValueMultiValAll        = C.MDBX_DELETE_CURRENT_MULTIVAL_ALL
+	DeleteBeforeExcluding                = C.MDBX_DELETE_BEFORE_EXCLUDING
+	DeleteBeforeIncluding                = C.MDBX_DELETE_BEFORE_INCLUDING
+	DeleteAfterIncluding                 = C.MDBX_DELETE_AFTER_INCLUDING
+	DeleteAfterExcluding                 = C.MDBX_DELETE_AFTER_EXCLUDING
+	DeleteWhole                          = C.MDBX_DELETE_WHOLE
+)
+
 // Cursor operates on data inside a transaction and holds a position in the
 // database.
 //
@@ -301,6 +318,23 @@ func (c *Cursor) PutMulti(key []byte, page []byte, stride int, flags uint) error
 func (c *Cursor) Del(flags uint) error {
 	ret := C.mdbx_cursor_del(c._c, C.MDBX_put_flags_t(flags))
 	return operrno("mdbx_cursor_del", ret)
+}
+
+// RangeDel deletes a range of items referred to by the cursor from the database.
+//
+// It returns the number of affected (deleted) items.
+// Modes: see mdbx_cursor_bunch_delete.
+func (c *Cursor) RangeDel(mode uint) (numberAffected uint64, err error) {
+	var n C.uint64_t
+	ret := C.mdbx_cursor_bunch_delete(
+		c._c,
+		C.MDBX_bunch_action_t(mode),
+		&n,
+	)
+	if err := operrno("mdbx_cursor_bunch_delete", ret); err != nil {
+		return 0, err
+	}
+	return uint64(n), nil
 }
 
 // Count returns the number of duplicates for the current key.

@@ -1823,3 +1823,558 @@ func BenchmarkCursor_Set_Random(b *testing.B) {
 		b.Errorf("put: %v", err)
 	}
 }
+
+type kv struct{ k, v string }
+
+// ---------- helpers ----------
+
+func mustOpenUniqueDB(t *testing.T, env *Env, name string) DBI {
+	t.Helper()
+	var db DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBISimple(name, Create)
+		return err
+	}); err != nil {
+		t.Fatalf("OpenDBISimple(unique): %v", err)
+	}
+	return db
+}
+
+func mustOpenDupSortDB(t *testing.T, env *Env, name string) DBI {
+	t.Helper()
+	var db DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBISimple(name, Create|DupSort)
+		return err
+	}); err != nil {
+		t.Fatalf("OpenDBISimple(dupsort): %v", err)
+	}
+	return db
+}
+
+func mustPutUniqueSeq(t *testing.T, env *Env, db DBI, n int) {
+	t.Helper()
+	if err := env.Update(func(txn *Txn) error {
+		for i := 0; i < n; i++ {
+			k := fmt.Sprintf("k%d", i)
+			v := fmt.Sprintf("v%d", i)
+			if err := txn.Put(db, []byte(k), []byte(v), 0); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("put unique seq: %v", err)
+	}
+}
+
+func mustPutDupVals(t *testing.T, env *Env, db DBI, key string, vals []string) {
+	t.Helper()
+	if err := env.Update(func(txn *Txn) error {
+		for _, v := range vals {
+			if err := txn.Put(db, []byte(key), []byte(v), 0); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("put dup vals: %v", err)
+	}
+}
+
+func dumpAll(t *testing.T, env *Env, db DBI) []kv {
+	t.Helper()
+	var out []kv
+	if err := env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		k, v, err := cur.Get(nil, nil, First)
+		if IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		for {
+			out = append(out, kv{string(k), string(v)})
+			k, v, err = cur.Get(nil, nil, Next)
+			if IsNotFound(err) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+		}
+	}); err != nil {
+		t.Fatalf("dumpAll: %v", err)
+	}
+	return out
+}
+
+func dumpKeyDups(t *testing.T, env *Env, db DBI, key string) []string {
+	t.Helper()
+	var out []string
+	if err := env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		k, v, err := cur.Get([]byte(key), nil, SetKey)
+		if err != nil {
+			return err
+		}
+		if string(k) != key {
+			return fmt.Errorf("positioned on unexpected key: %q", k)
+		}
+		out = append(out, string(v))
+
+		for {
+			_, v, err = cur.Get(nil, nil, NextDup)
+			if IsNotFound(err) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			out = append(out, string(v))
+		}
+	}); err != nil {
+		t.Fatalf("dumpKeyDups(%s): %v", key, err)
+	}
+	return out
+}
+
+const RangeDel Label = "RangeDel"
+
+func requireEqual(t *testing.T, got, want any) {
+	t.Helper()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected:\n got:  %#v\n want: %#v", got, want)
+	}
+}
+
+// ---------- tests: unique DB ----------
+
+func TestCursor_RangeDel_Unique_DeleteCurrentValue(t *testing.T) {
+	env, _ := setupWithLabel(t, RangeDel)
+	db := mustOpenUniqueDB(t, env, "rangedel_unique_cur")
+	mustPutUniqueSeq(t, env, db, 5) // k0..k4
+
+	var affected uint64
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		_, _, err = cur.Get([]byte("k2"), nil, SetKey)
+		if err != nil {
+			return err
+		}
+		affected, err = cur.RangeDel(DeleteCurrentValue)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if affected != 1 {
+		t.Fatalf("affected=%d, want 1", affected)
+	}
+	requireEqual(t, dumpAll(t, env, db), []kv{
+		{"k0", "v0"}, {"k1", "v1"}, {"k3", "v3"}, {"k4", "v4"},
+	})
+}
+
+func TestCursor_RangeDel_Unique_DeleteBeforeIncluding(t *testing.T) {
+	env, _ := setupWithLabel(t, RangeDel)
+	db := mustOpenUniqueDB(t, env, "rangedel_unique_before_incl")
+	mustPutUniqueSeq(t, env, db, 5)
+
+	var affected uint64
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		_, _, err = cur.Get([]byte("k2"), nil, SetKey)
+		if err != nil {
+			return err
+		}
+		affected, err = cur.RangeDel(DeleteBeforeIncluding) // k0,k1,k2
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if affected != 3 {
+		t.Fatalf("affected=%d, want 3", affected)
+	}
+	requireEqual(t, dumpAll(t, env, db), []kv{{"k3", "v3"}, {"k4", "v4"}})
+}
+
+func TestCursor_RangeDel_Unique_DeleteBeforeExcluding(t *testing.T) {
+	env, _ := setupWithLabel(t, RangeDel)
+	db := mustOpenUniqueDB(t, env, "rangedel_unique_before_excl")
+	mustPutUniqueSeq(t, env, db, 5)
+
+	var affected uint64
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		_, _, err = cur.Get([]byte("k2"), nil, SetKey)
+		if err != nil {
+			return err
+		}
+		affected, err = cur.RangeDel(DeleteBeforeExcluding) // k0,k1
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if affected != 2 {
+		t.Fatalf("affected=%d, want 2", affected)
+	}
+	requireEqual(t, dumpAll(t, env, db), []kv{
+		{"k2", "v2"}, {"k3", "v3"}, {"k4", "v4"},
+	})
+}
+
+func TestCursor_RangeDel_Unique_DeleteAfterIncluding(t *testing.T) {
+	env, _ := setupWithLabel(t, RangeDel)
+	db := mustOpenUniqueDB(t, env, "rangedel_unique_after_incl")
+	mustPutUniqueSeq(t, env, db, 5)
+
+	var affected uint64
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		_, _, err = cur.Get([]byte("k2"), nil, SetKey)
+		if err != nil {
+			return err
+		}
+		affected, err = cur.RangeDel(DeleteAfterIncluding) // k2,k3,k4
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if affected != 3 {
+		t.Fatalf("affected=%d, want 3", affected)
+	}
+	requireEqual(t, dumpAll(t, env, db), []kv{{"k0", "v0"}, {"k1", "v1"}})
+}
+
+func TestCursor_RangeDel_Unique_DeleteAfterExcluding(t *testing.T) {
+	env, _ := setupWithLabel(t, RangeDel)
+	db := mustOpenUniqueDB(t, env, "rangedel_unique_after_excl")
+	mustPutUniqueSeq(t, env, db, 5)
+
+	var affected uint64
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		_, _, err = cur.Get([]byte("k2"), nil, SetKey)
+		if err != nil {
+			return err
+		}
+		affected, err = cur.RangeDel(DeleteAfterExcluding) // k3,k4
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if affected != 2 {
+		t.Fatalf("affected=%d, want 2", affected)
+	}
+	requireEqual(t, dumpAll(t, env, db), []kv{
+		{"k0", "v0"}, {"k1", "v1"}, {"k2", "v2"},
+	})
+}
+
+func TestCursor_RangeDel_Unique_DeleteWhole(t *testing.T) {
+	env, _ := setupWithLabel(t, RangeDel)
+	db := mustOpenUniqueDB(t, env, "rangedel_unique_whole")
+	mustPutUniqueSeq(t, env, db, 5)
+
+	var affected uint64
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		// Many “whole” APIs accept any cursor state; to be safe, position to First.
+		_, _, err = cur.Get(nil, nil, First)
+		if err != nil {
+			return err
+		}
+		affected, err = cur.RangeDel(DeleteWhole)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if affected != 5 {
+		t.Fatalf("affected=%d, want 5", affected)
+	}
+	requireEqual(t, dumpAll(t, env, db), []kv(nil))
+}
+
+// ---------- tests: dupsort DB (single key, multiple dup vals) ----------
+
+func TestCursor_RangeDel_DupSort_DeleteCurrentValue(t *testing.T) {
+	env, _ := setupWithLabel(t, RangeDel)
+	db := mustOpenDupSortDB(t, env, "rangedel_dups_cur")
+	mustPutDupVals(t, env, db, "k", []string{"v0", "v1", "v2", "v3"})
+
+	var affected uint64
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		// Position on specific dup-val via GetBoth.
+		_, _, err = cur.Get([]byte("k"), []byte("v2"), GetBoth)
+		if err != nil {
+			return err
+		}
+		affected, err = cur.RangeDel(DeleteCurrentValue) // delete only v2
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if affected != 1 {
+		t.Fatalf("affected=%d, want 1", affected)
+	}
+	requireEqual(t, dumpKeyDups(t, env, db, "k"), []string{"v0", "v1", "v3"})
+}
+
+func TestCursor_RangeDel_DupSort_DeleteCurrentValueMultiValAll(t *testing.T) {
+	env, _ := setupWithLabel(t, RangeDel)
+	db := mustOpenDupSortDB(t, env, "rangedel_dups_all")
+	mustPutDupVals(t, env, db, "k", []string{"v0", "v1", "v2"})
+
+	var affected uint64
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		_, _, err = cur.Get([]byte("k"), []byte("v1"), GetBoth)
+		if err != nil {
+			return err
+		}
+		affected, err = cur.RangeDel(DeleteCurrentValueMultiValAll) // remove all dupvals of key "k"
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if affected != 3 {
+		t.Fatalf("affected=%d, want 3", affected)
+	}
+	requireEqual(t, dumpAll(t, env, db), []kv(nil))
+}
+
+func TestCursor_RangeDel_DupSort_DeleteCurrentMultiValBeforeIncluding(t *testing.T) {
+	env, _ := setupWithLabel(t, RangeDel)
+	db := mustOpenDupSortDB(t, env, "rangedel_dups_before_incl")
+	mustPutDupVals(t, env, db, "k", []string{"v0", "v1", "v2", "v3"})
+
+	var affected uint64
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		_, _, err = cur.Get([]byte("k"), []byte("v2"), GetBoth)
+		if err != nil {
+			return err
+		}
+		affected, err = cur.RangeDel(DeleteCurrentMultiValBeforeIncluding) // v0,v1,v2
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if affected != 3 {
+		t.Fatalf("affected=%d, want 3", affected)
+	}
+	requireEqual(t, dumpKeyDups(t, env, db, "k"), []string{"v3"})
+}
+
+func TestCursor_RangeDel_DupSort_DeleteCurrentMultiValBeforeExcluding(t *testing.T) {
+	env, _ := setupWithLabel(t, RangeDel)
+	db := mustOpenDupSortDB(t, env, "rangedel_dups_before_excl")
+	mustPutDupVals(t, env, db, "k", []string{"v0", "v1", "v2", "v3"})
+
+	var affected uint64
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		_, _, err = cur.Get([]byte("k"), []byte("v2"), GetBoth)
+		if err != nil {
+			return err
+		}
+		affected, err = cur.RangeDel(DeleteCurrentMultiValBeforeExcluding) // v0,v1
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if affected != 2 {
+		t.Fatalf("affected=%d, want 2", affected)
+	}
+	requireEqual(t, dumpKeyDups(t, env, db, "k"), []string{"v2", "v3"})
+}
+
+func TestCursor_RangeDel_DupSort_DeleteCurrentMultiValAfterIncluding(t *testing.T) {
+	env, _ := setupWithLabel(t, RangeDel)
+	db := mustOpenDupSortDB(t, env, "rangedel_dups_after_incl")
+	mustPutDupVals(t, env, db, "k", []string{"v0", "v1", "v2", "v3"})
+
+	var affected uint64
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		_, _, err = cur.Get([]byte("k"), []byte("v1"), GetBoth)
+		if err != nil {
+			return err
+		}
+		affected, err = cur.RangeDel(DeleteCurrentMultiValAfterIncluding) // v1,v2,v3
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if affected != 3 {
+		t.Fatalf("affected=%d, want 3", affected)
+	}
+	requireEqual(t, dumpKeyDups(t, env, db, "k"), []string{"v0"})
+}
+
+func TestCursor_RangeDel_DupSort_DeleteCurrentMultiValAfterExcluding(t *testing.T) {
+	env, _ := setupWithLabel(t, RangeDel)
+	db := mustOpenDupSortDB(t, env, "rangedel_dups_after_excl")
+	mustPutDupVals(t, env, db, "k", []string{"v0", "v1", "v2", "v3"})
+
+	var affected uint64
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		_, _, err = cur.Get([]byte("k"), []byte("v1"), GetBoth)
+		if err != nil {
+			return err
+		}
+		affected, err = cur.RangeDel(DeleteCurrentMultiValAfterExcluding) // v2,v3
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if affected != 2 {
+		t.Fatalf("affected=%d, want 2", affected)
+	}
+	requireEqual(t, dumpKeyDups(t, env, db, "k"), []string{"v0", "v1"})
+}
+
+func TestCursor_RangeDel_DupSort_DeleteWhole(t *testing.T) {
+	env, _ := setupWithLabel(t, RangeDel)
+	db := mustOpenDupSortDB(t, env, "rangedel_dups_whole")
+
+	// 2 keys to ensure whole is whole, not only current key.
+	mustPutDupVals(t, env, db, "k1", []string{"a0", "a1"})
+	mustPutDupVals(t, env, db, "k2", []string{"b0", "b1", "b2"})
+
+	var affected uint64
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		_, _, err = cur.Get(nil, nil, First)
+		if err != nil {
+			return err
+		}
+		affected, err = cur.RangeDel(DeleteWhole)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if affected != 5 { // 2 + 3
+		t.Fatalf("affected=%d, want 5", affected)
+	}
+	requireEqual(t, dumpAll(t, env, db), []kv(nil))
+}
+
+// ---------- optional: empty table contract ----------
+
+func TestCursor_RangeDel_EmptyTable_DeleteWhole(t *testing.T) {
+	env, _ := setupWithLabel(t, RangeDel)
+	db := mustOpenUniqueDB(t, env, "rangedel_empty_whole")
+
+	// No puts.
+
+	var affected uint64
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		// For empty DB, positioning may return NotFound; we still try DeleteWhole.
+		affected, err = cur.RangeDel(DeleteWhole)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if affected != 0 {
+		t.Fatalf("affected=%d, want 0", affected)
+	}
+}
