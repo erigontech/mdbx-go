@@ -442,6 +442,7 @@ func (txn *Txn) renew() error {
 // null bytes in the name argument.
 //
 // See mdbx_dbi_open.
+//
 // Deprecated: use OpenDBISimple instead
 func (txn *Txn) OpenDBI(name string, flags uint, cmp, dcmp CmpFunc) (DBI, error) {
 	cname := C.CString(name)
@@ -495,7 +496,8 @@ type Cmp func(k1, k2 []byte) int
 // returned in those cases.  This is not a big deal for now because
 // applications are expected to handle any error encountered opening a
 // database.
-// Deprecated: openDBISimple instead because using comparators now is a deprecated
+//
+// Deprecated: use OpenDBISimple instead because using comparators is now deprecated
 func (txn *Txn) openDBI(cname *C.char, flags uint, cmp, dcmp *C.MDBX_cmp_func) (DBI, error) {
 	var dbi C.MDBX_dbi
 	ret := C.mdbx_dbi_open_ex(txn._txn, cname, C.MDBX_db_flags_t(flags), &dbi, cmp, dcmp)
