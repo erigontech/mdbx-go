@@ -181,6 +181,7 @@ func Version() string {
 //
 // Example output: " MDBX_DEBUG=0 ... MDBX_USE_FALLOCATE=1 ..."
 func BuildOptions() string {
+	//nolint:gocritic // C variable access pattern
 	return C.GoString(C.mdbx_build.options)
 }
 
