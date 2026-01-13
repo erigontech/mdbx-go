@@ -142,7 +142,7 @@ func TestEnv_Flags(t *testing.T) {
 		return
 	}
 
-	if flags&NoTLS == 0 {
+	if flags&NoStickyThreads == 0 {
 		t.Errorf("NoTLS is not set")
 	}
 
