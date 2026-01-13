@@ -142,8 +142,8 @@ func TestEnv_Flags(t *testing.T) {
 		return
 	}
 
-	if flags&NoTLS == 0 {
-		t.Errorf("NoTLS is not set")
+	if flags&NoStickyThreads == 0 {
+		t.Errorf("NoStickyThreads is not set")
 	}
 
 	err = env.SetFlags(SafeNoSync)

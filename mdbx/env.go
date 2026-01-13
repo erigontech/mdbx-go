@@ -161,7 +161,7 @@ func NewEnv(label Label) (*Env, error) {
 func (env *Env) Open(path string, flags uint, mode os.FileMode) error {
 	cpath := C.CString(path)
 	defer C.free(unsafe.Pointer(cpath))
-	ret := C.mdbx_env_open(env._env, cpath, C.MDBX_env_flags_t(NoTLS|flags), C.mdbx_mode_t(mode))
+	ret := C.mdbx_env_open(env._env, cpath, C.MDBX_env_flags_t(NoStickyThreads|flags), C.mdbx_mode_t(mode))
 	return operrno("mdbx_env_open", ret)
 }
 func (env *Env) Label() Label { return env.label }
