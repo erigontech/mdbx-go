@@ -354,7 +354,7 @@ type EnvInfo struct {
 	 * first process opened the database). */
 	PageOps EnfInfoPageOps
 
-	LastTxnID         int64 // ID of the last committed transaction
+	LastTxnID         int64 // ID of the last committed transaction. keep for backward compatibility - use RecentTxnID
 	RecentTxnID       int64 // ID of the last committed transaction
 	LatterReaderTxnID int64 // ID of the last reader transaction
 
@@ -430,7 +430,7 @@ func castEnvInfo(_info C.MDBX_envinfo) *EnvInfo {
 			Fsync:    uint64(_info.mi_pgop_stat.fsync),
 		},
 		LastPNO:           int64(_info.mi_last_pgno),
-		LastTxnID:         int64(_info.mi_recent_txnid), //keep for backward compatibility
+		LastTxnID:         int64(_info.mi_recent_txnid), // keep for backward compatibility
 		RecentTxnID:       int64(_info.mi_recent_txnid),
 		LatterReaderTxnID: int64(_info.mi_latter_reader_txnid),
 		MaxReaders:        uint(_info.mi_maxreaders),
