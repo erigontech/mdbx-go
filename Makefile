@@ -28,5 +28,5 @@ tools: clean
 	cd libmdbx && MDBX_BUILD_TIMESTAMP=unknown CFLAGS="${CFLAGS} -Wno-unknown-warning-option -Wno-enum-int-mismatch -Wno-strict-prototypes -Wno-unused-but-set-variable" make tools
 
 cp:
-	#cd ../libmdbx && make dist
-	cp -R ./../libmdbx/dist/* ./libmdbx/
+	cd ../libmdbx && make clean
+	cp -R ./../libmdbx/* ./libmdbx/

@@ -324,8 +324,12 @@ type EnvInfo struct {
 	 * \details Overall statistics of page operations of all (running, completed
 	 * and aborted) transactions in the current multi-process session (since the
 	 * first process opened the database). */
-	PageOps           EnfInfoPageOps
-	LastTxnID         int64         // ID of the last committed transaction
+	PageOps EnfInfoPageOps
+
+	LastTxnID         int64  // ID of the last committed transaction. keep for backward compatibility - use RecentTxnID
+	RecentTxnID       uint64 // ID of the last committed transaction
+	LatterReaderTxnID uint64 // ID of the last reader transaction
+
 	MaxReaders        uint          // maximum number of threads for the environment
 	NumReaders        uint          // maximum number of threads used in the environment
 	PageSize          uint          //
@@ -397,13 +401,15 @@ func castEnvInfo(_info C.MDBX_envinfo) *EnvInfo {
 			Msync:    uint64(_info.mi_pgop_stat.msync),
 			Fsync:    uint64(_info.mi_pgop_stat.fsync),
 		},
-		LastPNO:        int64(_info.mi_last_pgno),
-		LastTxnID:      int64(_info.mi_recent_txnid),
-		MaxReaders:     uint(_info.mi_maxreaders),
-		NumReaders:     uint(_info.mi_numreaders),
-		PageSize:       uint(_info.mi_dxb_pagesize),
-		SystemPageSize: uint(_info.mi_sys_pagesize),
-		MiLastPgNo:     uint64(_info.mi_last_pgno),
+		LastPNO:           int64(_info.mi_last_pgno),
+		LastTxnID:         int64(_info.mi_recent_txnid), // keep for backward compatibility
+		RecentTxnID:       uint64(_info.mi_recent_txnid),
+		LatterReaderTxnID: uint64(_info.mi_latter_reader_txnid),
+		MaxReaders:        uint(_info.mi_maxreaders),
+		NumReaders:        uint(_info.mi_numreaders),
+		PageSize:          uint(_info.mi_dxb_pagesize),
+		SystemPageSize:    uint(_info.mi_sys_pagesize),
+		MiLastPgNo:        uint64(_info.mi_last_pgno),
 
 		AutoSyncThreshold: uint(_info.mi_autosync_threshold),
 		UnsyncedBytes:     uint(_info.mi_unsync_volume),
