@@ -228,6 +228,9 @@ func (c *Cursor) getVal(setkey, setval []byte, op uint) error {
 //
 // See mdb_cursor_put.
 func (c *Cursor) Put(key, val []byte, flags uint) error {
+	if c._c == nil || c.txn == nil {
+		return operrno("mdbx_cursor_put", C.MDBX_EINVAL)
+	}
 	var k, v *C.char
 	if len(key) > 0 {
 		k = (*C.char)(unsafe.Pointer(&key[0]))
