@@ -1736,20 +1736,20 @@ func BenchmarkCursor_Set_OneKey(b *testing.B) {
 func BenchmarkCursor_Set_Sequence(b *testing.B) {
 	env, _ := setup(b)
 
-	var db DBI
-	keys := make([][]byte, b.N)
+	const N = 100
+	var keys [N][8]byte
 	for i := range keys {
-		keys[i] = make([]byte, 8)
-		binary.BigEndian.PutUint64(keys[i], uint64(i))
+		binary.BigEndian.PutUint64(keys[i][:], uint64(i))
 	}
 
+	var db DBI
 	if err := env.Update(func(txn *Txn) (err error) {
 		db, err = txn.OpenRoot(0)
 		if err != nil {
 			return err
 		}
-		for _, k := range keys {
-			err = txn.Put(db, k, k, 0)
+		for i := range keys {
+			err = txn.Put(db, keys[i][:], keys[i][:], 0)
 			if err != nil {
 				return err
 			}
@@ -1766,10 +1766,12 @@ func BenchmarkCursor_Set_Sequence(b *testing.B) {
 			return err
 		}
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _, err = c.Get(keys[i], nil, Set)
-			if err != nil {
-				return err
+		for b.Loop() {
+			for i := range keys {
+				_, _, err = c.Get(keys[i][:], nil, Set)
+				if err != nil {
+					return err
+				}
 			}
 		}
 		return nil
