@@ -1394,7 +1394,7 @@ func BenchmarkTxn_Put_Sequence(b *testing.B) {
 		return
 	}
 
-	if err := env.View(func(txn *Txn) (err error) {
+	if err := env.Update(func(txn *Txn) (err error) {
 		b.ResetTimer()
 		for b.Loop() {
 			for i := 0; i < N; i++ {
