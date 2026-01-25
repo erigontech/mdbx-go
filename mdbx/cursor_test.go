@@ -1737,9 +1737,10 @@ func BenchmarkCursor_Set_Sequence(b *testing.B) {
 	env, _ := setup(b)
 
 	const N = 100
-	var keys [N][8]byte
+	var keys [N][]byte
 	for i := range keys {
-		binary.BigEndian.PutUint64(keys[i][:], uint64(i))
+		keys[i] = make([]byte, 4)
+		binary.BigEndian.PutUint32(keys[i], uint32(i))
 	}
 
 	var db DBI
@@ -1749,7 +1750,7 @@ func BenchmarkCursor_Set_Sequence(b *testing.B) {
 			return err
 		}
 		for i := range keys {
-			err = txn.Put(db, keys[i][:], keys[i][:], 0)
+			err = txn.Put(db, keys[i], keys[i], 0)
 			if err != nil {
 				return err
 			}
@@ -1768,7 +1769,7 @@ func BenchmarkCursor_Set_Sequence(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
 			for i := range keys {
-				_, _, err = c.Get(keys[i][:], nil, Set)
+				_, _, err = c.Get(keys[i], nil, Set)
 				if err != nil {
 					return err
 				}
@@ -1830,9 +1831,10 @@ func BenchmarkCursor_Put_Sequence(b *testing.B) {
 	env, _ := setup(b)
 
 	const N = 100
-	var keys [N][8]byte
+	var keys [N][]byte
 	for i := range keys {
-		binary.BigEndian.PutUint64(keys[i][:], uint64(i))
+		keys[i] = make([]byte, 4)
+		binary.BigEndian.PutUint32(keys[i], uint32(i))
 	}
 
 	var db DBI
@@ -1843,7 +1845,7 @@ func BenchmarkCursor_Put_Sequence(b *testing.B) {
 			return err
 		}
 		for i := range keys {
-			err = txn.Put(db, keys[i][:], keys[i][:], 0)
+			err = txn.Put(db, keys[i], keys[i], 0)
 			if err != nil {
 				return err
 			}
@@ -1862,7 +1864,7 @@ func BenchmarkCursor_Put_Sequence(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
 			for i := 0; i < N; i++ {
-				if err = c.Put(keys[i][:], keys[i][:], 0); err != nil {
+				if err = c.Put(keys[i], keys[i], 0); err != nil {
 					return err
 				}
 			}
