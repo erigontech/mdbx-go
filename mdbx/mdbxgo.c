@@ -34,12 +34,6 @@ int mdbxgo_del(MDBX_txn *txn, MDBX_dbi dbi, char *kdata, size_t kn, char *vdata,
     return mdbx_del(txn, dbi, &key, NULL);
 }
 
-int mdbxgo_get(MDBX_txn *txn, MDBX_dbi dbi, char *kdata, size_t kn, MDBX_val *val) {
-    MDBX_val key;
-    MDBXGO_SET_VAL(&key, kn, kdata);
-    return mdbx_get(txn, dbi, &key, val);
-}
-
 int mdbxgo_put2(MDBX_txn *txn, MDBX_dbi dbi, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_put_flags_t flags) {
     MDBX_val key, val;
     MDBXGO_SET_VAL(&key, kn, kdata);
