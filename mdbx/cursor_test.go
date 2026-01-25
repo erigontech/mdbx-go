@@ -1874,3 +1874,53 @@ func BenchmarkCursor_Put_Sequence(b *testing.B) {
 		b.Errorf("put: %v", err)
 	}
 }
+
+func BenchmarkCursor_PutReserve_Sequence(b *testing.B) {
+	env, _ := setup(b)
+
+	const N = 100
+	var keys [N][]byte
+	for i := range keys {
+		keys[i] = make([]byte, 4)
+		binary.BigEndian.PutUint32(keys[i], uint32(i))
+	}
+
+	var db DBI
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for i := range keys {
+			err = txn.Put(db, keys[i], keys[i], 0)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("dbi: %v", err)
+		return
+	}
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		c, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		b.ResetTimer()
+		for b.Loop() {
+			for i := 0; i < N; i++ {
+				toV, err := c.PutReserve(keys[i], len(keys[i]), 0)
+				if err != nil {
+					return err
+				}
+				_ = toV
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("put: %v", err)
+	}
+}
