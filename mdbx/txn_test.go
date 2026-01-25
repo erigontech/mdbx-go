@@ -1334,7 +1334,6 @@ func BenchmarkTxn_Get_Sequence(b *testing.B) {
 	}
 
 	var db DBI
-
 	if err := env.Update(func(txn *Txn) (err error) {
 		db, err = txn.OpenRoot(0)
 		if err != nil {
