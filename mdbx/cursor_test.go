@@ -1826,7 +1826,7 @@ func BenchmarkCursor_Set_Random(b *testing.B) {
 	}
 }
 
-func BenchmarkCursor_Put(b *testing.B) {
+func BenchmarkCursor_Put_Sequence(b *testing.B) {
 	env, _ := setup(b)
 
 	const N = 100
