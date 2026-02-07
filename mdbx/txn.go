@@ -222,8 +222,8 @@ type CommitLatencyGC struct {
 	WorkCounter uint32
 	SelfCounter uint32
 
-	MaxRetainedPage uint32
-	MaxReaderLag    uint32
+	MaxRetainedPages uint32
+	MaxReaderLag     uint32
 
 	// WorkPnlMergeTime   time.Duration
 	// WorkPnlMergeVolume uint64
@@ -269,12 +269,12 @@ func (txn *Txn) commit() (CommitLatency, error) {
 		Ending:      toDuration(_stat.ending),
 		Whole:       toDuration(_stat.whole),
 		GCDetails: CommitLatencyGC{
-			WorkRtime:       toDuration(_stat.gc_prof.work_rtime_monotonic),
-			MaxRetainedPage: uint32(_stat.gc_prof.max_retained_page),
-			MaxReaderLag:    uint32(_stat.gc_prof.max_reader_lag),
-			WorkRsteps:      uint32(_stat.gc_prof.work_rsteps),
-			WorkRxpages:     uint32(_stat.gc_prof.work_xpages),
-			WorkMajflt:      uint32(_stat.gc_prof.work_majflt),
+			WorkRtime:        toDuration(_stat.gc_prof.work_rtime_monotonic),
+			MaxRetainedPages: uint32(_stat.gc_prof.max_retained_pages),
+			MaxReaderLag:     uint32(_stat.gc_prof.max_reader_lag),
+			WorkRsteps:       uint32(_stat.gc_prof.work_rsteps),
+			WorkRxpages:      uint32(_stat.gc_prof.work_xpages),
+			WorkMajflt:       uint32(_stat.gc_prof.work_majflt),
 			//WorkPnlMergeTime:   toDuration(_stat.gc_prof.pnl_merge_work.time),
 			//WorkPnlMergeVolume: uint64(_stat.gc_prof.pnl_merge_work.volume),
 			//WorkPnlMergeCalls:  uint32(_stat.gc_prof.pnl_merge_work.calls),
