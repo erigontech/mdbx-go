@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.1-362-g5570b943 at 2026-01-29T21:38:39+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.1-389-gd5175913 at 2026-02-05T17:57:15+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -540,7 +540,7 @@ enum txn_flags {
   txn_ro_both = txn_ro_flat | txn_ro_nested,
   txn_ro_begin_flags = MDBX_TXN_RDONLY | MDBX_TXN_RDONLY_PREPARE,
   txn_rw_begin_flags = MDBX_TXN_NOMETASYNC | MDBX_TXN_NOSYNC | MDBX_TXN_TRY,
-  txn_rw_checkpoint = MDBX_TXN_RDONLY_PREPARE & ~MDBX_TXN_RDONLY,
+  txn_rw_already_locked = MDBX_TXN_RDONLY_PREPARE & ~MDBX_TXN_RDONLY,
   txn_shrink_allowed = UINT32_C(0x40000000),
   txn_parked = MDBX_TXN_PARKED,
   txn_gc_drained = 0x100 /* GC was depleted up to oldest reader */,
@@ -2418,23 +2418,23 @@ txn_managed::~txn_managed() noexcept {
     MDBX_CXX20_UNLIKELY error::success_or_panic(::mdbx_txn_abort(handle_), "mdbx::~txn", "mdbx_txn_abort");
 }
 
-void txn_managed::abort() {
-  const error err = static_cast<MDBX_error_t>(::mdbx_txn_abort(handle_));
+void txn_managed::abort() { abort(nullptr); }
+
+void txn_managed::commit() { commit(nullptr); }
+
+bool txn_managed::checkpoint() { return checkpoint(nullptr); }
+
+void txn_managed::commit_embark_read() { commit_embark_read(nullptr); }
+
+void txn_managed::abort(finalization_latency *latency) {
+  const error err = static_cast<MDBX_error_t>(::mdbx_txn_abort_ex(handle_, latency));
   if (MDBX_LIKELY(err.code() != MDBX_THREAD_MISMATCH))
     MDBX_CXX20_LIKELY handle_ = nullptr;
   if (MDBX_UNLIKELY(err.code() != MDBX_SUCCESS))
     MDBX_CXX20_UNLIKELY err.throw_exception();
 }
 
-void txn_managed::commit() {
-  const error err = static_cast<MDBX_error_t>(::mdbx_txn_commit(handle_));
-  if (MDBX_LIKELY(err.code() != MDBX_THREAD_MISMATCH))
-    MDBX_CXX20_LIKELY handle_ = nullptr;
-  if (MDBX_UNLIKELY(err.code() != MDBX_SUCCESS))
-    MDBX_CXX20_UNLIKELY err.throw_exception();
-}
-
-void txn_managed::commit(commit_latency *latency) {
+void txn_managed::commit(finalization_latency *latency) {
   const error err = static_cast<MDBX_error_t>(::mdbx_txn_commit_ex(handle_, latency));
   if (MDBX_LIKELY(err.code() != MDBX_THREAD_MISMATCH))
     MDBX_CXX20_LIKELY handle_ = nullptr;
@@ -2442,7 +2442,7 @@ void txn_managed::commit(commit_latency *latency) {
     MDBX_CXX20_UNLIKELY err.throw_exception();
 }
 
-bool txn_managed::checkpoint(commit_latency *latency) {
+bool txn_managed::checkpoint(finalization_latency *latency) {
   const error err = static_cast<MDBX_error_t>(::mdbx_txn_checkpoint(handle_, MDBX_TXN_NOWEAKING, latency));
   if (MDBX_UNLIKELY(err.is_failure())) {
     if (err.code() != MDBX_THREAD_MISMATCH && err.code() != MDBX_EINVAL)
@@ -2452,10 +2452,13 @@ bool txn_managed::checkpoint(commit_latency *latency) {
   return err.is_result_true();
 }
 
-void txn_managed::commit_embark_read() {
-  auto env = handle_->env;
-  commit();
-  error::success_or_throw(::mdbx_txn_begin(env, nullptr, MDBX_TXN_RDONLY, &handle_));
+void txn_managed::commit_embark_read(finalization_latency *latency) {
+  error::success_or_throw(::mdbx_txn_commit_embark_read(&handle_, latency));
+}
+
+bool txn_managed::amend(bool dont_wait) {
+  return !error::boolean_or_throw(::mdbx_txn_amend(
+      handle_, &handle_, dont_wait ? MDBX_TXN_READWRITE | MDBX_TXN_TRY : MDBX_TXN_READWRITE, handle_->userctx));
 }
 
 //------------------------------------------------------------------------------
