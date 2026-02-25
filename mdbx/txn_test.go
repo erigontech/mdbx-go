@@ -1482,3 +1482,131 @@ func TestTxn_CommitLatency(t *testing.T) {
 		t.Errorf("MaxRetainedPages is negative: %d", latency.GCDetails.MaxRetainedPages)
 	}
 }
+
+func TestTxn_CommitLatency_MaxRetainedPages(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBISimple("testdb", Create)
+		return err
+	}); err != nil {
+		t.Fatalf("create db: %v", err)
+	}
+
+	// Phase 1: open an early reader (R1) that pins a near-zero pages_retired
+	// snapshot. R1 becomes the "oldest reader" (lowest txnid). MDBX caches
+	// its txnid as prev_oldest on the first GC call that detects it.
+	r1Ready := make(chan struct{})
+	r1Close := make(chan struct{})
+	r1Done := make(chan error, 1)
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		txn, err := env.BeginTxn(nil, Readonly)
+		if err != nil {
+			r1Done <- err
+			close(r1Ready)
+			return
+		}
+		defer txn.Abort()
+		close(r1Ready)
+		<-r1Close
+		r1Done <- nil
+	}()
+	<-r1Ready
+
+	// Phase 2: bulk writes + deletes while R1 is open. These commit pages to
+	// the GC freelist, advancing pages_retired to R_high. GC detects R1 on
+	// the first commit here (condition fires once, retained=0 since no
+	// retirements yet) and caches R1's txnid as prev_oldest. All later
+	// commits find result==prev_oldest → condition FALSE.
+	for i := 0; i < 100; i++ {
+		k := make([]byte, 8)
+		binary.BigEndian.PutUint64(k, uint64(i))
+		if err := env.Update(func(txn *Txn) error {
+			return txn.Put(db, k, make([]byte, 4096), 0)
+		}); err != nil {
+			t.Fatalf("put %d: %v", i, err)
+		}
+	}
+	for i := 0; i < 100; i++ {
+		k := make([]byte, 8)
+		binary.BigEndian.PutUint64(k, uint64(i))
+		if err := env.Update(func(txn *Txn) error {
+			if err := txn.Del(db, k, nil); err != nil && err != ErrNotFound {
+				return err
+			}
+			return nil
+		}); err != nil {
+			t.Fatalf("del %d: %v", i, err)
+		}
+	}
+
+	// Phase 3: open R2 at the current state so its snapshot = R_high.
+	// R1 is still the oldest reader; R2 is newer.
+	r2Txn, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin R2: %v", err)
+	}
+	defer r2Txn.Abort()
+
+	// Phase 4: more writes+deletes with both readers open.
+	// R1 is still the oldest reader, so GC condition stays FALSE.
+	// pages_retired advances to R_high + delta.
+	for i := 100; i < 150; i++ {
+		k := make([]byte, 8)
+		binary.BigEndian.PutUint64(k, uint64(i))
+		if err := env.Update(func(txn *Txn) error {
+			return txn.Put(db, k, make([]byte, 4096), 0)
+		}); err != nil {
+			t.Fatalf("put2 %d: %v", i, err)
+		}
+	}
+	for i := 100; i < 150; i++ {
+		k := make([]byte, 8)
+		binary.BigEndian.PutUint64(k, uint64(i))
+		if err := env.Update(func(txn *Txn) error {
+			if err := txn.Del(db, k, nil); err != nil && err != ErrNotFound {
+				return err
+			}
+			return nil
+		}); err != nil {
+			t.Fatalf("del2 %d: %v", i, err)
+		}
+	}
+
+	// Phase 5: close R1. rdt_refresh_flag is set to true.
+	// R2 (at T_high, snapshot=R_high) is now the oldest reader.
+	close(r1Close)
+	if err := <-r1Done; err != nil {
+		t.Fatalf("R1 goroutine: %v", err)
+	}
+
+	// Phase 6: final commit. GC now sees the oldest reader changed from
+	// R1's txnid (prev_oldest) to R2's txnid (T_high). The condition fires:
+	//   result = T_high  !=  prev_oldest = T_R1
+	//   oldest_retired_pages = R2.snapshot = R_high
+	//   recent_retired       = R_high + delta   (phase-4 retirements)
+	//   max_retained_pages   = delta > 0
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	finalTxn, err := env.BeginTxn(nil, 0)
+	if err != nil {
+		t.Fatalf("begin final txn: %v", err)
+	}
+	if err := finalTxn.Put(db, []byte("z"), []byte("z"), 0); err != nil {
+		finalTxn.Abort()
+		t.Fatalf("put final: %v", err)
+	}
+	latency, err := finalTxn.Commit()
+	if err != nil {
+		t.Fatalf("commit final: %v", err)
+	}
+
+	t.Logf("MaxRetainedPages: %d", latency.GCDetails.MaxRetainedPages)
+	if latency.GCDetails.MaxRetainedPages == 0 {
+		t.Errorf("expected MaxRetainedPages > 0, got 0")
+	}
+}
