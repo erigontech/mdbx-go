@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.1-389-gd5175913 at 2026-02-05T17:57:15+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.1-428-g6569bd09 at 2026-02-24T16:49:25+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -24,7 +24,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY ada3e97b23b38bc24478dd09b1bc2f7430d5b6b731285309c7294921f3d628a2_v0_14_1_389_gd5175913
+#define MDBX_BUILD_SOURCERY e1b0e3d3dfd6db79e6b76995f4387eded3f83975b0c552b3c5fe9e16f563f21e_v0_14_1_428_g6569bd09
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -1795,6 +1795,22 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 #error MDBX_DPL_PREALLOC_FOR_RADIXSORT must be defined as 0 or 1
 #endif /* MDBX_DPL_PREALLOC_FOR_RADIXSORT */
 
+#ifndef MDBX_DML_PREALLOC_FOR_RADIXSORT
+#define MDBX_DML_PREALLOC_FOR_RADIXSORT 1
+#elif !(MDBX_DML_PREALLOC_FOR_RADIXSORT == 0 || MDBX_DML_PREALLOC_FOR_RADIXSORT == 1)
+#error MDBX_DML_PREALLOC_FOR_RADIXSORT must be defined as 0 or 1
+#endif /* MDBX_DML_PREALLOC_FOR_RADIXSORT */
+
+#ifndef MDBX_DPL_CACHE_NPAGES
+#if MDBX_WORDBITS >= 64
+#define MDBX_DPL_CACHE_NPAGES 1
+#else
+#define MDBX_DPL_CACHE_NPAGES 0
+#endif
+#elif !(MDBX_DPL_CACHE_NPAGES == 0 || MDBX_DPL_CACHE_NPAGES == 1)
+#error MDBX_DPL_CACHE_NPAGES must be defined as 0 or 1
+#endif /* MDBX_DPL_CACHE_NPAGES */
+
 /** Controls dirty pages tracking, spilling and persisting in `MDBX_WRITEMAP`.
  *
  * \details In other words, disables in-memory database updating with consequent
@@ -1934,6 +1950,20 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 #elif !(MDBX_ENABLE_FAKE_NESTED_READONLY_TRANSACTIONS == 0 || MDBX_ENABLE_FAKE_NESTED_READONLY_TRANSACTIONS == 1)
 #error MDBX_ENABLE_FAKE_NESTED_READONLY_TRANSACTIONS must be defined as 0 or 1
 #endif /* MDBX_ENABLE_FAKE_NESTED_READONLY_TRANSACTIONS */
+
+/** Forces rounding size of memory mapped regions and files to system allocation granularity rather to system page size.
+ *
+ * \details In most operating systems, RAM is allocated in larger chunks consisting of several pages.
+ * Thus, rounding up to the size of the system page, rather than the actual size of the block used
+ * for memory allocation, does not save resources, but only hides what is really happening.
+ * On the other hand, system allocation granularity may depend not only on the type of operating system,
+ * but also on the version, settings, and amount of available resources (RAM), so increasing the rounding
+ * unit may lead to doubtful and unexpected behavior for the user. */
+#ifndef MDBX_ROUNDING_TO_ALLOCATION_GRANULARITY
+#define MDBX_ROUNDING_TO_ALLOCATION_GRANULARITY 0
+#elif !(MDBX_ROUNDING_TO_ALLOCATION_GRANULARITY == 0 || MDBX_ROUNDING_TO_ALLOCATION_GRANULARITY == 1)
+#error MDBX_ROUNDING_TO_ALLOCATION_GRANULARITY must be defined as 0 or 1
+#endif /* MDBX_ROUNDING_TO_ALLOCATION_GRANULARITY */
 
 //------------------------------------------------------------------------------
 
@@ -3316,7 +3346,7 @@ typedef const pgno_t *const_pnl_t;
 #define MDBX_PNL_LEAST(pl) MDBX_PNL_LAST(pl)
 #define MDBX_PNL_MOST(pl) MDBX_PNL_FIRST(pl)
 #define MDBX_PNL_CONTIGUOUS(prev, next, span) (((prev) - (next)) == (span))
-#endif
+#endif /* MDBX_PNL_ASCENDING */
 
 #ifndef __cplusplus
 
@@ -3372,11 +3402,15 @@ MDBX_MAYBE_UNUSED MDBX_INTERNAL pnl_t pnl_clone(const const_pnl_t src);
 
 MDBX_INTERNAL int pnl_reserve(pnl_t __restrict *__restrict ppnl, const size_t wanna);
 
-MDBX_MAYBE_UNUSED static inline int __must_check_result pnl_need(pnl_t __restrict *__restrict ppnl, size_t num) {
-  assert(pnl_size(*ppnl) <= PAGELIST_LIMIT && pnl_alloclen(*ppnl) >= pnl_size(*ppnl));
-  assert(num <= PAGELIST_LIMIT);
-  const size_t wanna = pnl_size(*ppnl) + num;
-  return likely(pnl_alloclen(*ppnl) >= wanna) ? MDBX_SUCCESS : pnl_reserve(ppnl, wanna);
+MDBX_MAYBE_UNUSED static inline int __must_check_result pnl_need(pnl_t __restrict *__restrict ppnl, size_t more) {
+  if (likely(*ppnl)) {
+    assert(pnl_size(*ppnl) <= PAGELIST_LIMIT && pnl_alloclen(*ppnl) >= pnl_size(*ppnl));
+    assert(more <= PAGELIST_LIMIT);
+    more += pnl_size(*ppnl);
+    if (likely(pnl_alloclen(*ppnl) >= more))
+      return MDBX_SUCCESS;
+  }
+  return pnl_reserve(ppnl, more);
 }
 
 MDBX_MAYBE_UNUSED static inline void pnl_append_prereserved(__restrict pnl_t pnl, pgno_t pgno) {
@@ -3438,9 +3472,38 @@ MDBX_NOTHROW_PURE_FUNCTION MDBX_MAYBE_UNUSED static inline size_t pnl_search(con
   return n;
 }
 
+MDBX_NOTHROW_PURE_FUNCTION MDBX_MAYBE_UNUSED static inline bool pnl_contains(const const_pnl_t pnl, pgno_t pgno,
+                                                                             size_t limit) {
+  size_t n = pnl_search(pnl, pgno, limit);
+  return n > 0 && n <= pnl_size(pnl) && pnl[n] == pgno;
+}
+
+MDBX_NOTHROW_PURE_FUNCTION MDBX_MAYBE_UNUSED static inline bool pnl_contains_span(const const_pnl_t pnl, pgno_t pgno,
+                                                                                  pgno_t span) {
+  size_t n = pnl_search_nochk(pnl, pgno);
+#if MDBX_PNL_ASCENDING
+#error "FIXME"
+#else
+  return n >= span && pnl[n] == pgno && MDBX_PNL_CONTIGUOUS(pnl[n - span + 1], pnl[n], span - 1);
+#endif /* MDBX_PNL_ASCENDING */
+}
+
 MDBX_INTERNAL size_t pnl_merge(pnl_t dst, const const_pnl_t src);
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION MDBX_INTERNAL size_t pnl_maxspan(const const_pnl_t pnl);
+
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline size_t pnl_scan_span(const const_pnl_t pnl,
+                                                                                const size_t from) {
+  size_t span = 1;
+  assert(from > 0 && from <= pnl_size(pnl));
+  while (from + span <= pnl_size(pnl) && MDBX_PNL_CONTIGUOUS(pnl[from], pnl[from + span], span))
+    ++span;
+  return span;
+}
+
+MDBX_MAYBE_UNUSED MDBX_INTERNAL pgno_t pnl_get_best_sequence(const pnl_t pnl, const size_t span,
+                                                             const pgno_t defrag_detent);
+MDBX_MAYBE_UNUSED MDBX_INTERNAL pgno_t pnl_crop_tail_sequence(const pnl_t pnl);
 
 #endif /* !__cplusplus */
 

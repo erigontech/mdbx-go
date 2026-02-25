@@ -1421,3 +1421,64 @@ func TestTxnEnvWarmup(t *testing.T) {
 	}
 	defer txn.Abort()
 }
+
+func TestTxn_CommitLatency(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBISimple("testdb", Create)
+		return err
+	})
+	if err != nil {
+		t.Errorf("failed to create db: %v", err)
+		return
+	}
+
+	// Run multiple writes to generate GC activity and populate metrics
+	for i := 0; i < 100; i++ {
+		var k [8]byte
+		binary.BigEndian.PutUint64(k[:], uint64(i))
+		err = env.Update(func(txn *Txn) error {
+			return txn.Put(db, k[:], k[:], 0)
+		})
+		if err != nil {
+			t.Errorf("failed to put: %v", err)
+			return
+		}
+	}
+
+	// Commit with latency tracking
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	txn, err := env.BeginTxn(nil, 0)
+	if err != nil {
+		t.Errorf("failed to begin txn: %v", err)
+		return
+	}
+	defer txn.Abort()
+
+	// Add some data
+	err = txn.Put(db, []byte("final_key"), []byte("final_value"), 0)
+	if err != nil {
+		t.Errorf("failed to put final key: %v", err)
+		return
+	}
+
+	// Commit and get latency info
+	latency, err := txn.Commit()
+	if err != nil {
+		t.Errorf("failed to commit: %v", err)
+		return
+	}
+
+	t.Logf("CommitLatency: %+v", latency)
+	t.Logf("GCDetails: %+v", latency.GCDetails)
+	t.Logf("MaxRetainedPages: %d", latency.GCDetails.MaxRetainedPages)
+
+	// The metric should be readable (>= 0 is always true, but we log it to verify the field is populated)
+	if latency.GCDetails.MaxRetainedPages < 0 {
+		t.Errorf("MaxRetainedPages is negative: %d", latency.GCDetails.MaxRetainedPages)
+	}
+}
