@@ -1891,9 +1891,9 @@ func TestCursor_PutCurrent_DupSort(t *testing.T) {
 	step1 := []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe} // ^uint64(1)
 	step2 := []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfd} // ^uint64(2)
 
-	val1 := append(step1, []byte("balance=100")...)
+	val1 := append(append([]byte{}, step1...), []byte("balance=100")...)
 	val1v2 := append(append([]byte{}, step1...), []byte("balance=200")...) // same step, updated payload
-	val2 := append(step2, []byte("balance=300")...)
+	val2 := append(append([]byte{}, step2...), []byte("balance=300")...)
 
 	key := []byte("account-address-1")
 
