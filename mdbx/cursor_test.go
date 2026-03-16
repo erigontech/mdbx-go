@@ -1823,3 +1823,141 @@ func BenchmarkCursor_Set_Random(b *testing.B) {
 		b.Errorf("put: %v", err)
 	}
 }
+
+func BenchmarkCursor_Put_Sequence(b *testing.B) {
+	env, _ := setup(b)
+
+	const N = 100
+	var keys [N][]byte
+	for i := range keys {
+		keys[i] = make([]byte, 4)
+		binary.BigEndian.PutUint32(keys[i], uint32(i))
+	}
+
+	var db DBI
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for i := range keys {
+			err = txn.Put(db, keys[i], keys[i], 0)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("dbi: %v", err)
+		return
+	}
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		c, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		b.ResetTimer()
+		for b.Loop() {
+			for i := 0; i < N; i++ {
+				if err = c.Put(keys[i], keys[i], 0); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Errorf("put: %v", err)
+	}
+}
+
+// TestCursor_PutCurrent_DupSort verifies that PutCurrent replaces the current
+// duplicate entry in-place on a DupSort table, matching the pattern used in
+// Erigon's DomainBufferedWriter.Flush:
+//
+//	SeekBothRange(key, stepPrefix) → exact match → PutCurrent(key, newVal)
+//
+// This saves one CGo call vs the previous DeleteCurrent()+Put() approach.
+func TestCursor_PutCurrent_DupSort(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	// Use an 8-byte step prefix (big-endian uint64) followed by a value payload,
+	// mirroring Erigon's domain value layout: stepBytes(8) || accountData.
+	step1 := []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe} // ^uint64(1)
+	step2 := []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfd} // ^uint64(2)
+
+	val1 := append(append([]byte{}, step1...), []byte("balance=100")...)
+	val1v2 := append(append([]byte{}, step1...), []byte("balance=200")...) // same step, updated payload
+	val2 := append(append([]byte{}, step2...), []byte("balance=300")...)
+
+	key := []byte("account-address-1")
+
+	// Open DBI and insert two dup entries in one transaction.
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBISimple("domains", Create|DupSort)
+		if err != nil {
+			return err
+		}
+		if err = txn.Put(db, key, val1, 0); err != nil {
+			return err
+		}
+		return txn.Put(db, key, val2, 0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// PutCurrent to replace val1, then verify in the same transaction.
+	if err := env.Update(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		// Position cursor on the dup entry whose value starts with step1.
+		_, foundVal, err := cur.Get(key, step1, GetBothRange)
+		if err != nil {
+			return err
+		}
+		if !bytes.HasPrefix(foundVal, step1) {
+			t.Fatalf("GetBothRange returned wrong dup: %x", foundVal)
+		}
+
+		// Replace in-place — one CGo call instead of Del(Current)+Put.
+		if err := cur.PutCurrent(key, val1v2); err != nil {
+			return err
+		}
+
+		// Verify count and values within the same transaction.
+		_, _, err = cur.Get(key, nil, Set)
+		if err != nil {
+			return err
+		}
+		count, err := cur.Count()
+		if err != nil {
+			return err
+		}
+		if count != 2 {
+			t.Errorf("expected 2 dups, got %d", count)
+		}
+		_, v, err := cur.Get(key, step1, GetBothRange)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(v, val1v2) {
+			t.Errorf("first dup: expected %x, got %x", val1v2, v)
+		}
+		_, v, err = cur.Get(key, step2, GetBothRange)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(v, val2) {
+			t.Errorf("second dup: expected %x, got %x", val2, v)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
