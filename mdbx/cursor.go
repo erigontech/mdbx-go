@@ -295,6 +295,16 @@ func (c *Cursor) PutMulti(key []byte, page []byte, stride int, flags uint) error
 	return operrno("mdbxgo_cursor_putmulti", ret)
 }
 
+// PutCurrent replaces the data of the item at the current cursor position.
+// For DupSort databases, this replaces the current duplicate entry in-place,
+// avoiding a separate Del+Put round-trip (saves one CGo call per update).
+// The cursor must be positioned (e.g. via Get with GetBothRange) before calling.
+//
+// Equivalent to Put(key, val, Current).
+func (c *Cursor) PutCurrent(key, val []byte) error {
+	return c.Put(key, val, Current)
+}
+
 // Del deletes the item referred to by the cursor from the database.
 //
 // See mdb_cursor_del.
