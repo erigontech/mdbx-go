@@ -1897,15 +1897,12 @@ func TestCursor_PutCurrent_DupSort(t *testing.T) {
 
 	key := []byte("account-address-1")
 
+	// Open DBI and insert two dup entries in one transaction.
 	if err := env.Update(func(txn *Txn) (err error) {
 		db, err = txn.OpenDBISimple("domains", Create|DupSort)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	// Insert two dup entries under the same key.
-	if err := env.Update(func(txn *Txn) (err error) {
+		if err != nil {
+			return err
+		}
 		if err = txn.Put(db, key, val1, 0); err != nil {
 			return err
 		}
@@ -1914,7 +1911,7 @@ func TestCursor_PutCurrent_DupSort(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Update val1 in-place using PutCurrent after positioning with GetBothRange.
+	// PutCurrent to replace val1, then verify in the same transaction.
 	if err := env.Update(func(txn *Txn) error {
 		cur, err := txn.OpenCursor(db)
 		if err != nil {
@@ -1932,19 +1929,11 @@ func TestCursor_PutCurrent_DupSort(t *testing.T) {
 		}
 
 		// Replace in-place — one CGo call instead of Del(Current)+Put.
-		return cur.PutCurrent(key, val1v2)
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	// Verify: key must have exactly 2 dups, with val1 replaced by val1v2.
-	if err := env.View(func(txn *Txn) error {
-		cur, err := txn.OpenCursor(db)
-		if err != nil {
+		if err := cur.PutCurrent(key, val1v2); err != nil {
 			return err
 		}
-		defer cur.Close()
 
+		// Verify count and values within the same transaction.
 		_, _, err = cur.Get(key, nil, Set)
 		if err != nil {
 			return err
@@ -1956,8 +1945,6 @@ func TestCursor_PutCurrent_DupSort(t *testing.T) {
 		if count != 2 {
 			t.Errorf("expected 2 dups, got %d", count)
 		}
-
-		// Seek to the step1 dup — should now contain val1v2.
 		_, v, err := cur.Get(key, step1, GetBothRange)
 		if err != nil {
 			return err
@@ -1965,8 +1952,6 @@ func TestCursor_PutCurrent_DupSort(t *testing.T) {
 		if !bytes.Equal(v, val1v2) {
 			t.Errorf("first dup: expected %x, got %x", val1v2, v)
 		}
-
-		// step2 dup should be unchanged.
 		_, v, err = cur.Get(key, step2, GetBothRange)
 		if err != nil {
 			return err
