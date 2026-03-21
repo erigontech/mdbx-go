@@ -40,4 +40,10 @@ int mdbxgo_reader_list(MDBX_env *env, size_t ctx);
 int mdbxgo_cmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn);
 int mdbxgo_dcmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn);
 
+/* mdbxgo_cursor_count_result bundles the error code and count so that
+ * mdbxgo_cursor_count can return both without taking a Go pointer as an
+ * out-parameter (which would escape the Go variable to the heap). */
+typedef struct { int err; size_t count; } mdbxgo_cursor_count_result;
+mdbxgo_cursor_count_result mdbxgo_cursor_count(MDBX_cursor *cur);
+
 #endif

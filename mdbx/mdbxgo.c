@@ -91,6 +91,12 @@ int mdbxgo_cursor_get(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, siz
 //   return likely(diff_data) ? diff_data : diff_len;
 // }
 
+mdbxgo_cursor_count_result mdbxgo_cursor_count(MDBX_cursor *cur) {
+    mdbxgo_cursor_count_result r;
+    r.err = mdbx_cursor_count(cur, &r.count);
+    return r;
+}
+
 int mdbxgo_cmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn) {
     MDBX_val a;
     MDBXGO_SET_VAL(&a, an, adata);
