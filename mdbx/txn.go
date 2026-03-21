@@ -800,12 +800,11 @@ func (txn *Txn) DCmp(dbi DBI, a []byte, b []byte) int {
 }
 
 func (txn *Txn) Sequence(dbi DBI, increment uint64) (uint64, error) {
-	var res C.uint64_t
-	ret := C.mdbx_dbi_sequence(txn._txn, C.MDBX_dbi(dbi), &res, C.uint64_t(increment))
-	if ret != 0 {
-		return uint64(res), operrno("mdbx_dbi_sequence", ret)
+	r := C.mdbxgo_dbi_sequence(txn._txn, C.MDBX_dbi(dbi), C.uint64_t(increment))
+	if r.err != success {
+		return uint64(r.val), operrno("mdbx_dbi_sequence", r.err)
 	}
-	return uint64(res), nil
+	return uint64(r.val), nil
 }
 
 // ListDBI - return all dbi names. they stored as keys of un-named (main) dbi

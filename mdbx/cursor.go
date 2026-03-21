@@ -317,12 +317,11 @@ func (c *Cursor) Del(flags uint) error {
 //
 // See mdb_cursor_count.
 func (c *Cursor) Count() (uint64, error) {
-	var _size C.size_t
-	ret := C.mdbx_cursor_count(c._c, &_size)
-	if ret != success {
-		return 0, operrno("mdbx_cursor_count", ret)
+	r := C.mdbxgo_cursor_count(c._c)
+	if r.err != success {
+		return 0, operrno("mdbx_cursor_count", r.err)
 	}
-	return uint64(_size), nil
+	return uint64(r.val), nil
 }
 
 var cursorPool = sync.Pool{
