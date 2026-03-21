@@ -468,9 +468,8 @@ func (env *Env) SetOption(option uint, value uint64) error {
 }
 
 func (env *Env) GetOption(option uint) (uint64, error) {
-	var res C.uint64_t
-	ret := C.mdbx_env_get_option(env._env, C.MDBX_option_t(option), &res)
-	return uint64(res), operrno("mdbx_env_get_option", ret)
+	r := C.mdbxgo_env_get_option(env._env, C.MDBX_option_t(option))
+	return uint64(r.val), operrno("mdbx_env_get_option", r.err)
 }
 
 func (env *Env) SetSyncPeriod(value time.Duration) error {
@@ -479,9 +478,8 @@ func (env *Env) SetSyncPeriod(value time.Duration) error {
 }
 
 func (env *Env) GetSyncPeriod() (time.Duration, error) {
-	var res C.uint
-	ret := C.mdbx_env_get_syncperiod(env._env, &res)
-	return Duration16dot16(res).ToDuration(), operrno("mdbx_env_get_syncperiod", ret)
+	r := C.mdbxgo_env_get_syncperiod(env._env)
+	return Duration16dot16(r.val).ToDuration(), operrno("mdbx_env_get_syncperiod", r.err)
 }
 
 func (env *Env) SetSyncBytes(threshold uint) error {
@@ -491,10 +489,8 @@ func (env *Env) SetSyncBytes(threshold uint) error {
 }
 
 func (env *Env) GetSyncBytes() (uint, error) {
-	var res C.size_t
-	ret := C.mdbx_env_get_syncbytes(env._env, &res)
-	return uint(res), operrno("mdbx_env_get_syncbytes", ret)
-
+	r := C.mdbxgo_env_get_syncbytes(env._env)
+	return uint(r.val), operrno("mdbx_env_get_syncbytes", r.err)
 }
 
 func (env *Env) SetGeometry(sizeLower int, sizeNow int, sizeUpper int, growthStep int, shrinkThreshold int, pageSize int) error {
