@@ -40,10 +40,17 @@ int mdbxgo_reader_list(MDBX_env *env, size_t ctx);
 int mdbxgo_cmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn);
 int mdbxgo_dcmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn);
 
-/* mdbxgo_cursor_count_result bundles the error code and count so that
- * mdbxgo_cursor_count can return both without taking a Go pointer as an
+/* The mdbxgo_*_result structs bundle an error code with a scalar return value
+ * so that helper functions can return both without taking a Go pointer as an
  * out-parameter (which would escape the Go variable to the heap). */
-typedef struct { int err; size_t count; } mdbxgo_cursor_count_result;
-mdbxgo_cursor_count_result mdbxgo_cursor_count(MDBX_cursor *cur);
+typedef struct { int err; size_t   val; } mdbxgo_size_result;
+typedef struct { int err; uint64_t val; } mdbxgo_u64_result;
+typedef struct { int err; unsigned val; } mdbxgo_uint_result;
+
+mdbxgo_size_result mdbxgo_cursor_count(MDBX_cursor *cur);
+mdbxgo_u64_result  mdbxgo_dbi_sequence(MDBX_txn *txn, MDBX_dbi dbi, uint64_t increment);
+mdbxgo_u64_result  mdbxgo_env_get_option(MDBX_env *env, MDBX_option_t option);
+mdbxgo_uint_result mdbxgo_env_get_syncperiod(MDBX_env *env);
+mdbxgo_size_result mdbxgo_env_get_syncbytes(MDBX_env *env);
 
 #endif

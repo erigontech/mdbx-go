@@ -4,6 +4,14 @@ import (
 	"testing"
 )
 
+func assertNoAllocs(t *testing.T, name string, fn func()) {
+	t.Helper()
+	allocs := testing.AllocsPerRun(100, fn)
+	if allocs != 0 {
+		t.Errorf("%s allocates %.0f allocs/op, want 0", name, allocs)
+	}
+}
+
 func TestCursor_Count_NoAllocs(t *testing.T) {
 	env, _ := setup(t)
 
@@ -32,21 +40,65 @@ func TestCursor_Count_NoAllocs(t *testing.T) {
 		if _, _, err = cur.Get(nil, nil, First); err != nil {
 			return err
 		}
-
-		// warm up: ensure no lazy init on first call
-		if _, err = cur.Count(); err != nil {
+		if _, err = cur.Count(); err != nil { // warm up
 			return err
 		}
 
-		allocs := testing.AllocsPerRun(100, func() {
-			_, _ = cur.Count()
-		})
-		if allocs != 0 {
-			t.Errorf("Cursor.Count() allocates %.0f allocs/op, want 0", allocs)
-		}
+		assertNoAllocs(t, "Cursor.Count()", func() { _, _ = cur.Count() })
 		return nil
 	})
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+func TestTxn_Sequence_NoAllocs(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBISimple("testingseq_noalloc", Create)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = env.Update(func(txn *Txn) error {
+		if _, err := txn.Sequence(db, 0); err != nil { // warm up
+			return err
+		}
+		assertNoAllocs(t, "Txn.Sequence()", func() { _, _ = txn.Sequence(db, 0) })
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestEnv_GetOption_NoAllocs(t *testing.T) {
+	env, _ := setup(t)
+
+	if _, err := env.GetOption(OptMaxDB); err != nil { // warm up
+		t.Fatal(err)
+	}
+	assertNoAllocs(t, "Env.GetOption()", func() { _, _ = env.GetOption(OptMaxDB) })
+}
+
+func TestEnv_GetSyncPeriod_NoAllocs(t *testing.T) {
+	env, _ := setup(t)
+
+	if _, err := env.GetSyncPeriod(); err != nil { // warm up
+		t.Fatal(err)
+	}
+	assertNoAllocs(t, "Env.GetSyncPeriod()", func() { _, _ = env.GetSyncPeriod() })
+}
+
+func TestEnv_GetSyncBytes_NoAllocs(t *testing.T) {
+	env, _ := setup(t)
+
+	if _, err := env.GetSyncBytes(); err != nil { // warm up
+		t.Fatal(err)
+	}
+	assertNoAllocs(t, "Env.GetSyncBytes()", func() { _, _ = env.GetSyncBytes() })
 }

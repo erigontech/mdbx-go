@@ -321,7 +321,7 @@ func (c *Cursor) Count() (uint64, error) {
 	if r.err != success {
 		return 0, operrno("mdbx_cursor_count", r.err)
 	}
-	return uint64(r.count), nil
+	return uint64(r.val), nil
 }
 
 var cursorPool = sync.Pool{
