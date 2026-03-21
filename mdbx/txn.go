@@ -801,7 +801,7 @@ func (txn *Txn) DCmp(dbi DBI, a []byte, b []byte) int {
 
 func (txn *Txn) Sequence(dbi DBI, increment uint64) (uint64, error) {
 	r := C.mdbxgo_dbi_sequence(txn._txn, C.MDBX_dbi(dbi), C.uint64_t(increment))
-	if r.err != 0 {
+	if r.err != success {
 		return uint64(r.val), operrno("mdbx_dbi_sequence", r.err)
 	}
 	return uint64(r.val), nil
