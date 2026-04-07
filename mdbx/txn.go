@@ -448,7 +448,7 @@ func (txn *Txn) renew() error {
 // Deprecated: use OpenDBISimple instead
 func (txn *Txn) OpenDBI(name string, flags uint, cmp, dcmp CmpFunc) (DBI, error) {
 	cname := C.CString(name)
-	dbi, err := txn.openDBI(cname, flags, (C.MDBX_cmp_func)(unsafe.Pointer(cmp)), (C.MDBX_cmp_func)(unsafe.Pointer(dcmp)))
+	dbi, err := txn.openDBI(cname, flags, cmp, dcmp)
 	C.free(unsafe.Pointer(cname))
 	return dbi, err
 }
@@ -503,7 +503,7 @@ type Cmp func(k1, k2 []byte) int
 // database.
 //
 // Deprecated: use OpenDBISimple instead because using comparators is now deprecated
-func (txn *Txn) openDBI(cname *C.char, flags uint, cmp, dcmp C.MDBX_cmp_func) (DBI, error) {
+func (txn *Txn) openDBI(cname *C.char, flags uint, cmp, dcmp *C.MDBX_cmp_func) (DBI, error) {
 	r := C.mdbxgo_dbi_open_ex(txn._txn, cname, C.MDBX_db_flags_t(flags), cmp, dcmp)
 	if r.err != success {
 		return 0, operrno("mdbx_dbi_open", r.err)
