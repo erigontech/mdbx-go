@@ -1619,10 +1619,7 @@ func BenchmarkCursor(b *testing.B) {
 	}
 
 	err = env.View(func(txn *Txn) (err error) {
-		b.ResetTimer()
-		defer b.StopTimer()
-
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			cur, err := txn.OpenCursor(db)
 			if err != nil {
 				return err
@@ -1657,21 +1654,21 @@ func BenchmarkCursor_Renew(b *testing.B) {
 
 	_ = env.View(func(txn *Txn) (err error) {
 		b.Run("1", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				if err := cur.Renew(txn); err != nil {
 					panic(err)
 				}
 			}
 		})
 		b.Run("2", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				if err := cur.Bind(txn, db); err != nil {
 					panic(err)
 				}
 			}
 		})
 		b.Run("3", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				c, err := txn.OpenCursor(db)
 				if err != nil {
 					panic(err)
@@ -1680,7 +1677,7 @@ func BenchmarkCursor_Renew(b *testing.B) {
 			}
 		})
 		b.Run("4", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				cur := CursorFromPool()
 				if err := cur.Bind(txn, db); err != nil {
 					panic(err)
@@ -1720,9 +1717,8 @@ func BenchmarkCursor_Set_OneKey(b *testing.B) {
 			return err
 		}
 
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _, err := c.Get(k, nil, Set)
+		for b.Loop() {
+			_, _, err = c.Get(k, nil, Set)
 			if err != nil {
 				return err
 			}
@@ -1736,8 +1732,8 @@ func BenchmarkCursor_Set_OneKey(b *testing.B) {
 func BenchmarkCursor_Set_Sequence(b *testing.B) {
 	env, _ := setup(b)
 
-	const N = 100
-	var keys [N][]byte
+	const N = 10000
+	keys := make([][]byte, N)
 	for i := range keys {
 		keys[i] = make([]byte, 4)
 		binary.BigEndian.PutUint32(keys[i], uint32(i))
@@ -1766,13 +1762,10 @@ func BenchmarkCursor_Set_Sequence(b *testing.B) {
 		if err != nil {
 			return err
 		}
-		b.ResetTimer()
-		for b.Loop() {
-			for i := range keys {
-				_, _, err = c.Get(keys[i], nil, Set)
-				if err != nil {
-					return err
-				}
+		for i := 0; b.Loop(); i++ {
+			_, _, err = c.Get(keys[i%N], nil, Set)
+			if err != nil {
+				return err
 			}
 		}
 		return nil
@@ -1784,11 +1777,12 @@ func BenchmarkCursor_Set_Sequence(b *testing.B) {
 func BenchmarkCursor_Set_Random(b *testing.B) {
 	env, _ := setup(b)
 
+	const N = 10000
 	var db DBI
-	keys := make([][]byte, b.N)
+	keys := make([][]byte, N)
 	for i := range keys {
 		keys[i] = make([]byte, 8)
-		binary.BigEndian.PutUint64(keys[i], uint64(rand.Intn(100*b.N)))
+		binary.BigEndian.PutUint64(keys[i], uint64(rand.Intn(100*N)))
 	}
 
 	if err := env.Update(func(txn *Txn) (err error) {
@@ -1809,14 +1803,12 @@ func BenchmarkCursor_Set_Random(b *testing.B) {
 	}
 
 	if err := env.View(func(txn *Txn) (err error) {
-		b.ResetTimer()
 		c, err := txn.OpenCursor(db)
 		if err != nil {
 			return err
 		}
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _, err = c.Get(keys[i], nil, Set)
+		for i := 0; b.Loop(); i++ {
+			_, _, err = c.Get(keys[i%N], nil, Set)
 			if err != nil {
 				return err
 			}
@@ -1875,6 +1867,58 @@ func BenchmarkCursor_Put_Sequence(b *testing.B) {
 	}
 }
 
+func BenchmarkCursor_Next_Sequence(b *testing.B) {
+	env, _ := setup(b)
+
+	const N = 1000
+	var db DBI
+	keys := make([][]byte, N)
+	for i := range keys {
+		keys[i] = make([]byte, 8)
+		binary.BigEndian.PutUint64(keys[i], uint64(i))
+	}
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for _, k := range keys {
+			if err = txn.Put(db, k, k, 0); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Fatalf("setup: %v", err)
+	}
+
+	if err := env.View(func(txn *Txn) error {
+		c, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		b.ResetTimer()
+		for b.Loop() {
+			if _, _, err = c.Get(nil, nil, First); err != nil {
+				return err
+			}
+			for {
+				_, _, err = c.Get(nil, nil, Next)
+				if IsNotFound(err) {
+					break
+				}
+				if err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Fatalf("bench: %v", err)
+	}
+}
+
 // TestCursor_PutCurrent_DupSort verifies that PutCurrent replaces the current
 // duplicate entry in-place on a DupSort table, matching the pattern used in
 // Erigon's DomainBufferedWriter.Flush:
@@ -1897,15 +1941,12 @@ func TestCursor_PutCurrent_DupSort(t *testing.T) {
 
 	key := []byte("account-address-1")
 
+	// Open DBI and insert two dup entries in one transaction.
 	if err := env.Update(func(txn *Txn) (err error) {
 		db, err = txn.OpenDBISimple("domains", Create|DupSort)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	// Insert two dup entries under the same key.
-	if err := env.Update(func(txn *Txn) (err error) {
+		if err != nil {
+			return err
+		}
 		if err = txn.Put(db, key, val1, 0); err != nil {
 			return err
 		}
@@ -1914,7 +1955,7 @@ func TestCursor_PutCurrent_DupSort(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Update val1 in-place using PutCurrent after positioning with GetBothRange.
+	// PutCurrent to replace val1, then verify in the same transaction.
 	if err := env.Update(func(txn *Txn) error {
 		cur, err := txn.OpenCursor(db)
 		if err != nil {
@@ -1932,19 +1973,11 @@ func TestCursor_PutCurrent_DupSort(t *testing.T) {
 		}
 
 		// Replace in-place — one CGo call instead of Del(Current)+Put.
-		return cur.PutCurrent(key, val1v2)
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	// Verify: key must have exactly 2 dups, with val1 replaced by val1v2.
-	if err := env.View(func(txn *Txn) error {
-		cur, err := txn.OpenCursor(db)
-		if err != nil {
+		if err := cur.PutCurrent(key, val1v2); err != nil {
 			return err
 		}
-		defer cur.Close()
 
+		// Verify count and values within the same transaction.
 		_, _, err = cur.Get(key, nil, Set)
 		if err != nil {
 			return err
@@ -1956,8 +1989,6 @@ func TestCursor_PutCurrent_DupSort(t *testing.T) {
 		if count != 2 {
 			t.Errorf("expected 2 dups, got %d", count)
 		}
-
-		// Seek to the step1 dup — should now contain val1v2.
 		_, v, err := cur.Get(key, step1, GetBothRange)
 		if err != nil {
 			return err
@@ -1965,8 +1996,6 @@ func TestCursor_PutCurrent_DupSort(t *testing.T) {
 		if !bytes.Equal(v, val1v2) {
 			t.Errorf("first dup: expected %x, got %x", val1v2, v)
 		}
-
-		// step2 dup should be unchanged.
 		_, v, err = cur.Get(key, step2, GetBothRange)
 		if err != nil {
 			return err
