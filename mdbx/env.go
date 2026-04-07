@@ -106,7 +106,7 @@ const (
 	OptSpillMaxDenominator          = C.MDBX_opt_spill_max_denominator
 	OptSpillMinDenominator          = C.MDBX_opt_spill_min_denominator
 	OptSpillParent4ChildDenominator = C.MDBX_opt_spill_parent4child_denominator
-	OptMergeThreshold16dot16Percent = C.MDBX_opt_merge_threshold_16dot16_percent
+	OptMergeThreshold16dot16Percent = C.MDBX_opt_merge_threshold
 	OptPreferWafInsteadofBalance    = C.MDBX_opt_prefer_waf_insteadof_balance
 	OptGCTimeLimit                  = C.MDBX_opt_gc_time_limit
 )
