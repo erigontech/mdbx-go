@@ -203,9 +203,12 @@ var errNotOpen = errors.New("enivornment is not open")
 //
 // See mdbx_reader_check()
 func (env *Env) ReaderCheck() (int, error) {
-	var _dead C.int
-	ret := C.mdbx_reader_check(env._env, &_dead)
-	return int(_dead), operrno("mdbx_reader_check", ret)
+	r := C.mdbxgo_reader_check(env._env)
+	err := operrno("mdbx_reader_check", r.err)
+	if err != nil {
+		return 0, err
+	}
+	return int(r.val), nil
 }
 
 // Close shuts down the environment, releases the memory map, and clears the
@@ -443,12 +446,11 @@ func (env *Env) UnsetFlags(flags uint) error {
 //
 // See mdbx_env_get_flags.
 func (env *Env) Flags() (uint, error) {
-	var _flags C.uint
-	ret := C.mdbx_env_get_flags(env._env, &_flags)
-	if ret != success {
-		return 0, operrno("mdbx_env_get_flags", ret)
+	r := C.mdbxgo_env_get_flags(env._env)
+	if r.err != success {
+		return 0, operrno("mdbx_env_get_flags", r.err)
 	}
-	return uint(_flags), nil
+	return uint(r.val), nil
 }
 
 func (env *Env) SetDebug(logLvl LogLvl, dbg int, logger *C.MDBX_debug_func) error {
@@ -496,6 +498,14 @@ func (env *Env) SetGeometry(sizeLower int, sizeNow int, sizeUpper int, growthSte
 		C.intptr_t(shrinkThreshold),
 		C.intptr_t(pageSize))
 	return operrno("mdbx_env_set_geometry", ret)
+}
+
+func GetSysRamInfo() (pageSize, totalPages, availablePages int, err error) {
+	r := C.mdbxgo_get_sysraminfo()
+	if r.err != success {
+		return 0, 0, 0, operrno("mdbx_get_sysraminfo", r.err)
+	}
+	return int(r.pageSize), int(r.totalPages), int(r.availPages), nil
 }
 
 // MaxKeySize returns the maximum allowed length for a key.

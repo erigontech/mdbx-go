@@ -36,14 +36,11 @@ func (env *Env) FD() (uintptr, error) {
 	// to avoid constant value overflow errors at compile time.
 	const fdInvalid = ^uintptr(0)
 
-	mf := new(C.mdbx_filehandle_t)
-	ret := C.mdbx_env_get_fd(env._env, mf)
-	err := operrno("mdbx_env_get_fd", ret)
-	if err != nil {
-		return 0, err
+	r := C.mdbxgo_env_get_fd(env._env)
+	if r.err != success {
+		return 0, operrno("mdbx_env_get_fd", r.err)
 	}
-	fd := uintptr(*mf)
-
+	fd := uintptr(r.val)
 	if fd == fdInvalid {
 		return 0, errNotOpen
 	}
