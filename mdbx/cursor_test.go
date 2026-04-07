@@ -1619,10 +1619,7 @@ func BenchmarkCursor(b *testing.B) {
 	}
 
 	err = env.View(func(txn *Txn) (err error) {
-		b.ResetTimer()
-		defer b.StopTimer()
-
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			cur, err := txn.OpenCursor(db)
 			if err != nil {
 				return err
@@ -1657,21 +1654,21 @@ func BenchmarkCursor_Renew(b *testing.B) {
 
 	_ = env.View(func(txn *Txn) (err error) {
 		b.Run("1", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				if err := cur.Renew(txn); err != nil {
 					panic(err)
 				}
 			}
 		})
 		b.Run("2", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				if err := cur.Bind(txn, db); err != nil {
 					panic(err)
 				}
 			}
 		})
 		b.Run("3", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				c, err := txn.OpenCursor(db)
 				if err != nil {
 					panic(err)
@@ -1680,7 +1677,7 @@ func BenchmarkCursor_Renew(b *testing.B) {
 			}
 		})
 		b.Run("4", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				cur := CursorFromPool()
 				if err := cur.Bind(txn, db); err != nil {
 					panic(err)
@@ -1720,11 +1717,12 @@ func BenchmarkCursor_Set_OneKey(b *testing.B) {
 			return err
 		}
 
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _, err := c.Get(k, nil, Set)
-			if err != nil {
-				return err
+		for b.Loop() {
+			for range 100 {
+				_, _, err = c.Get(k, nil, Set)
+				if err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -1736,8 +1734,9 @@ func BenchmarkCursor_Set_OneKey(b *testing.B) {
 func BenchmarkCursor_Set_Sequence(b *testing.B) {
 	env, _ := setup(b)
 
+	const N = 10000
 	var db DBI
-	keys := make([][]byte, b.N)
+	keys := make([][]byte, N)
 	for i := range keys {
 		keys[i] = make([]byte, 8)
 		binary.BigEndian.PutUint64(keys[i], uint64(i))
@@ -1765,9 +1764,8 @@ func BenchmarkCursor_Set_Sequence(b *testing.B) {
 		if err != nil {
 			return err
 		}
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _, err = c.Get(keys[i], nil, Set)
+		for i := 0; b.Loop(); i++ {
+			_, _, err = c.Get(keys[i%N], nil, Set)
 			if err != nil {
 				return err
 			}
@@ -1781,11 +1779,12 @@ func BenchmarkCursor_Set_Sequence(b *testing.B) {
 func BenchmarkCursor_Set_Random(b *testing.B) {
 	env, _ := setup(b)
 
+	const N = 10000
 	var db DBI
-	keys := make([][]byte, b.N)
+	keys := make([][]byte, N)
 	for i := range keys {
 		keys[i] = make([]byte, 8)
-		binary.BigEndian.PutUint64(keys[i], uint64(rand.Intn(100*b.N)))
+		binary.BigEndian.PutUint64(keys[i], uint64(rand.Intn(100*N)))
 	}
 
 	if err := env.Update(func(txn *Txn) (err error) {
@@ -1806,14 +1805,12 @@ func BenchmarkCursor_Set_Random(b *testing.B) {
 	}
 
 	if err := env.View(func(txn *Txn) (err error) {
-		b.ResetTimer()
 		c, err := txn.OpenCursor(db)
 		if err != nil {
 			return err
 		}
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _, err = c.Get(keys[i], nil, Set)
+		for i := 0; b.Loop(); i++ {
+			_, _, err = c.Get(keys[i%N], nil, Set)
 			if err != nil {
 				return err
 			}
@@ -1869,6 +1866,58 @@ func BenchmarkCursor_Put_Sequence(b *testing.B) {
 		return nil
 	}); err != nil {
 		b.Errorf("put: %v", err)
+	}
+}
+
+func BenchmarkCursor_Next_Sequence(b *testing.B) {
+	env, _ := setup(b)
+
+	const N = 1000
+	var db DBI
+	keys := make([][]byte, N)
+	for i := range keys {
+		keys[i] = make([]byte, 8)
+		binary.BigEndian.PutUint64(keys[i], uint64(i))
+	}
+
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for _, k := range keys {
+			if err = txn.Put(db, k, k, 0); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Fatalf("setup: %v", err)
+	}
+
+	if err := env.View(func(txn *Txn) error {
+		c, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		b.ResetTimer()
+		for b.Loop() {
+			if _, _, err = c.Get(nil, nil, First); err != nil {
+				return err
+			}
+			for {
+				_, _, err = c.Get(nil, nil, Next)
+				if IsNotFound(err) {
+					break
+				}
+				if err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		b.Fatalf("bench: %v", err)
 	}
 }
 

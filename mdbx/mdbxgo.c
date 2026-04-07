@@ -9,6 +9,10 @@
 #define MDBXGO_SET_VAL(val, size, data) \
     *(val) = (MDBX_val){ .iov_len = (size), .iov_base = (data) }
 
+#define MDBXGO_SET_VAL_RESULT(r, key, val) \
+    (r).kbase = (key).iov_base; (r).klen = (key).iov_len; \
+    (r).vbase = (val).iov_base; (r).vlen = (val).iov_len
+
 int mdbxgo_msg_func_proxy(const char *msg, void *ctx) {
     //  wrap msg and call the bridge function exported from lmdb.go.
     mdbxgo_ConstCString s;
@@ -74,10 +78,22 @@ int mdbxgo_cursor_putmulti(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata
     return mdbx_cursor_put(cur, &key, &val[0], flags);
 }
 
-int mdbxgo_cursor_get(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_val *key, MDBX_val *val, MDBX_cursor_op op) {
-    MDBXGO_SET_VAL(key, kn, kdata);
-    MDBXGO_SET_VAL(val, vn, vdata);
-    return mdbx_cursor_get(cur, key, val, op);
+mdbxgo_val_result mdbxgo_cursor_get_empty(MDBX_cursor *cur, MDBX_cursor_op op) {
+    mdbxgo_val_result r = {0};
+    MDBX_val key = {0}, val = {0};
+    r.err = mdbx_cursor_get(cur, &key, &val, op);
+    MDBXGO_SET_VAL_RESULT(r, key, val);
+    return r;
+}
+
+mdbxgo_val_result mdbxgo_cursor_get_val(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_cursor_op op) {
+    mdbxgo_val_result r = {0};
+    MDBX_val key = {0}, val = {0};
+    MDBXGO_SET_VAL(&key, kn, kdata);
+    MDBXGO_SET_VAL(&val, vn, vdata);
+    r.err = mdbx_cursor_get(cur, &key, &val, op);
+    MDBXGO_SET_VAL_RESULT(r, key, val);
+    return r;
 }
 
 /* Compare two items lexically */
@@ -121,6 +137,63 @@ mdbxgo_size_result mdbxgo_env_get_syncbytes(MDBX_env *env) {
     return r;
 }
 
+mdbxgo_int_result mdbxgo_reader_check(MDBX_env *env) {
+    mdbxgo_int_result r = {0};
+    r.err = mdbx_reader_check(env, &r.val);
+    return r;
+}
+
+mdbxgo_uint_result mdbxgo_env_get_flags(MDBX_env *env) {
+    mdbxgo_uint_result r = {0};
+    r.err = mdbx_env_get_flags(env, &r.val);
+    return r;
+}
+
+mdbxgo_uint_result mdbxgo_dbi_flags(MDBX_txn *txn, MDBX_dbi dbi) {
+    mdbxgo_uint_result r = {0};
+    r.err = mdbx_dbi_flags(txn, dbi, &r.val);
+    return r;
+}
+
+mdbxgo_sysraminfo_result mdbxgo_get_sysraminfo(void) {
+    mdbxgo_sysraminfo_result r = {0};
+    r.err = mdbx_get_sysraminfo(&r.pageSize, &r.totalPages, &r.availPages);
+    return r;
+}
+
+mdbxgo_uint_result mdbxgo_dbi_open(MDBX_txn *txn, const char *name, MDBX_db_flags_t flags) {
+    mdbxgo_uint_result r = {0};
+    MDBX_dbi dbi = 0;
+    r.err = mdbx_dbi_open(txn, name, flags, &dbi);
+    if (r.err == MDBX_SUCCESS) {
+        r.val = dbi;
+    }
+    return r;
+}
+
+mdbxgo_uint_result mdbxgo_dbi_open_ex(MDBX_txn *txn, const char *name, MDBX_db_flags_t flags, MDBX_cmp_func *cmp, MDBX_cmp_func *dcmp) {
+    mdbxgo_uint_result r = {0};
+    MDBX_dbi dbi = 0;
+    r.err = mdbx_dbi_open_ex(txn, name, flags, &dbi, cmp, dcmp);
+    if (r.err == MDBX_SUCCESS) {
+        r.val = dbi;
+    }
+    return r;
+}
+
+mdbxgo_commit_result mdbxgo_txn_commit_ex(MDBX_txn *txn) {
+    mdbxgo_commit_result r = {0};
+    r.err = mdbx_txn_commit_ex(txn, &r.lat);
+    return r;
+}
+
+#ifndef _WIN32
+mdbxgo_int_result mdbxgo_env_get_fd(MDBX_env *env) {
+    mdbxgo_int_result r = {0};
+    r.err = mdbx_env_get_fd(env, &r.val);
+    return r;
+}
+#endif
 int mdbxgo_cmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn) {
     MDBX_val a;
     MDBXGO_SET_VAL(&a, an, adata);

@@ -184,20 +184,3 @@ func BuildOptions() string {
 	//nolint:gocritic // C variable access pattern
 	return C.GoString(C.mdbx_build.options)
 }
-
-func GetSysRamInfo() (pageSize, totalPages, availablePages int, err error) {
-	var cPageSize, cTotalPages, cAvailablePages C.intptr_t
-
-	// Вызываем C-функцию, передавая туда указатели на тип C.intptr_t
-	ret := C.mdbx_get_sysraminfo(&cPageSize, &cTotalPages, &cAvailablePages)
-	if ret != success {
-		return 0, 0, 0, operrno("mdbx_cursor_count", ret)
-	}
-
-	// Преобразуем результаты обратно в Go int
-	pageSize = int(cPageSize)
-	totalPages = int(cTotalPages)
-	availablePages = int(cAvailablePages)
-
-	return
-}
