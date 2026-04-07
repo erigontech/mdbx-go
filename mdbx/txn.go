@@ -402,6 +402,7 @@ func (txn *Txn) Reset() {
 
 func (txn *Txn) reset() {
 	C.mdbx_txn_reset(txn._txn)
+	txn.resetID()
 }
 
 // Renew reuses a transaction that was previously reset by calling txn.Reset().
@@ -447,7 +448,7 @@ func (txn *Txn) renew() error {
 // Deprecated: use OpenDBISimple instead
 func (txn *Txn) OpenDBI(name string, flags uint, cmp, dcmp CmpFunc) (DBI, error) {
 	cname := C.CString(name)
-	dbi, err := txn.openDBI(cname, flags, (*C.MDBX_cmp_func)(unsafe.Pointer(cmp)), (*C.MDBX_cmp_func)(unsafe.Pointer(dcmp)))
+	dbi, err := txn.openDBI(cname, flags, cmp, dcmp)
 	C.free(unsafe.Pointer(cname))
 	return dbi, err
 }

@@ -176,7 +176,7 @@ mdbxgo_uint_result mdbxgo_dbi_open(MDBX_txn *txn, const char *name, MDBX_db_flag
 mdbxgo_uint_result mdbxgo_dbi_open_ex(MDBX_txn *txn, const char *name, MDBX_db_flags_t flags, MDBX_cmp_func *cmp, MDBX_cmp_func *dcmp) {
     mdbxgo_uint_result r = {0};
     MDBX_dbi dbi = 0;
-    r.err = mdbx_dbi_open_ex(txn, name, flags, &dbi, cmp, dcmp);
+    r.err = mdbx_dbi_open_ex(txn, name, flags, &dbi, cmp ? *cmp : NULL, dcmp ? *dcmp : NULL);
     if (r.err == MDBX_SUCCESS) {
         r.val = dbi;
     }
