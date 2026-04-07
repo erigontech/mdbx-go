@@ -9,10 +9,11 @@ import "C"
 
 import (
 	"fmt"
-	"github.com/erigontech/mdbx-go/mdbx/threads"
 	"log"
 	"time"
 	"unsafe"
+
+	"github.com/erigontech/mdbx-go/mdbx/threads"
 )
 
 // This flags are used exclusively for Txn.OpenDBISimple and Txn.OpenRoot.  The
@@ -251,46 +252,46 @@ type CommitLatencyGC struct {
 }
 
 func (txn *Txn) commit() (CommitLatency, error) {
-	var _stat C.MDBX_commit_latency
 	txn.strictThreadCheck()
-	ret := C.mdbx_txn_commit_ex(txn._txn, &_stat)
+	r := C.mdbxgo_txn_commit_ex(txn._txn)
 	txn.clearTxn()
 	s := CommitLatency{
-		Preparation: toDuration(_stat.preparation),
-		GCWallClock: toDuration(_stat.gc_wallclock),
-		GCCpuTime:   toDuration(_stat.gc_cputime),
-		Audit:       toDuration(_stat.audit),
-		Write:       toDuration(_stat.write),
-		Sync:        toDuration(_stat.sync),
-		Ending:      toDuration(_stat.ending),
-		Whole:       toDuration(_stat.whole),
+		Preparation: toDuration(r.lat.preparation),
+		GCWallClock: toDuration(r.lat.gc_wallclock),
+		GCCpuTime:   toDuration(r.lat.gc_cputime),
+		Audit:       toDuration(r.lat.audit),
+		Write:       toDuration(r.lat.write),
+		Sync:        toDuration(r.lat.sync),
+		Ending:      toDuration(r.lat.ending),
+		Whole:       toDuration(r.lat.whole),
 		GCDetails: CommitLatencyGC{
-			WorkRtime:   toDuration(_stat.gc_prof.work_rtime_monotonic),
-			WorkRsteps:  uint32(_stat.gc_prof.work_rsteps),
-			WorkRxpages: uint32(_stat.gc_prof.work_xpages),
-			WorkMajflt:  uint32(_stat.gc_prof.work_majflt),
-			//WorkPnlMergeTime:   toDuration(_stat.gc_prof.pnl_merge_work.time),
-			//WorkPnlMergeVolume: uint64(_stat.gc_prof.pnl_merge_work.volume),
-			//WorkPnlMergeCalls:  uint32(_stat.gc_prof.pnl_merge_work.calls),
-			//SelfPnlMergeTime:   toDuration(_stat.gc_prof.pnl_merge_self.time),
-			//SelfPnlMergeVolume: uint64(_stat.gc_prof.pnl_merge_self.volume),
-			//SelfPnlMergeCalls:  uint32(_stat.gc_prof.pnl_merge_self.calls),
-			SelfRtime:    toDuration(_stat.gc_prof.self_rtime_monotonic),
-			SelfXtime:    toDuration(_stat.gc_prof.self_xtime_cpu),
-			WorkXtime:    toDuration(_stat.gc_prof.work_xtime_cpu),
-			SelfRsteps:   uint32(_stat.gc_prof.self_rsteps),
-			SelfXpages:   uint32(_stat.gc_prof.self_xpages),
-			Wloops:       uint32(_stat.gc_prof.wloops),
-			Coalescences: uint32(_stat.gc_prof.coalescences),
-			Wipes:        uint32(_stat.gc_prof.wipes),
-			Flushes:      uint32(_stat.gc_prof.flushes),
-			Kicks:        uint32(_stat.gc_prof.kicks),
-			SelfCounter:  uint32(_stat.gc_prof.self_counter),
-			WorkCounter:  uint32(_stat.gc_prof.work_counter),
+			WorkRtime:   toDuration(r.lat.gc_prof.work_rtime_monotonic),
+			WorkRsteps:  uint32(r.lat.gc_prof.work_rsteps),
+			WorkRxpages: uint32(r.lat.gc_prof.work_xpages),
+			WorkMajflt:  uint32(r.lat.gc_prof.work_majflt),
+			//WorkPnlMergeTime:   toDuration(r.lat.gc_prof.pnl_merge_work.time),
+			//WorkPnlMergeVolume: uint64(r.lat.gc_prof.pnl_merge_work.volume),
+			//WorkPnlMergeCalls:  uint32(r.lat.gc_prof.pnl_merge_work.calls),
+			//SelfPnlMergeTime:   toDuration(r.lat.gc_prof.pnl_merge_self.time),
+			//SelfPnlMergeVolume: uint64(r.lat.gc_prof.pnl_merge_self.volume),
+			//SelfPnlMergeCalls:  uint32(r.lat.gc_prof.pnl_merge_self.calls),
+			SelfRtime:    toDuration(r.lat.gc_prof.self_rtime_monotonic),
+			SelfXtime:    toDuration(r.lat.gc_prof.self_xtime_cpu),
+			WorkXtime:    toDuration(r.lat.gc_prof.work_xtime_cpu),
+			SelfRsteps:   uint32(r.lat.gc_prof.self_rsteps),
+			SelfXpages:   uint32(r.lat.gc_prof.self_xpages),
+			SelfMajflt:   uint32(r.lat.gc_prof.self_majflt),
+			Wloops:       uint32(r.lat.gc_prof.wloops),
+			Coalescences: uint32(r.lat.gc_prof.coalescences),
+			Wipes:        uint32(r.lat.gc_prof.wipes),
+			Flushes:      uint32(r.lat.gc_prof.flushes),
+			Kicks:        uint32(r.lat.gc_prof.kicks),
+			SelfCounter:  uint32(r.lat.gc_prof.self_counter),
+			WorkCounter:  uint32(r.lat.gc_prof.work_counter),
 		},
 	}
-	if ret != success {
-		return s, operrno("mdbx_txn_commit_ex", ret)
+	if r.err != success {
+		return s, operrno("mdbx_txn_commit_ex", r.err)
 	}
 	return s, nil
 }
@@ -477,9 +478,12 @@ func (txn *Txn) CreateDBI(name string) (DBI, error) {
 
 // Flags returns the database flags for handle dbi.
 func (txn *Txn) Flags(dbi DBI) (uint, error) {
-	var cflags C.uint
-	ret := C.mdbx_dbi_flags(txn._txn, C.MDBX_dbi(dbi), &cflags)
-	return uint(cflags), operrno("mdbx_dbi_flags", ret)
+	r := C.mdbxgo_dbi_flags(txn._txn, C.MDBX_dbi(dbi))
+	err := operrno("mdbx_dbi_flags", r.err)
+	if err != nil {
+		return 0, err
+	}
+	return uint(r.val), nil
 }
 
 // OpenRoot opens the root database.  OpenRoot behaves similarly to OpenDBISimple but
@@ -499,15 +503,19 @@ type Cmp func(k1, k2 []byte) int
 //
 // Deprecated: use OpenDBISimple instead because using comparators is now deprecated
 func (txn *Txn) openDBI(cname *C.char, flags uint, cmp, dcmp *C.MDBX_cmp_func) (DBI, error) {
-	var dbi C.MDBX_dbi
-	ret := C.mdbx_dbi_open_ex(txn._txn, cname, C.MDBX_db_flags_t(flags), &dbi, cmp, dcmp)
-	return DBI(dbi), operrno("mdbx_dbi_open", ret)
+	r := C.mdbxgo_dbi_open_ex(txn._txn, cname, C.MDBX_db_flags_t(flags), cmp, dcmp)
+	if r.err != success {
+		return 0, operrno("mdbx_dbi_open", r.err)
+	}
+	return DBI(r.val), nil
 }
 
 func (txn *Txn) openDBISimple(cname *C.char, flags uint) (DBI, error) {
-	var dbi C.MDBX_dbi
-	ret := C.mdbx_dbi_open(txn._txn, cname, C.MDBX_db_flags_t(flags), &dbi)
-	return DBI(dbi), operrno("mdbx_dbi_open", ret)
+	r := C.mdbxgo_dbi_open(txn._txn, cname, C.MDBX_db_flags_t(flags))
+	if r.err != success {
+		return 0, operrno("mdbx_dbi_open", r.err)
+	}
+	return DBI(r.val), nil
 }
 
 type TxInfo struct {
@@ -800,12 +808,11 @@ func (txn *Txn) DCmp(dbi DBI, a []byte, b []byte) int {
 }
 
 func (txn *Txn) Sequence(dbi DBI, increment uint64) (uint64, error) {
-	var res C.uint64_t
-	ret := C.mdbx_dbi_sequence(txn._txn, C.MDBX_dbi(dbi), &res, C.uint64_t(increment))
-	if ret != 0 {
-		return uint64(res), operrno("mdbx_dbi_sequence", ret)
+	r := C.mdbxgo_dbi_sequence(txn._txn, C.MDBX_dbi(dbi), C.uint64_t(increment))
+	if r.err != success {
+		return uint64(r.val), operrno("mdbx_dbi_sequence", r.err)
 	}
-	return uint64(res), nil
+	return uint64(r.val), nil
 }
 
 // ListDBI - return all dbi names. they stored as keys of un-named (main) dbi

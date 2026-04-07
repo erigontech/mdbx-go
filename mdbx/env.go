@@ -203,9 +203,12 @@ var errNotOpen = errors.New("enivornment is not open")
 //
 // See mdbx_reader_check()
 func (env *Env) ReaderCheck() (int, error) {
-	var _dead C.int
-	ret := C.mdbx_reader_check(env._env, &_dead)
-	return int(_dead), operrno("mdbx_reader_check", ret)
+	r := C.mdbxgo_reader_check(env._env)
+	err := operrno("mdbx_reader_check", r.err)
+	if err != nil {
+		return 0, err
+	}
+	return int(r.val), nil
 }
 
 // Close shuts down the environment, releases the memory map, and clears the
@@ -449,12 +452,11 @@ func (env *Env) UnsetFlags(flags uint) error {
 //
 // See mdbx_env_get_flags.
 func (env *Env) Flags() (uint, error) {
-	var _flags C.uint
-	ret := C.mdbx_env_get_flags(env._env, &_flags)
-	if ret != success {
-		return 0, operrno("mdbx_env_get_flags", ret)
+	r := C.mdbxgo_env_get_flags(env._env)
+	if r.err != success {
+		return 0, operrno("mdbx_env_get_flags", r.err)
 	}
-	return uint(_flags), nil
+	return uint(r.val), nil
 }
 
 func (env *Env) SetDebug(logLvl LogLvl, dbg int, logger *C.MDBX_debug_func) error {
@@ -468,9 +470,8 @@ func (env *Env) SetOption(option uint, value uint64) error {
 }
 
 func (env *Env) GetOption(option uint) (uint64, error) {
-	var res C.uint64_t
-	ret := C.mdbx_env_get_option(env._env, C.MDBX_option_t(option), &res)
-	return uint64(res), operrno("mdbx_env_get_option", ret)
+	r := C.mdbxgo_env_get_option(env._env, C.MDBX_option_t(option))
+	return uint64(r.val), operrno("mdbx_env_get_option", r.err)
 }
 
 func (env *Env) SetSyncPeriod(value time.Duration) error {
@@ -479,9 +480,8 @@ func (env *Env) SetSyncPeriod(value time.Duration) error {
 }
 
 func (env *Env) GetSyncPeriod() (time.Duration, error) {
-	var res C.uint
-	ret := C.mdbx_env_get_syncperiod(env._env, &res)
-	return Duration16dot16(res).ToDuration(), operrno("mdbx_env_get_syncperiod", ret)
+	r := C.mdbxgo_env_get_syncperiod(env._env)
+	return Duration16dot16(r.val).ToDuration(), operrno("mdbx_env_get_syncperiod", r.err)
 }
 
 func (env *Env) SetSyncBytes(threshold uint) error {
@@ -491,10 +491,8 @@ func (env *Env) SetSyncBytes(threshold uint) error {
 }
 
 func (env *Env) GetSyncBytes() (uint, error) {
-	var res C.size_t
-	ret := C.mdbx_env_get_syncbytes(env._env, &res)
-	return uint(res), operrno("mdbx_env_get_syncbytes", ret)
-
+	r := C.mdbxgo_env_get_syncbytes(env._env)
+	return uint(r.val), operrno("mdbx_env_get_syncbytes", r.err)
 }
 
 func (env *Env) SetGeometry(sizeLower int, sizeNow int, sizeUpper int, growthStep int, shrinkThreshold int, pageSize int) error {
@@ -506,6 +504,14 @@ func (env *Env) SetGeometry(sizeLower int, sizeNow int, sizeUpper int, growthSte
 		C.intptr_t(shrinkThreshold),
 		C.intptr_t(pageSize))
 	return operrno("mdbx_env_set_geometry", ret)
+}
+
+func GetSysRamInfo() (pageSize, totalPages, availablePages int, err error) {
+	r := C.mdbxgo_get_sysraminfo()
+	if r.err != success {
+		return 0, 0, 0, operrno("mdbx_get_sysraminfo", r.err)
+	}
+	return int(r.pageSize), int(r.totalPages), int(r.availPages), nil
 }
 
 // MaxKeySize returns the maximum allowed length for a key.

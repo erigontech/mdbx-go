@@ -15,7 +15,7 @@ func TestErrno_Error(t *testing.T) {
 }
 
 func BenchmarkErrno_Error(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, errno := range []error{
 			syscall.EINVAL,
 			NotFound,
