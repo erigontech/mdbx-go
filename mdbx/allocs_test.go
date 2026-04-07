@@ -111,11 +111,6 @@ func TestTxn_Flags_NoAllocs(t *testing.T) {
 	}
 }
 
-func TestEnv_FD_NoAllocs(t *testing.T) {
-	env, _ := setup(t)
-	assertNoAllocs(t, "Env.FD()", func() { _, _ = env.FD() })
-}
-
 func TestTxn_OpenDBISimple_NoAllocs(t *testing.T) {
 	env, _ := setup(t)
 

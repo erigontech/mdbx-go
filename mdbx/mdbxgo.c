@@ -10,8 +10,10 @@
     *(val) = (MDBX_val){ .iov_len = (size), .iov_base = (data) }
 
 #define MDBXGO_SET_VAL_RESULT(r, key, val) \
-    (r).kbase = (key).iov_base; (r).klen = (key).iov_len; \
-    (r).vbase = (val).iov_base; (r).vlen = (val).iov_len
+    do { \
+        (r).kbase = (key).iov_base; (r).klen = (key).iov_len; \
+        (r).vbase = (val).iov_base; (r).vlen = (val).iov_len; \
+    } while (0)
 
 int mdbxgo_msg_func_proxy(const char *msg, void *ctx) {
     //  wrap msg and call the bridge function exported from lmdb.go.

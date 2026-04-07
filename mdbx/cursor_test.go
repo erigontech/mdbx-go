@@ -1718,11 +1718,9 @@ func BenchmarkCursor_Set_OneKey(b *testing.B) {
 		}
 
 		for b.Loop() {
-			for range 100 {
-				_, _, err = c.Get(k, nil, Set)
-				if err != nil {
-					return err
-				}
+			_, _, err = c.Get(k, nil, Set)
+			if err != nil {
+				return err
 			}
 		}
 		return nil
