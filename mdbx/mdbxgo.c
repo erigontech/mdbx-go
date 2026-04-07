@@ -108,31 +108,31 @@ mdbxgo_val_result mdbxgo_cursor_get_val(MDBX_cursor *cur, char *kdata, size_t kn
 // }
 
 mdbxgo_size_result mdbxgo_cursor_count(MDBX_cursor *cur) {
-    mdbxgo_size_result r;
+    mdbxgo_size_result r = {0};
     r.err = mdbx_cursor_count(cur, &r.val);
     return r;
 }
 
 mdbxgo_u64_result mdbxgo_dbi_sequence(MDBX_txn *txn, MDBX_dbi dbi, uint64_t increment) {
-    mdbxgo_u64_result r;
+    mdbxgo_u64_result r = {0};
     r.err = mdbx_dbi_sequence(txn, dbi, &r.val, increment);
     return r;
 }
 
 mdbxgo_u64_result mdbxgo_env_get_option(MDBX_env *env, MDBX_option_t option) {
-    mdbxgo_u64_result r;
+    mdbxgo_u64_result r = {0};
     r.err = mdbx_env_get_option(env, option, &r.val);
     return r;
 }
 
 mdbxgo_uint_result mdbxgo_env_get_syncperiod(MDBX_env *env) {
-    mdbxgo_uint_result r;
+    mdbxgo_uint_result r = {0};
     r.err = mdbx_env_get_syncperiod(env, &r.val);
     return r;
 }
 
 mdbxgo_size_result mdbxgo_env_get_syncbytes(MDBX_env *env) {
-    mdbxgo_size_result r;
+    mdbxgo_size_result r = {0};
     r.err = mdbx_env_get_syncbytes(env, &r.val);
     return r;
 }
