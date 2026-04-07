@@ -189,6 +189,13 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 	return key, val, nil
 }
 
+func (c *Cursor) storeValResult(r C.mdbxgo_val_result) {
+	c.txn.key.iov_base = unsafe.Pointer(r.kbase)
+	c.txn.key.iov_len = r.klen
+	c.txn.val.iov_base = unsafe.Pointer(r.vbase)
+	c.txn.val.iov_len = r.vlen
+}
+
 // getValEmpty retrieves items from the database without using given key or value
 // data for reference (Next, First, Last, etc).
 //
@@ -196,8 +203,9 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 //
 //nolint:gocritic // false positive on dupSubExpr
 func (c *Cursor) getValEmpty(op uint) error {
-	ret := C.mdbx_cursor_get(c._c, &c.txn.key, &c.txn.val, C.MDBX_cursor_op(op))
-	return operrno("mdbx_cursor_get", ret)
+	r := C.mdbxgo_cursor_get_empty(c._c, C.MDBX_cursor_op(op))
+	c.storeValResult(r)
+	return operrno("mdbx_cursor_get", r.err)
 }
 
 // getVal retrieves items from the database using key and value data for
@@ -214,14 +222,14 @@ func (c *Cursor) getVal(setkey, setval []byte, op uint) error {
 	if len(setval) > 0 {
 		v = (*C.char)(unsafe.Pointer(&setval[0]))
 	}
-	ret := C.mdbxgo_cursor_get(
+	r := C.mdbxgo_cursor_get_val(
 		c._c,
 		k, C.size_t(len(setkey)),
 		v, C.size_t(len(setval)),
-		&c.txn.key, &c.txn.val,
 		C.MDBX_cursor_op(op),
 	)
-	return operrno("mdbx_cursor_get", ret)
+	c.storeValResult(r)
+	return operrno("mdbx_cursor_get", r.err)
 }
 
 // Put stores an item in the database.
