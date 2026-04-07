@@ -401,6 +401,7 @@ func (txn *Txn) Reset() {
 
 func (txn *Txn) reset() {
 	C.mdbx_txn_reset(txn._txn)
+	txn.resetID()
 }
 
 // Renew reuses a transaction that was previously reset by calling txn.Reset().
