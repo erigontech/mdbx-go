@@ -106,7 +106,7 @@ const (
 	OptSpillMaxDenominator          = C.MDBX_opt_spill_max_denominator
 	OptSpillMinDenominator          = C.MDBX_opt_spill_min_denominator
 	OptSpillParent4ChildDenominator = C.MDBX_opt_spill_parent4child_denominator
-	OptMergeThreshold16dot16Percent = C.MDBX_opt_merge_threshold_16dot16_percent
+	OptMergeThreshold16dot16Percent = C.MDBX_opt_merge_threshold
 	OptPreferWafInsteadofBalance    = C.MDBX_opt_prefer_waf_insteadof_balance
 	OptGCTimeLimit                  = C.MDBX_opt_gc_time_limit
 )
@@ -161,7 +161,7 @@ func NewEnv(label Label) (*Env, error) {
 func (env *Env) Open(path string, flags uint, mode os.FileMode) error {
 	cpath := C.CString(path)
 	defer C.free(unsafe.Pointer(cpath))
-	ret := C.mdbx_env_open(env._env, cpath, C.MDBX_env_flags_t(NoTLS|flags), C.mdbx_mode_t(mode))
+	ret := C.mdbx_env_open(env._env, cpath, C.MDBX_env_flags_t(NoStickyThreads|flags), C.mdbx_mode_t(mode))
 	return operrno("mdbx_env_open", ret)
 }
 func (env *Env) Label() Label { return env.label }
@@ -203,9 +203,12 @@ var errNotOpen = errors.New("enivornment is not open")
 //
 // See mdbx_reader_check()
 func (env *Env) ReaderCheck() (int, error) {
-	var _dead C.int
-	ret := C.mdbx_reader_check(env._env, &_dead)
-	return int(_dead), operrno("mdbx_reader_check", ret)
+	r := C.mdbxgo_reader_check(env._env)
+	err := operrno("mdbx_reader_check", r.err)
+	if err != nil {
+		return 0, err
+	}
+	return int(r.val), nil
 }
 
 // Close shuts down the environment, releases the memory map, and clears the
@@ -324,8 +327,12 @@ type EnvInfo struct {
 	 * \details Overall statistics of page operations of all (running, completed
 	 * and aborted) transactions in the current multi-process session (since the
 	 * first process opened the database). */
-	PageOps           EnfInfoPageOps
-	LastTxnID         int64         // ID of the last committed transaction
+	PageOps EnfInfoPageOps
+
+	LastTxnID         int64  // ID of the last committed transaction. keep for backward compatibility - use RecentTxnID
+	RecentTxnID       uint64 // ID of the last committed transaction
+	LatterReaderTxnID uint64 // ID of the last reader transaction
+
 	MaxReaders        uint          // maximum number of threads for the environment
 	NumReaders        uint          // maximum number of threads used in the environment
 	PageSize          uint          //
@@ -397,13 +404,15 @@ func castEnvInfo(_info C.MDBX_envinfo) *EnvInfo {
 			Msync:    uint64(_info.mi_pgop_stat.msync),
 			Fsync:    uint64(_info.mi_pgop_stat.fsync),
 		},
-		LastPNO:        int64(_info.mi_last_pgno),
-		LastTxnID:      int64(_info.mi_recent_txnid),
-		MaxReaders:     uint(_info.mi_maxreaders),
-		NumReaders:     uint(_info.mi_numreaders),
-		PageSize:       uint(_info.mi_dxb_pagesize),
-		SystemPageSize: uint(_info.mi_sys_pagesize),
-		MiLastPgNo:     uint64(_info.mi_last_pgno),
+		LastPNO:           int64(_info.mi_last_pgno),
+		LastTxnID:         int64(_info.mi_recent_txnid), // keep for backward compatibility
+		RecentTxnID:       uint64(_info.mi_recent_txnid),
+		LatterReaderTxnID: uint64(_info.mi_latter_reader_txnid),
+		MaxReaders:        uint(_info.mi_maxreaders),
+		NumReaders:        uint(_info.mi_numreaders),
+		PageSize:          uint(_info.mi_dxb_pagesize),
+		SystemPageSize:    uint(_info.mi_sys_pagesize),
+		MiLastPgNo:        uint64(_info.mi_last_pgno),
 
 		AutoSyncThreshold: uint(_info.mi_autosync_threshold),
 		UnsyncedBytes:     uint(_info.mi_unsync_volume),
@@ -443,15 +452,14 @@ func (env *Env) UnsetFlags(flags uint) error {
 //
 // See mdbx_env_get_flags.
 func (env *Env) Flags() (uint, error) {
-	var _flags C.uint
-	ret := C.mdbx_env_get_flags(env._env, &_flags)
-	if ret != success {
-		return 0, operrno("mdbx_env_get_flags", ret)
+	r := C.mdbxgo_env_get_flags(env._env)
+	if r.err != success {
+		return 0, operrno("mdbx_env_get_flags", r.err)
 	}
-	return uint(_flags), nil
+	return uint(r.val), nil
 }
 
-func (env *Env) SetDebug(logLvl LogLvl, dbg int, logger *C.MDBX_debug_func) error {
+func (env *Env) SetDebug(logLvl LogLvl, dbg int, logger C.MDBX_debug_func) error {
 	_ = C.mdbx_setup_debug(logLvl, C.MDBX_debug_flags_t(dbg), logger)
 	return nil
 }
@@ -462,9 +470,8 @@ func (env *Env) SetOption(option uint, value uint64) error {
 }
 
 func (env *Env) GetOption(option uint) (uint64, error) {
-	var res C.uint64_t
-	ret := C.mdbx_env_get_option(env._env, C.MDBX_option_t(option), &res)
-	return uint64(res), operrno("mdbx_env_get_option", ret)
+	r := C.mdbxgo_env_get_option(env._env, C.MDBX_option_t(option))
+	return uint64(r.val), operrno("mdbx_env_get_option", r.err)
 }
 
 func (env *Env) SetSyncPeriod(value time.Duration) error {
@@ -473,9 +480,8 @@ func (env *Env) SetSyncPeriod(value time.Duration) error {
 }
 
 func (env *Env) GetSyncPeriod() (time.Duration, error) {
-	var res C.uint
-	ret := C.mdbx_env_get_syncperiod(env._env, &res)
-	return Duration16dot16(res).ToDuration(), operrno("mdbx_env_get_syncperiod", ret)
+	r := C.mdbxgo_env_get_syncperiod(env._env)
+	return Duration16dot16(r.val).ToDuration(), operrno("mdbx_env_get_syncperiod", r.err)
 }
 
 func (env *Env) SetSyncBytes(threshold uint) error {
@@ -485,10 +491,8 @@ func (env *Env) SetSyncBytes(threshold uint) error {
 }
 
 func (env *Env) GetSyncBytes() (uint, error) {
-	var res C.size_t
-	ret := C.mdbx_env_get_syncbytes(env._env, &res)
-	return uint(res), operrno("mdbx_env_get_syncbytes", ret)
-
+	r := C.mdbxgo_env_get_syncbytes(env._env)
+	return uint(r.val), operrno("mdbx_env_get_syncbytes", r.err)
 }
 
 func (env *Env) SetGeometry(sizeLower int, sizeNow int, sizeUpper int, growthStep int, shrinkThreshold int, pageSize int) error {
@@ -500,6 +504,14 @@ func (env *Env) SetGeometry(sizeLower int, sizeNow int, sizeUpper int, growthSte
 		C.intptr_t(shrinkThreshold),
 		C.intptr_t(pageSize))
 	return operrno("mdbx_env_set_geometry", ret)
+}
+
+func GetSysRamInfo() (pageSize, totalPages, availablePages int, err error) {
+	r := C.mdbxgo_get_sysraminfo()
+	if r.err != success {
+		return 0, 0, 0, operrno("mdbx_get_sysraminfo", r.err)
+	}
+	return int(r.pageSize), int(r.totalPages), int(r.availPages), nil
 }
 
 // MaxKeySize returns the maximum allowed length for a key.
