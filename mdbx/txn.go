@@ -208,14 +208,11 @@ type CommitLatency struct {
 }
 
 type CommitLatencyGC struct {
-	/** \brief Время затраченное на чтение и поиск внтури GC
-	 *  ради данных пользователя. */
+	/** \brief The time "by the wall clock" spent reading and searching inside the GC for the user's data. */
 	WorkRtime time.Duration
-	/** \brief Количество циклов поиска внутри GC при выделении страниц
-	 *  ради данных пользователя. */
+	/** \brief The number of search iterations inside GC when allocating pages for the sake of user's data. */
 	WorkRsteps uint32
-	/** \brief Количество запросов на выделение последовательностей страниц
-	 *  ради данных пользователя. */
+	/** \brief The number of requests to allocate page sequences for the sake of user's data. */
 	WorkRxpages uint32
 	WorkMajflt  uint32
 	SelfMajflt  uint32
@@ -230,25 +227,27 @@ type CommitLatencyGC struct {
 	// SelfPnlMergeVolume uint64
 	// SelfPnlMergeCalls  uint32
 
-	/** \brief Время затраченное на чтение и поиск внтури GC
-	 *  для целей поддержки и обновления самой GC. */
+	/** \brief The time "by the wall clock" spent reading and searching inside the GC
+	 *  for the purposes of maintaining and updating the GC itself. */
 	SelfRtime time.Duration
 	SelfXtime time.Duration
 	WorkXtime time.Duration
-	/** \brief Количество циклов поиска внутри GC при выделении страниц
-	 *  для целей поддержки и обновления самой GC. */
+	/** \brief The number of search iterations inside the GC when allocating pages for the purposes
+	 *  of maintaining and updating the GC itself. */
 	SelfRsteps uint32
-	/** \brief Количество запросов на выделение последовательностей страниц
-	 *  для самой GC. */
+	/** \brief The number of page sequences allocation requests for the GC itself. */
 	SelfXpages uint32
-	/** \brief Количество итераций обновления GC,
-	 *  больше 1 если были повторы/перезапуски. */
+	/** \brief The number of GC update iterations is greater than 1 if there were repeats/restarts. */
 	Wloops uint32
-	/** \brief Количество итераций слияния записей GC. */
+	/** \brief The number of iterations of merging GC items. */
 	Coalescences uint32
 	Wipes        uint32
 	Flushes      uint32
 	Kicks        uint32
+	/** \brief The maximum observed difference between the latest and oldest reader MVCC snapshots. */
+	MaxReaderLag uint32
+	/** \brief The maximum observed number of pages withheld from reclamation due to readers holding old MVCC snapshots. */
+	MaxRetainedPages uint32
 }
 
 func (txn *Txn) commit() (CommitLatency, error) {
@@ -275,19 +274,21 @@ func (txn *Txn) commit() (CommitLatency, error) {
 			//SelfPnlMergeTime:   toDuration(r.lat.gc_prof.pnl_merge_self.time),
 			//SelfPnlMergeVolume: uint64(r.lat.gc_prof.pnl_merge_self.volume),
 			//SelfPnlMergeCalls:  uint32(r.lat.gc_prof.pnl_merge_self.calls),
-			SelfRtime:    toDuration(r.lat.gc_prof.self_rtime_monotonic),
-			SelfXtime:    toDuration(r.lat.gc_prof.self_xtime_cpu),
-			WorkXtime:    toDuration(r.lat.gc_prof.work_xtime_cpu),
-			SelfRsteps:   uint32(r.lat.gc_prof.self_rsteps),
-			SelfXpages:   uint32(r.lat.gc_prof.self_xpages),
-			SelfMajflt:   uint32(r.lat.gc_prof.self_majflt),
-			Wloops:       uint32(r.lat.gc_prof.wloops),
-			Coalescences: uint32(r.lat.gc_prof.coalescences),
-			Wipes:        uint32(r.lat.gc_prof.wipes),
-			Flushes:      uint32(r.lat.gc_prof.flushes),
-			Kicks:        uint32(r.lat.gc_prof.kicks),
-			SelfCounter:  uint32(r.lat.gc_prof.self_counter),
-			WorkCounter:  uint32(r.lat.gc_prof.work_counter),
+			SelfRtime:        toDuration(r.lat.gc_prof.self_rtime_monotonic),
+			SelfXtime:        toDuration(r.lat.gc_prof.self_xtime_cpu),
+			WorkXtime:        toDuration(r.lat.gc_prof.work_xtime_cpu),
+			SelfRsteps:       uint32(r.lat.gc_prof.self_rsteps),
+			SelfXpages:       uint32(r.lat.gc_prof.self_xpages),
+			SelfMajflt:       uint32(r.lat.gc_prof.self_majflt),
+			Wloops:           uint32(r.lat.gc_prof.wloops),
+			Coalescences:     uint32(r.lat.gc_prof.coalescences),
+			Wipes:            uint32(r.lat.gc_prof.wipes),
+			Flushes:          uint32(r.lat.gc_prof.flushes),
+			Kicks:            uint32(r.lat.gc_prof.kicks),
+			MaxReaderLag:     uint32(r.lat.gc_prof.max_reader_lag),
+			MaxRetainedPages: uint32(r.lat.gc_prof.max_retained_pages),
+			SelfCounter:      uint32(r.lat.gc_prof.self_counter),
+			WorkCounter:      uint32(r.lat.gc_prof.work_counter),
 		},
 	}
 	if r.err != success {
