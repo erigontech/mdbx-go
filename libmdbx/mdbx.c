@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.1-535-g2ea4d615 at 2026-04-04T21:15:47+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.1-549-g80cecf04 at 2026-04-09T23:32:20+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -8852,7 +8852,7 @@ static inline uint64_t double2key(const double *const ptr) {
   const int64_t i = *(const int64_t *)ptr;
   const uint64_t u = (i < 0) ? UINT64_C(0xffffFFFFffffFFFF) - i : i + UINT64_C(0x8000000000000000);
   if (CHECKS1_ENABLED()) {
-    MDBX_MAYBE_UNUSED const double f = key2double(u);
+    const double f = key2double(u);
     ENSURE(memcmp(&f, ptr, sizeof(double)) == 0);
   }
   return u;
@@ -8873,7 +8873,7 @@ static inline uint32_t float2key(const float *const ptr) {
   const int32_t i = *(const int32_t *)ptr;
   const uint32_t u = (i < 0) ? UINT32_C(0xffffFFFF) - i : i + UINT32_C(0x80000000);
   if (CHECKS1_ENABLED()) {
-    MDBX_MAYBE_UNUSED const float f = key2float(u);
+    const float f = key2float(u);
     ENSURE(memcmp(&f, ptr, sizeof(float)) == 0);
   }
   return u;
@@ -9363,7 +9363,7 @@ static bool default_prefault_write(const MDBX_env *env) {
 
 static bool default_prefer_waf_insteadof_balance(const MDBX_env *env) {
   (void)env;
-  return false;
+  return true;
 }
 
 static uint16_t default_subpage_limit(const MDBX_env *env) {
@@ -14756,6 +14756,12 @@ __hot int cursor_put(MDBX_cursor *mc, const MDBX_val *key, MDBX_val *data, unsig
         if (likely(cmp > 0)) {
           mc->ki[mc->top]++; /* step forward for appending */
           rc = MDBX_NOTFOUND;
+#ifdef MDBX_EVENBUG20260405_FIX
+          /* 2026-04-05: Здесь занятный эффект чётности унаследованных от LMDB багов. Исправлять один без другого
+           * нельзя. Однако, оба исправления увеличивают исполнимый код и накладные расходы. Поэтому решено поместить
+           * исправление под #ifdef до появления явной необходимости в них. */
+          inner_gone(mc);
+#endif /* MDBX_EVENBUG20260405_FIX */
         } else if (unlikely(cmp != 0)) {
           /* new-key < last-key */
           return MDBX_EKEYMISMATCH;
@@ -17173,7 +17179,7 @@ static void defrag_stumble(dfc_t *dfc, const da_t *at, const char *reason_prefix
 
 void defrag_milestone(dfc_t *dfc) { defrag_notify(dfc); }
 
-static void defrag_progcess(dfc_t *dfc, size_t progress_increment) {
+static void defrag_progress(dfc_t *dfc, size_t progress_increment) {
   uint64_t now_cache = (progress_increment && ((dfc->progress_counter += progress_increment) & dfc->notify_watchmask))
                            ? 0
                            : defrag_notify(dfc);
@@ -17182,7 +17188,7 @@ static void defrag_progcess(dfc_t *dfc, size_t progress_increment) {
       dfc->defrag_atleast >= dfc->txn->geo.first_unallocated) {
     if (dfc->defrag_enough >= dfc->txn->geo.first_unallocated) {
       if (!dfc->wallclock_atleast || (now_cache = defrag_now(now_cache)) >= dfc->wallclock_atleast)
-        dfc->stopping_reasons |= MDBX_defrag_enough_theshold;
+        dfc->stopping_reasons |= MDBX_defrag_enough_threshold;
     } else if (dfc->wallclock_detent && ++dfc->wallclock_trottle % 64 == 0 &&
                (now_cache = defrag_now(now_cache)) >= dfc->wallclock_detent)
       dfc->stopping_reasons |= MDBX_defrag_time_limit;
@@ -17190,7 +17196,7 @@ static void defrag_progcess(dfc_t *dfc, size_t progress_increment) {
 }
 
 static bool defrag_should_continue(dfc_t *dfc, size_t progress_increment) {
-  defrag_progcess(dfc, progress_increment);
+  defrag_progress(dfc, progress_increment);
   return !defrag_discontinued(dfc);
 }
 
@@ -17297,7 +17303,7 @@ static int defrag_clear_reclaimed(dfc_t *dfc) {
     if (txn->dbs[FREE_DBI].items == rkl_len(&txn->wr.gc.reclaimed)) {
       rc = tbl_purge(gc);
       if (likely(rc == MDBX_SUCCESS)) {
-        defrag_progcess(dfc, /* TODO? */ rkl_len(&txn->wr.gc.reclaimed));
+        defrag_progress(dfc, /* TODO? */ rkl_len(&txn->wr.gc.reclaimed));
         rc = rkl_merge(&txn->wr.gc.reclaimed, &txn->wr.gc.ready4reuse, false);
         rkl_clear(&txn->wr.gc.reclaimed);
       }
@@ -17337,7 +17343,7 @@ static int defrag_clear_reclaimed(dfc_t *dfc) {
           break;
         txn_refund(txn);
 
-        defrag_progcess(dfc, /* TODO? */ 1);
+        defrag_progress(dfc, /* TODO? */ 1);
         if (defrag_aborted(dfc)) {
           rc = MDBX_RESULT_TRUE;
           break;
@@ -18109,7 +18115,7 @@ int defrag_cycle(dfc_t *dfc) {
       VERBOSE("turn-%s %+i, %u => %u", "crop", npages, dfc->defrag_edge, dfc->defrag_edge - npages);
       dfc->defrag_edge -= npages;
     }
-    defrag_progcess(dfc, i->npages);
+    defrag_progress(dfc, i->npages);
     if (dfc->cycle_pages_scheduled >= dfc->move_batch_size) {
       dfc->stopping_reasons |= MDBX_defrag_step_size;
       break;
@@ -18161,7 +18167,7 @@ int defrag_cycle(dfc_t *dfc) {
           dfc->largepage_amountleft -= i->npages;
           dfc->lp_backlog = (dfc->lp_backlog < i->key_or_pgno) ? i->key_or_pgno : dfc->lp_backlog;
         }
-        defrag_progcess(dfc, i->npages);
+        defrag_progress(dfc, i->npages);
         if (dfc->cycle_pages_scheduled >= dfc->move_batch_size) {
           dfc->stopping_reasons |= MDBX_defrag_step_size;
           break;
@@ -18192,7 +18198,7 @@ int defrag_cycle(dfc_t *dfc) {
       if (unlikely(rc != MDBX_SUCCESS))
         break;
     }
-    defrag_progcess(dfc, i->npages);
+    defrag_progress(dfc, i->npages);
     if (defrag_aborted(dfc)) {
       rc = MDBX_RESULT_TRUE;
       break;
@@ -24043,7 +24049,7 @@ __cold static void mdbx_init(void) {
                           (getenv_bool("MDBX_DBG_LEGACY_MULTIOPEN", false) ? MDBX_DBG_LEGACY_MULTIOPEN : 0) |
                           (getenv_bool("MDBX_DBG_LEGACY_OVERLAP", false) ? MDBX_DBG_LEGACY_OVERLAP : 0) |
                           (getenv_bool("MDBX_DBG_DONT_UPGRADE", false) ? MDBX_DBG_DONT_UPGRADE : 0);
-  globals.loglevel = MDBX_LOG_FATAL;
+  globals.loglevel = MDBX_LOG_NOTICE;
   ENSURE(osal_fastmutex_init(&globals.debug_lock) == 0);
   osal_ctor();
   ASSERT(globals.sys_pagesize > 0 && (globals.sys_pagesize & (globals.sys_pagesize - 1)) == 0);
@@ -26516,7 +26522,7 @@ __cold __noinline void panic_at_fmt(const struct MDBX_panic_point *const at, con
   va_list ap;
   va_start(ap, obj);
   char *message = nullptr;
-  const int num = osal_vasprintf(&message, obj, ap);
+  const int num = osal_vasprintf(&message, at->msg, ap);
   const char *const const_message = unlikely(num < 1 || !message) ? "<vasprintf() failed>" : message;
   fuckup(const_message, at->function, at->line, obj);
 }
@@ -31158,7 +31164,7 @@ __cold int mdbx_get_sysraminfo(intptr_t *page_size, intptr_t *total_pages, intpt
   if (unlikely(pagesize < MDBX_MIN_PAGESIZE || !is_powerof2(pagesize)))
     return LOG_IFERR(MDBX_INCOMPATIBLE);
 
-  MDBX_MAYBE_UNUSED const int log2page = log2n_powerof2(pagesize);
+  const int log2page = log2n_powerof2(pagesize);
   ASSERT(pagesize == (INT64_C(1) << log2page));
   (void)log2page;
 
@@ -32400,6 +32406,27 @@ __hot int page_touch_unmodifable(MDBX_txn *txn, MDBX_cursor *mc, const page_t *c
 done:
   /* Adjust cursors pointing to mp */
   mc->pg[mc->top] = np;
+#ifdef MDBX_EVENBUG20260405_FIX
+  if (is_leaf(np) && inner_pointed(mc))
+    /* 2026-04-05: Нашёлся занятный баг, унаследованный от LMDB -- Отсутствовало обновление вложенного dupsort-курсора.
+     *
+     * С одной стороны, отсутствие этого обновления не приводило к проблемам, так как во всех существовавших путях
+     * выполнения вложенный курсор затем инициализировался заново.
+     *
+     * С другой стороны, такое обновление выполняется во всех остальных случаях, при условии что он связан с
+     * dupsort-узлом на текущей/обновлённой странице, указывающем на sub-страницу, а не отдельное дерево. Причем во
+     * многих вариантах развития событий, такая корректировка блокировалась явным присвоением `mc->pg[mc->top] = np`
+     * выше.
+     *
+     * Однако, исправление "всё сломало", буквально из-за нарушения чётности багов.
+     * В пути обработки put(append), позиция основного/внешнего курсора инкрементируется для последующей append-вставки,
+     * но вложенный курсор при этом не сбрасывается. В результате, состояние курсорной пары становилось несогласованным.
+     * При обновлении в отладочных сборках срабатывал assert, а в не-отладочных в dupsort-курсор записывалась чушь.
+     *
+     * По совокупности плюсов/минусов решено добавить это пояснение и оставить исправление под #ifdef, а обнаруженную
+     * специфику учитывать при последующей разработке. */
+    cursor_inner_refresh(mc, np, mc->ki[mc->top]);
+#endif /* MDBX_EVENBUG20260405_FIX */
   MDBX_cursor *m2 = txn->cursors[cursor_dbi(mc)];
   if (mc->flags & z_inner) {
     for (; m2; m2 = m2->next) {
@@ -35814,8 +35841,10 @@ int tbl_refresh(MDBX_txn *txn, size_t dbi) {
 int tbl_purge(MDBX_cursor *mc) {
   if (mc->tree->height) {
     int err = tree_drop(mc, cursor_is_main(mc) || (mc->tree->flags & MDBX_DUPSORT));
-    if (unlikely(err != MDBX_SUCCESS))
+    if (unlikely(err != MDBX_SUCCESS)) {
+      mc->txn->flags |= MDBX_TXN_ERROR;
       return err;
+    }
 
     /* reset the DB record, mark it dirty */
     *mc->dbi_state |= DBI_DIRTY;
@@ -35942,7 +35971,7 @@ int tree_drop(MDBX_cursor *mc, const bool may_have_tables) {
             if (unlikely(rc != MDBX_SUCCESS))
               goto bailout;
             if (!(may_have_tables | mc->tree->large_pages))
-              goto pop;
+              goto popup;
           } else if (node_flags(node) & N_TREE) {
             if (unlikely((node_flags(node) & N_DUP) == 0)) {
               rc = /* disallowing implicit table deletion */ MDBX_INCOMPATIBLE;
@@ -35979,9 +36008,8 @@ int tree_drop(MDBX_cursor *mc, const bool may_have_tables) {
       if (unlikely(rc != MDBX_SUCCESS)) {
         if (unlikely(rc != MDBX_NOTFOUND))
           goto bailout;
-      /* no more siblings, go back to beginning
-       * of previous level. */
-      pop:
+        /* no more siblings, go back to beginning of previous level. */
+      popup:
         cursor_pop(mc);
         mc->ki[0] = 0;
         for (intptr_t i = 1; i <= mc->top; i++) {
@@ -35995,8 +36023,6 @@ int tree_drop(MDBX_cursor *mc, const bool may_have_tables) {
 
 bailout:
   be_poor(mc);
-  if (unlikely(rc != MDBX_SUCCESS))
-    txn->flags |= MDBX_TXN_ERROR;
   return rc;
 }
 
@@ -36669,7 +36695,6 @@ int tree_rebalance(MDBX_cursor *mc) {
 
   const size_t ki_top = mc->ki[mc->top];
   const size_t ki_pre_top = mn->ki[pre_top];
-  const size_t nkeys = page_numkeys(mn->pg[mn->top]);
 
   const size_t left_room = left ? page_room(left) : 0;
   const size_t right_room = right ? page_room(right) : 0;
@@ -36686,8 +36711,49 @@ int tree_rebalance(MDBX_cursor *mc) {
    *  - в какой-то branch-странице не хватит места из-за распространения/обновления первых ключей,
    *    которые хранятся в родительских страницах;
    *  - при включенном minimize_waf распространение/обновление первых ключей
-   *    потребуется разделение какой-либо странице, что увеличит WAF и поэтому обесценивает дальнейшее
+   *    потребуется разделение какой-либо страницы, что увеличит WAF и поэтому обесценивает дальнейшее
    *    следование minimize_waf. */
+
+  if (unlikely(numkeys == 0)) {
+    if (left) {
+      mn->pg[mn->top] = left;
+      mn->ki[mn->top - 1] = (indx_t)(ki_pre_top - 1);
+      mn->ki[mn->top] = (indx_t)(left_nkeys - 1);
+      mc->ki[mc->top] = 0;
+      const size_t new_ki = ki_top + left_nkeys;
+      mn->ki[mn->top] += mc->ki[mn->top] + 1;
+      couple.outer.next = mn->txn->cursors[cursor_dbi(mn)];
+      mn->txn->cursors[cursor_dbi(mn)] = &couple.outer;
+      rc = page_merge(mc, mn);
+      mn->txn->cursors[cursor_dbi(mn)] = couple.outer.next;
+      if (likely(rc != MDBX_RESULT_TRUE)) {
+        cursor_cpstk(mn, mc);
+        mc->ki[mc->top] = (indx_t)new_ki;
+        cASSERT0(mc, rc || page_numkeys(mc->pg[mc->top]) >= minkeys);
+        return rc;
+      }
+    }
+    cASSERT0(mc, right_nkeys >= minkeys);
+    mn->pg[mn->top] = right;
+    mn->ki[mn->top - 1] = (indx_t)(ki_pre_top + 1);
+    mn->ki[mn->top] = 0;
+    mc->ki[mc->top] = (indx_t)numkeys;
+    couple.outer.next = mn->txn->cursors[cursor_dbi(mn)];
+    mn->txn->cursors[cursor_dbi(mn)] = &couple.outer;
+    rc = page_merge(mn, mc);
+    mn->txn->cursors[cursor_dbi(mn)] = couple.outer.next;
+    if (likely(rc != MDBX_RESULT_TRUE)) {
+      mc->ki[mc->top] = (indx_t)ki_top;
+      cASSERT0(mc, rc || page_numkeys(mc->pg[mc->top]) >= minkeys);
+      return rc;
+    }
+
+  bailout:
+    ERROR("Unable to merge/rebalance %s page %" PRIaPGNO " (has %zu keys, fill %u.%u%%, used %zu, room %zu bytes)",
+          is_leaf(tp) ? "leaf" : "branch", tp->pgno, numkeys, page_fill_percentum_x10(mc->txn->env, tp) / 10,
+          page_fill_percentum_x10(mc->txn->env, tp) % 10, page_used(mc->txn->env, tp), room);
+    return MDBX_PROBLEM;
+  }
 
   bool involve = !(left && right);
 retry:
@@ -36720,7 +36786,7 @@ retry:
     mn->pg[mn->top] = right;
     mn->ki[mn->top - 1] = (indx_t)(ki_pre_top + 1);
     mn->ki[mn->top] = 0;
-    mc->ki[mc->top] = (indx_t)nkeys;
+    mc->ki[mc->top] = (indx_t)numkeys;
     couple.outer.next = mn->txn->cursors[cursor_dbi(mn)];
     mn->txn->cursors[cursor_dbi(mn)] = &couple.outer;
     rc = page_merge(mn, mc);
@@ -36753,7 +36819,7 @@ retry:
     mn->pg[mn->top] = right;
     mn->ki[mn->top - 1] = (indx_t)(ki_pre_top + 1);
     mn->ki[mn->top] = 0;
-    mc->ki[mc->top] = (indx_t)nkeys;
+    mc->ki[mc->top] = (indx_t)numkeys;
     couple.outer.next = mn->txn->cursors[cursor_dbi(mn)];
     mn->txn->cursors[cursor_dbi(mn)] = &couple.outer;
     rc = node_move(mn, mc, false);
@@ -36765,7 +36831,7 @@ retry:
     }
   }
 
-  if (nkeys >= minkeys) {
+  if (numkeys >= minkeys) {
     mc->ki[mc->top] = (indx_t)ki_top;
     if (CHECKS2_ENABLED())
       ENSURE_OBJ(mc, cursor_validate_updating(mc) == MDBX_SUCCESS);
@@ -36790,10 +36856,7 @@ retry:
     goto retry;
   }
 
-  ERROR("Unable to merge/rebalance %s page %" PRIaPGNO " (has %zu keys, fill %u.%u%%, used %zu, room %zu bytes)",
-        is_leaf(tp) ? "leaf" : "branch", tp->pgno, numkeys, page_fill_percentum_x10(mc->txn->env, tp) / 10,
-        page_fill_percentum_x10(mc->txn->env, tp) % 10, page_used(mc->txn->env, tp), room);
-  return MDBX_PROBLEM;
+  goto bailout;
 }
 
 int tree_propagate_key(MDBX_cursor *mc, const MDBX_val *key) {
@@ -37332,26 +37395,26 @@ cursor_to_search_foliage(const MDBX_cursor *mc) {
 __hot sfr_t tree_search_foliage_configure(MDBX_cursor *mc, const MDBX_val *key) {
   MDBX_search_foliage search_foliage = cursor_to_search_foliage(mc);
 #if MDBX_DEBUG_SEARCH_DISPATCHING
-  const size_t snap_1 = MDBX_CURSOR_STC_GET(mc);
+  const unsigned snap_1 = MDBX_CURSOR_STC_GET(mc);
   sfr_t old = old_node_search(mc, key);
   int old_i = mc->ki[mc->top];
-  const size_t snap_2 = MDBX_CURSOR_STC_GET(mc);
-  const size_t old_steps = snap_2 - snap_1;
+  const unsigned snap_2 = MDBX_CURSOR_STC_GET(mc);
+  const unsigned old_steps = snap_2 - snap_1;
 
   sfr_t new = search_foliage(mc, key);
   int new_i = mc->ki[mc->top];
-  const size_t snap_3 = MDBX_CURSOR_STC_GET(mc);
-  const size_t new_steps = snap_3 - snap_2;
+  const unsigned snap_3 = MDBX_CURSOR_STC_GET(mc);
+  const unsigned new_steps = snap_3 - snap_2;
 
   if (new_i != old_i || new.exact != old.exact || new.node != old.node || new_steps > old_steps) {
     globals.loglevel = MDBX_LOG_TRACE;
-    WARNING("\nfoliage-search-issue: new %i, %c, %p, steps %zu | old %i, %c, %p, steps %zu | retry to debug...", new_i,
+    WARNING("\nfoliage-search-issue: new %i, %c, %p, steps %u | old %i, %c, %p, steps %u | retry to debug...", new_i,
             new.exact ? 'Y' : 'N', (void *)new.node, new_steps, old_i, old.exact ? 'Y' : 'N', (void *)old.node,
             old_steps);
     old_node_search((MDBX_cursor *)mc, key);
     search_foliage(mc, key);
-    panic_fmt(mc, "new %i, %c, %p, steps %zu | old %i, %c, %p, steps %zu", new_i, new.exact ? 'Y' : 'N',
-              (void *)new.node, new_steps, old_i, old.exact ? 'Y' : 'N', (void *)old.node, old_steps);
+    panic_fmt(mc, "new %i, %c, %p, steps %u | old %i, %c, %p, steps %u", new_i, new.exact ? 'Y' : 'N', (void *)new.node,
+              new_steps, old_i, old.exact ? 'Y' : 'N', (void *)old.node, old_steps);
   }
   return new;
 #else
@@ -37441,22 +37504,22 @@ cursor_to_search_branch(const MDBX_cursor *mc) {
 size_t tree_search_branch_configure(const MDBX_cursor *mc, const MDBX_val *key) {
   MDBX_search_branch search_branch = cursor_to_search_branch(mc);
 #if MDBX_DEBUG_SEARCH_DISPATCHING
-  const size_t snap_1 = MDBX_CURSOR_STC_GET(mc);
-  size_t old_i = old_branch_search((MDBX_cursor *)mc, key);
-  const size_t snap_2 = MDBX_CURSOR_STC_GET(mc);
-  const size_t old_steps = snap_2 - snap_1;
+  const unsigned snap_1 = MDBX_CURSOR_STC_GET(mc);
+  size_t old_i = old_branch_search((MDBX_cursor*)mc, key);
+  const unsigned snap_2 = MDBX_CURSOR_STC_GET(mc);
+  const unsigned old_steps = snap_2 - snap_1;
 
   size_t new_i = search_branch(mc, key);
-  const size_t snap_3 = MDBX_CURSOR_STC_GET(mc);
-  const size_t new_steps = snap_3 - snap_2;
+  const unsigned snap_3 = MDBX_CURSOR_STC_GET(mc);
+  const unsigned new_steps = snap_3 - snap_2;
 
   if (new_i != old_i || new_steps > old_steps) {
     globals.loglevel = MDBX_LOG_TRACE;
-    WARNING("\nbranch-search-issue: new %zi, steps %zu | old %zi, steps %zu | retry to debug...", new_i, new_steps,
-            old_i, old_steps);
+    WARNING("\nbranch-search-issue: new %zi, steps %u | old %zi, steps %u | retry to debug...", new_i, new_steps, old_i,
+            old_steps);
     old_branch_search((MDBX_cursor *)mc, key);
     search_branch(mc, key);
-    panic_fmt(mc, "new %zi, steps %zu | old %zi, steps %zu", new_i, new_steps, old_i, old_steps);
+    panic_fmt(mc, "new %zi, steps %u | old %zi, steps %u", new_i, new_steps, old_i, old_steps);
   }
   return new_i;
 #else
@@ -40254,10 +40317,10 @@ __dll_export
         0,
         14,
         1,
-        535,
+        549,
         "", /* pre-release suffix of SemVer
-                                        0.14.1.535 */
-        {"2026-04-04T21:15:47+03:00", "d11775e028ddfd5d09923796876f0595b4e62968", "2ea4d6158a2e61552d6fce0be86f83abc027a12f", "v0.14.1-535-g2ea4d615"},
+                                        0.14.1.549 */
+        {"2026-04-09T23:32:20+03:00", "af55ae979cf4f0727ce5543b94d1a5eb88fb92e2", "80cecf04d99e99a19da0ec4639feb69049454aab", "v0.14.1-549-g80cecf04"},
         sourcery};
 
 __dll_export

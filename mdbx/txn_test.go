@@ -613,7 +613,7 @@ func TestTxn_Flags(t *testing.T) {
 		return
 	}
 	err = env.View(func(txn *Txn) (err error) {
-		db, err := txn.OpenDBISimple("testdb", DBAccede)
+		db, err := txn.OpenDBISimple("testdb", dbflags)
 		if err != nil {
 			return err
 		}
@@ -914,7 +914,7 @@ func TestTxn_StatOnEmpty(t *testing.T) {
 	env.CloseDBI(dbi)
 
 	err = env.Update(func(txn *Txn) (err error) {
-		dbi, err = txn.OpenDBISimple("testdb", DBAccede)
+		dbi, err = txn.OpenDBISimple("testdb", DupSort)
 		return err
 	})
 	if err != nil {
@@ -1054,7 +1054,8 @@ func BenchmarkTxn_abort(b *testing.B) {
 
 	var e = errors.New("abort")
 
-	for b.Loop() {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
 		_ = env.Update(func(txn *Txn) error { return e })
 	}
 }
@@ -1075,7 +1076,8 @@ func BenchmarkTxn_commit(b *testing.B) {
 		return
 	}
 
-	for i := 0; b.Loop(); i++ {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
 		var k [8]byte
 		binary.BigEndian.PutUint64(k[:], uint64(i))
 		err = env.Update(func(txn *Txn) error {
@@ -1095,7 +1097,8 @@ func BenchmarkTxn_commit(b *testing.B) {
 func BenchmarkTxn_ro(b *testing.B) {
 	env, _ := setup(b)
 
-	for b.Loop() {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
 		err := env.View(func(txn *Txn) error { return nil })
 		if err != nil {
 			b.Error(err)
@@ -1110,7 +1113,8 @@ func BenchmarkTxn_unmanaged_abort(b *testing.B) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	for b.Loop() {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
 		txn, err := env.BeginTxn(nil, 0)
 		if err != nil {
 			b.Error(err)
@@ -1126,7 +1130,8 @@ func BenchmarkTxn_unmanaged_commit(b *testing.B) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	for b.Loop() {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
 		txn, err := env.BeginTxn(nil, 0)
 		if err != nil {
 			b.Error(err)
@@ -1142,7 +1147,8 @@ func BenchmarkTxn_unmanaged_ro(b *testing.B) {
 	// It is not necessary to call runtime.LockOSThread here because the txn is
 	// Readonly
 
-	for b.Loop() {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
 		txn, err := env.BeginTxn(nil, Readonly)
 		if err != nil {
 			b.Error(err)
@@ -1165,7 +1171,8 @@ func BenchmarkTxn_renew(b *testing.B) {
 	}
 	defer txn.Abort()
 
-	for b.Loop() {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
 		txn.Reset()
 		err = txn.Renew()
 		if err != nil {
@@ -1194,8 +1201,9 @@ func BenchmarkTxn_Put_append(b *testing.B) {
 		return
 	}
 
+	b.ResetTimer()
 	err = env.Update(func(txn *Txn) (err error) {
-		for i := 0; b.Loop(); i++ {
+		for i := 0; i < b.N; i++ {
 			var k [8]byte
 			binary.BigEndian.PutUint64(k[:], uint64(i))
 			err = txn.Put(db, k[:], k[:], Append)
@@ -1234,7 +1242,7 @@ func BenchmarkTxn_Put_append_noflag(b *testing.B) {
 
 	err = env.Update(func(txn *Txn) (err error) {
 		var k [8]byte
-		for i := 0; b.Loop(); i++ {
+		for i := 0; i < b.N; i++ {
 			binary.BigEndian.PutUint64(k[:], uint64(i))
 			err = txn.Put(db, k[:], k[:], 0)
 			if err != nil {
@@ -1302,7 +1310,8 @@ func BenchmarkTxn_Get_OneKey(b *testing.B) {
 	}
 
 	if err := env.View(func(txn *Txn) (err error) {
-		for b.Loop() {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
 			_, err := txn.Get(db, k)
 			if err != nil {
 				return err
@@ -1317,14 +1326,13 @@ func BenchmarkTxn_Get_OneKey(b *testing.B) {
 func BenchmarkTxn_Get_Sequence(b *testing.B) {
 	env, _ := setup(b)
 
-	const N = 10000
-	keys := make([][]byte, N)
+	var db DBI
+	keys := make([][]byte, b.N)
 	for i := range keys {
-		keys[i] = make([]byte, 4)
-		binary.BigEndian.PutUint32(keys[i], uint32(i))
+		keys[i] = make([]byte, 8)
+		binary.BigEndian.PutUint64(keys[i], uint64(i))
 	}
 
-	var db DBI
 	if err := env.Update(func(txn *Txn) (err error) {
 		db, err = txn.OpenRoot(0)
 		if err != nil {
@@ -1343,25 +1351,11 @@ func BenchmarkTxn_Get_Sequence(b *testing.B) {
 	}
 
 	if err := env.View(func(txn *Txn) (err error) {
-		for i := 0; b.Loop(); i++ {
-			_, err := txn.Get(db, keys[i%N])
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := txn.Get(db, keys[i])
 			if err != nil {
 				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		b.Errorf("dbi: %v", err)
-		return
-	}
-
-	if err := env.Update(func(txn *Txn) (err error) {
-		b.ResetTimer()
-		for b.Loop() {
-			for i := 0; i < N; i++ {
-				if err = txn.Put(db, keys[i], keys[i], 0); err != nil {
-					return err
-				}
 			}
 		}
 		return nil
@@ -1373,12 +1367,11 @@ func BenchmarkTxn_Get_Sequence(b *testing.B) {
 func BenchmarkTxn_Get_Random(b *testing.B) {
 	env, _ := setup(b)
 
-	const N = 10000
 	var db DBI
-	keys := make([][]byte, N)
+	keys := make([][]byte, b.N)
 	for i := range keys {
 		keys[i] = make([]byte, 8)
-		binary.BigEndian.PutUint64(keys[i], uint64(rand.Intn(100*N)))
+		binary.BigEndian.PutUint64(keys[i], uint64(rand.Intn(100*b.N)))
 	}
 
 	if err := env.Update(func(txn *Txn) (err error) {
@@ -1399,8 +1392,9 @@ func BenchmarkTxn_Get_Random(b *testing.B) {
 	}
 
 	if err := env.View(func(txn *Txn) (err error) {
-		for i := 0; b.Loop(); i++ {
-			_, err := txn.Get(db, keys[i%N])
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := txn.Get(db, keys[i])
 			if err != nil {
 				return err
 			}

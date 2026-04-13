@@ -477,7 +477,7 @@ func TestEnv_ReaderCheck(t *testing.T) {
 // }
 
 func TestEnv_Sync(t *testing.T) {
-	env, _ := setupFlags(t, SafeNoSync)
+	env, _ := setupFlags(t, SafeNoSync, "NoSync")
 
 	item := struct{ k, v []byte }{[]byte("k0"), []byte("v0")}
 
@@ -499,11 +499,15 @@ func TestEnv_Sync(t *testing.T) {
 }
 
 func setup(t testing.TB) (*Env, string) {
-	return setupFlags(t, 0)
+	return setupFlags(t, 0, Default)
 }
 
-func setupFlags(t testing.TB, flags uint) (env *Env, path string) {
-	env, err := NewEnv(Default)
+func setupWithLabel(t testing.TB, label Label) (*Env, string) {
+	return setupFlags(t, 0, label)
+}
+
+func setupFlags(t testing.TB, flags uint, label Label) (env *Env, path string) {
+	env, err := NewEnv(label)
 	if err != nil {
 		t.Fatalf("env: %s", err)
 	}
