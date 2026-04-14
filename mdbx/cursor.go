@@ -17,27 +17,47 @@ const (
 	//
 	// See MDB_cursor_op.
 
-	First        = C.MDBX_FIRST          // The first item.
-	FirstDup     = C.MDBX_FIRST_DUP      // The first value of current key (DupSort).
-	GetBoth      = C.MDBX_GET_BOTH       // Get the key as well as the value (DupSort).
-	GetBothRange = C.MDBX_GET_BOTH_RANGE // Get the key and the nearsest value (DupSort).
-	GetCurrent   = C.MDBX_GET_CURRENT    // Get the key and value at the current position.
-	GetMultiple  = C.MDBX_GET_MULTIPLE   // Get up to a page dup values for key at current position (DupFixed).
-	Last         = C.MDBX_LAST           // Last item.
-	LastDup      = C.MDBX_LAST_DUP       // Position at last value of current key (DupSort).
-	Next         = C.MDBX_NEXT           // Next value.
-	NextDup      = C.MDBX_NEXT_DUP       // Next value of the current key (DupSort).
-	NextMultiple = C.MDBX_NEXT_MULTIPLE  // Get key and up to a page of values from the next cursor position (DupFixed).
-	NextNoDup    = C.MDBX_NEXT_NODUP     // The first value of the next key (DupSort).
-	Prev         = C.MDBX_PREV           // The previous item.
-	PrevDup      = C.MDBX_PREV_DUP       // The previous item of the current key (DupSort).
-	PrevNoDup    = C.MDBX_PREV_NODUP     // The last data item of the previous key (DupSort).
-	PrevMultiple = C.MDBX_PREV_MULTIPLE  //
-	Set          = C.MDBX_SET            // The specified key.
-	SetKey       = C.MDBX_SET_KEY        // Get key and data at the specified key.
-	SetRange     = C.MDBX_SET_RANGE      // The first key no less than the specified key.
+	First         = C.MDBX_FIRST          // The first item.
+	FirstDup      = C.MDBX_FIRST_DUP      // The first value of current key (DupSort).
+	GetBoth       = C.MDBX_GET_BOTH       // Get the key as well as the value (DupSort).
+	GetBothRange  = C.MDBX_GET_BOTH_RANGE // Get the key and the nearsest value (DupSort).
+	GetCurrent    = C.MDBX_GET_CURRENT    // Get the key and value at the current position.
+	GetMultiple   = C.MDBX_GET_MULTIPLE   // Get up to a page dup values for key at current position (DupFixed).
+	Last          = C.MDBX_LAST           // Last item.
+	LastDup       = C.MDBX_LAST_DUP       // Position at last value of current key (DupSort).
+	Next          = C.MDBX_NEXT           // Next value.
+	NextDup       = C.MDBX_NEXT_DUP       // Next value of the current key (DupSort).
+	NextMultiple  = C.MDBX_NEXT_MULTIPLE  // Get key and up to a page of values from the next cursor position (DupFixed).
+	NextNoDup     = C.MDBX_NEXT_NODUP     // The first value of the next key (DupSort).
+	Prev          = C.MDBX_PREV           // The previous item.
+	PrevDup       = C.MDBX_PREV_DUP       // The previous item of the current key (DupSort).
+	PrevNoDup     = C.MDBX_PREV_NODUP     // The last data item of the previous key (DupSort).
+	PrevMultiple  = C.MDBX_PREV_MULTIPLE  //
+	Set           = C.MDBX_SET            // The specified key.
+	SetKey        = C.MDBX_SET_KEY        // Get key and data at the specified key.
+	SetRange      = C.MDBX_SET_RANGE      // The first key no less than the specified key.
+	SetLowerBound = C.MDBX_SET_LOWERBOUND // The first key/value pair no less than the specified key/value pair.
+	SetUpperBound = C.MDBX_SET_UPPERBOUND // The first key/value pair greater than the specified key/value pair.
 
-	LesserThan = C.MDBX_TO_KEY_LESSER_THAN
+	KeyLesserThan     = C.MDBX_TO_KEY_LESSER_THAN
+	KeyLesserOrEqual  = C.MDBX_TO_KEY_LESSER_OR_EQUAL
+	KeyEqual          = C.MDBX_TO_KEY_EQUAL
+	KeyGreaterOrEqual = C.MDBX_TO_KEY_GREATER_OR_EQUAL
+	KeyGreaterThan    = C.MDBX_TO_KEY_GREATER_THAN
+
+	ExactKeyValueLesserThan     = C.MDBX_TO_EXACT_KEY_VALUE_LESSER_THAN
+	ExactKeyValueLesserOrEqual  = C.MDBX_TO_EXACT_KEY_VALUE_LESSER_OR_EQUAL
+	ExactKeyValueEqual          = C.MDBX_TO_EXACT_KEY_VALUE_EQUAL
+	ExactKeyValueGreaterOrEqual = C.MDBX_TO_EXACT_KEY_VALUE_GREATER_OR_EQUAL
+	ExactKeyValueGreaterThan    = C.MDBX_TO_EXACT_KEY_VALUE_GREATER_THAN
+
+	PairLesserThan     = C.MDBX_TO_PAIR_LESSER_THAN
+	PairLesserOrEqual  = C.MDBX_TO_PAIR_LESSER_OR_EQUAL
+	PairEqual          = C.MDBX_TO_PAIR_EQUAL
+	PairGreaterOrEqual = C.MDBX_TO_PAIR_GREATER_OR_EQUAL
+	PairGreaterThan    = C.MDBX_TO_PAIR_GREATER_THAN
+
+	LesserThan = KeyLesserThan // Deprecated: use KeyLesserThan.
 )
 
 // The MDB_MULTIPLE and MDB_RESERVE flags are special and do not fit the

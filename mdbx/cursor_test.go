@@ -264,6 +264,66 @@ func TestCursor_Get_KV(t *testing.T) {
 	}
 }
 
+func TestCursor_Get_ExactKeyValueLesserThan(t *testing.T) {
+	env, _ := setup(t)
+
+	var dbi DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		dbi, err = txn.OpenDBISimple("testdb", Create|DupSort)
+		if err != nil {
+			return err
+		}
+
+		put := func(k, v string) {
+			if err == nil {
+				err = txn.Put(dbi, []byte(k), []byte(v), 0)
+			}
+		}
+		put("k1", "v1")
+		put("k1", "v2")
+		put("k1", "v3")
+		put("k2", "v1")
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(dbi)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		k, v, err := cur.Get([]byte("k1"), []byte("v2"), ExactKeyValueLesserThan)
+		if err != nil {
+			return err
+		}
+		if string(k) != "k1" {
+			t.Fatalf("unexpected key: %q (not %q)", k, "k1")
+		}
+		if string(v) != "v1" {
+			t.Fatalf("unexpected value: %q (not %q)", v, "v1")
+		}
+
+		_, _, err = cur.Get([]byte("k1"), []byte("v0"), ExactKeyValueLesserThan)
+		if !IsNotFound(err) {
+			t.Fatalf("unexpected error for lower boundary: %v", err)
+		}
+
+		_, _, err = cur.Get([]byte("missing"), []byte("v2"), ExactKeyValueLesserThan)
+		if !IsNotFound(err) {
+			t.Fatalf("unexpected error for missing key: %v", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func FromHex(in string) []byte {
 	out, err := hex.DecodeString(in)
 	if err != nil {
