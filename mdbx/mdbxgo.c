@@ -115,6 +115,12 @@ mdbxgo_size_result mdbxgo_cursor_count(MDBX_cursor *cur) {
     return r;
 }
 
+mdbxgo_u64_result mdbxgo_cursor_bunch_delete(MDBX_cursor *cur, MDBX_bunch_action_t mode) {
+    mdbxgo_u64_result r = {0};
+    r.err = mdbx_cursor_bunch_delete(cur, mode, &r.val);
+    return r;
+}
+
 mdbxgo_u64_result mdbxgo_dbi_sequence(MDBX_txn *txn, MDBX_dbi dbi, uint64_t increment) {
     mdbxgo_u64_result r = {0};
     r.err = mdbx_dbi_sequence(txn, dbi, &r.val, increment);

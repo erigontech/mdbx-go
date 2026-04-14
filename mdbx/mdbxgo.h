@@ -49,6 +49,7 @@ typedef struct { int err; int      val; } mdbxgo_int_result;
 typedef struct { int err; intptr_t pageSize, totalPages, availPages; } mdbxgo_sysraminfo_result;
 
 mdbxgo_size_result       mdbxgo_cursor_count(MDBX_cursor *cur);
+mdbxgo_u64_result        mdbxgo_cursor_bunch_delete(MDBX_cursor *cur, MDBX_bunch_action_t mode);
 mdbxgo_u64_result        mdbxgo_dbi_sequence(MDBX_txn *txn, MDBX_dbi dbi, uint64_t increment);
 mdbxgo_u64_result        mdbxgo_env_get_option(MDBX_env *env, MDBX_option_t option);
 mdbxgo_uint_result       mdbxgo_env_get_syncperiod(MDBX_env *env);

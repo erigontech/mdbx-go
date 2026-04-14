@@ -366,16 +366,11 @@ func (c *Cursor) Del(flags uint) error {
 // It returns the number of affected (deleted) items.
 // Modes: see mdbx_cursor_bunch_delete.
 func (c *Cursor) RangeDel(mode uint) (numberAffected uint64, err error) {
-	var n C.uint64_t
-	ret := C.mdbx_cursor_bunch_delete(
-		c._c,
-		C.MDBX_bunch_action_t(mode),
-		&n,
-	)
-	if err := operrno("mdbx_cursor_bunch_delete", ret); err != nil {
+	r := C.mdbxgo_cursor_bunch_delete(c._c, C.MDBX_bunch_action_t(mode))
+	if err := operrno("mdbx_cursor_bunch_delete", r.err); err != nil {
 		return 0, err
 	}
-	return uint64(n), nil
+	return uint64(r.val), nil
 }
 
 // Count returns the number of duplicates for the current key.

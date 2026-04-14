@@ -50,6 +50,28 @@ func TestCursor_Count_NoAllocs(t *testing.T) {
 	}
 }
 
+func TestCursor_RangeDel_NoAllocs(t *testing.T) {
+	env, _ := setup(t)
+
+	err := env.Update(func(txn *Txn) error {
+		db, err := txn.OpenDBISimple("testingrangedel_noalloc", Create)
+		if err != nil {
+			return err
+		}
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		assertNoAllocs(t, "Cursor.RangeDel()", func() { _, _ = cur.RangeDel(DeleteWhole) })
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
 func TestTxn_Sequence_NoAllocs(t *testing.T) {
 	env, _ := setup(t)
 
