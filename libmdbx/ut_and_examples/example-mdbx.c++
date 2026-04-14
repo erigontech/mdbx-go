@@ -23,10 +23,6 @@ static void тысяча(const mdbx::path &database_pathname, const mdbx::env::m
     txn.commit();
   }
 
-  const auto prof = env.start_write().commit_get_latency();
-  std::cout << "gc.max_reader_lag: " << prof.gc_prof.max_reader_lag << std::endl;
-  std::cout << "gc.max_retained_pages: " << prof.gc_prof.max_retained_pages << std::endl;
-
   auto info = env.get_info();
 
   // std::cout << "  pgop.newly: " << info.mi_pgop_stat.newly << "\n";
@@ -50,7 +46,7 @@ static bool doit(const mdbx::path &database_pathname) {
   mdbx::env::remove(database_pathname);
   auto operate_parameters = mdbx::env::operate_parameters();
   operate_parameters.max_maps = 11;
-  operate_parameters.options.nested_transactions = true;
+  operate_parameters.options.nested_write_transactions = true;
   mdbx::env_managed env(database_pathname, mdbx::env_managed::create_parameters(), operate_parameters);
 
   auto txn = env.start_write();
@@ -59,7 +55,6 @@ static bool doit(const mdbx::path &database_pathname) {
   txn.insert(map, buffer::key_from_double(0.1), mdbx::slice("b"));
   txn.insert(map, buffer::key_from_jsonInteger(1), buffer("c"));
   txn.insert(map, mdbx::slice::wrap(uint64_t(0xaBad1dea)), buffer::base58("aBad1dea"));
-  txn.commit_embark_read();
 
   auto cursor = txn.open_cursor(map);
   cursor.to_first();
@@ -68,33 +63,17 @@ static bool doit(const mdbx::path &database_pathname) {
     cursor.to_next(false);
   }
 
-  txn.amend();
-  txn.commit_embark_read();
-  txn.amend(true);
-  txn.checkpoint();
-  txn.commit_embark_read();
-  txn.amend(false);
+  auto nested = txn.start_nested();
+  cursor = nested.open_cursor(map);
+  size_t count = 0;
+  cursor.fullscan([&](const mdbx::pair &) -> bool {
+    count += 1;
+    return /* don't breaking/existing the scanning loop */ false;
+  });
+  nested.commit();
+  nested = txn.start_nested();
 
-  if (env.is_nested_transactions_available()) {
-    auto nested = txn.start_nested();
-    cursor = nested.open_cursor(map);
-    size_t count = 0;
-    cursor.fullscan([&](const mdbx::pair &) -> bool {
-      count += 1;
-      return /* continue scan */ false;
-    });
-    nested.abort();
-
-    nested = txn.start_nested(true);
-    mdbx::pair pair("anything", "anything");
-    int err = mdbx_put(nested, map, &pair.key, &pair.value, MDBX_UPSERT);
-    assert(err == MDBX_EACCESS);
-    nested.commit();
-
-    assert(count == txn.get_map_stat(map).ms_entries);
-    return err == MDBX_EACCESS && count == txn.get_map_stat(map).ms_entries;
-  }
-  return true;
+  return count == nested.get_map_stat(map).ms_entries;
 }
 
 int main(int, const char *[]) {
