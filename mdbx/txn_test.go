@@ -613,7 +613,7 @@ func TestTxn_Flags(t *testing.T) {
 		return
 	}
 	err = env.View(func(txn *Txn) (err error) {
-		db, err := txn.OpenDBISimple("testdb", 0)
+		db, err := txn.OpenDBISimple("testdb", dbflags)
 		if err != nil {
 			return err
 		}
@@ -914,7 +914,7 @@ func TestTxn_StatOnEmpty(t *testing.T) {
 	env.CloseDBI(dbi)
 
 	err = env.Update(func(txn *Txn) (err error) {
-		dbi, err = txn.OpenDBISimple("testdb", 0)
+		dbi, err = txn.OpenDBISimple("testdb", DupSort)
 		return err
 	})
 	if err != nil {

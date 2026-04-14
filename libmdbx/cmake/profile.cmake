@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2025 Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> ###############################################
+# Copyright (c) 2012-2026 Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> ###############################################
 # SPDX-License-Identifier: Apache-2.0
 
 if(CMAKE_VERSION VERSION_LESS 3.8.2)
@@ -36,6 +36,8 @@ check_library_exists(gcov __gcov_flush "" HAVE_GCOV)
 option(ENABLE_GCOV "Enable integration with gcov, a code coverage program" OFF)
 
 option(ENABLE_GPROF "Enable integration with gprof, a performance analyzing tool" OFF)
+
+option(ENABLE_DTRACE "Enable using DTrace dynamic tracing framework" OFF)
 
 option(ENABLE_ASAN "Enable AddressSanitizer, a fast memory error detector based on compiler instrumentation" OFF)
 

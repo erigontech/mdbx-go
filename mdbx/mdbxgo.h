@@ -24,7 +24,6 @@ int mdbxgo_put2(MDBX_txn *txn, MDBX_dbi dbi, char *kdata, size_t kn, char *vdata
 int mdbxgo_cursor_put1(MDBX_cursor *cur, char *kdata, size_t kn, MDBX_val *val, MDBX_put_flags_t flags);
 int mdbxgo_cursor_put2(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_put_flags_t flags);
 int mdbxgo_cursor_putmulti(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, size_t vstride, MDBX_put_flags_t flags);
-int mdbxgo_cursor_get(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_val *key, MDBX_val *val, MDBX_cursor_op op);
 /* ConstCString wraps a null-terminated (const char *) because Go's type system
  * does not represent the 'cosnt' qualifier directly on a function argument and
  * causes warnings to be emitted during linking.
@@ -39,5 +38,37 @@ int mdbxgo_reader_list(MDBX_env *env, size_t ctx);
 
 int mdbxgo_cmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn);
 int mdbxgo_dcmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn);
+
+/* The mdbxgo_*_result structs bundle an error code with a scalar return value
+ * so that helper functions can return both without taking a Go pointer as an
+ * out-parameter (which would escape the Go variable to the heap). */
+typedef struct { int err; size_t   val; } mdbxgo_size_result;
+typedef struct { int err; uint64_t val; } mdbxgo_u64_result;
+typedef struct { int err; unsigned val; } mdbxgo_uint_result;
+typedef struct { int err; int      val; } mdbxgo_int_result;
+typedef struct { int err; intptr_t pageSize, totalPages, availPages; } mdbxgo_sysraminfo_result;
+
+mdbxgo_size_result       mdbxgo_cursor_count(MDBX_cursor *cur);
+mdbxgo_u64_result        mdbxgo_dbi_sequence(MDBX_txn *txn, MDBX_dbi dbi, uint64_t increment);
+mdbxgo_u64_result        mdbxgo_env_get_option(MDBX_env *env, MDBX_option_t option);
+mdbxgo_uint_result       mdbxgo_env_get_syncperiod(MDBX_env *env);
+mdbxgo_size_result       mdbxgo_env_get_syncbytes(MDBX_env *env);
+mdbxgo_int_result        mdbxgo_reader_check(MDBX_env *env);
+mdbxgo_uint_result       mdbxgo_env_get_flags(MDBX_env *env);
+mdbxgo_uint_result       mdbxgo_dbi_flags(MDBX_txn *txn, MDBX_dbi dbi);
+mdbxgo_sysraminfo_result mdbxgo_get_sysraminfo(void);
+mdbxgo_uint_result       mdbxgo_dbi_open(MDBX_txn *txn, const char *name, MDBX_db_flags_t flags);
+mdbxgo_uint_result       mdbxgo_dbi_open_ex(MDBX_txn *txn, const char *name, MDBX_db_flags_t flags, MDBX_cmp_func *cmp, MDBX_cmp_func *dcmp);
+
+typedef struct { int err; MDBX_commit_latency lat; } mdbxgo_commit_result;
+mdbxgo_commit_result     mdbxgo_txn_commit_ex(MDBX_txn *txn);
+
+typedef struct { int err; char *kbase; size_t klen; char *vbase; size_t vlen; } mdbxgo_val_result;
+mdbxgo_val_result        mdbxgo_cursor_get_empty(MDBX_cursor *cur, MDBX_cursor_op op);
+mdbxgo_val_result        mdbxgo_cursor_get_val(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_cursor_op op);
+
+#ifndef _WIN32
+mdbxgo_int_result        mdbxgo_env_get_fd(MDBX_env *env);
+#endif
 
 #endif

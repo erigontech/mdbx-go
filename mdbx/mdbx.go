@@ -127,7 +127,7 @@ details about dealing with such situations.
 package mdbx
 
 /*
-#cgo !windows CFLAGS: -O2 -g -DNDEBUG=1 -std=gnu11 -fvisibility=hidden -ffast-math  -fPIC -pthread -Wno-error=attributes -W -Wall -Wextra -Wpedantic -Wno-deprecated-declarations -Wno-format -Wno-format-security -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-unused-function -Wno-format-extra-args -Wno-missing-field-initializers -Wno-unknown-warning-option -Wno-enum-int-mismatch -Wno-strict-prototypes
+#cgo !windows CFLAGS: -D_GNU_SOURCE -O2 -g -DNDEBUG=1 -std=gnu11 -fvisibility=hidden -ffast-math  -fPIC -pthread -Wno-error=attributes -W -Wall -Wextra -Wpedantic -Wno-deprecated-declarations -Wno-format -Wno-format-security -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-unused-function -Wno-format-extra-args -Wno-missing-field-initializers -Wno-unknown-warning-option -Wno-enum-int-mismatch -Wno-strict-prototypes
 #cgo windows CFLAGS:  -O2 -g -DNDEBUG=1 -std=gnu11 -fvisibility=hidden -ffast-math -fexceptions -fno-common -W -Wno-deprecated-declarations -Wno-bad-function-cast -Wno-cast-function-type -Wall -Wno-format -Wno-format-security -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-unused-function -Wno-format-extra-args -Wno-missing-field-initializers -Wno-unknown-warning-option -Wno-enum-int-mismatch -Wno-strict-prototypes
 
 #cgo windows LDFLAGS: -lntdll
@@ -175,19 +175,12 @@ func Version() string {
 	return C.GoString(C.mdbx_version.git.describe)
 }
 
-func GetSysRamInfo() (pageSize, totalPages, availablePages int, err error) {
-	var cPageSize, cTotalPages, cAvailablePages C.intptr_t
-
-	// Вызываем C-функцию, передавая туда указатели на тип C.intptr_t
-	ret := C.mdbx_get_sysraminfo(&cPageSize, &cTotalPages, &cAvailablePages)
-	if ret != success {
-		return 0, 0, 0, operrno("mdbx_cursor_count", ret)
-	}
-
-	// Преобразуем результаты обратно в Go int
-	pageSize = int(cPageSize)
-	totalPages = int(cTotalPages)
-	availablePages = int(cAvailablePages)
-
-	return
+// BuildOptions returns the build-time configuration options used when
+// compiling libmdbx. This includes settings like MDBX_USE_FALLOCATE,
+// MDBX_DEBUG, and other compile-time flags.
+//
+// Example output: " MDBX_DEBUG=0 ... MDBX_USE_FALLOCATE=1 ..."
+func BuildOptions() string {
+	//nolint:gocritic // C variable access pattern
+	return C.GoString(C.mdbx_build.options)
 }
