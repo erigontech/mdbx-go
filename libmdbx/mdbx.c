@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.1-571-g562d63be at 2026-04-13T19:52:03+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.1-576-gadae1965 at 2026-04-18T23:47:05+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -6744,8 +6744,8 @@ __cold int mdbx_dbi_stat(const MDBX_txn *txn, MDBX_dbi dbi, MDBX_stat *dest, siz
   if (unlikely(bytes != sizeof(MDBX_stat)) && bytes != size_before_modtxnid)
     return LOG_IFERR(MDBX_EINVAL);
 
-  dest->ms_psize = txn->env->ps;
   stat_get(&txn->dbs[dbi], dest, bytes);
+  dest->ms_psize = txn->env->ps;
   return MDBX_SUCCESS;
 }
 
@@ -6794,6 +6794,7 @@ __cold int mdbx_enumerate_tables(const MDBX_txn *txn, MDBX_table_enum_func func,
 
     MDBX_stat stat;
     stat_get(tree, &stat, sizeof(stat));
+    stat.ms_psize = txn->env->ps;
     rc = func(ctx, txn, &name, tree->flags, &stat, dbi);
     if (rc != MDBX_SUCCESS)
       goto bailout;
@@ -9291,7 +9292,7 @@ __cold const char *mdbx_liberr2str(int errnum) {
       nullptr /* MDBX_TLS_FULL (-30789): unused in MDBX */,
       "MDBX_TXN_FULL: Transaction has too many dirty pages,"
       " i.e transaction is too big",
-      "MDBX_CURSOR_FULL: Cursor stack limit reachedn - this usually indicates"
+      "MDBX_CURSOR_FULL: Cursor stack limit reached - this usually indicates"
       " corruption, i.e branch-pages loop",
       "MDBX_PAGE_FULL: Internal error - Page has no more space",
       "MDBX_UNABLE_EXTEND_MAPSIZE: Database engine was unable to extend"
@@ -16461,11 +16462,16 @@ int cursor_check(const MDBX_cursor *mc, int txn_bad_bits) {
     return (txn_bad_bits > MDBX_TXN_FINISHED) ? MDBX_EINVAL : MDBX_SUCCESS;
   }
 
-  /* проверяем что курсор в связанном списке для отслеживания,
-   * исключение допускается только для read-only операций для служебных/временных курсоров на стеке. */
+#if !defined(__SANITIZE_ADDRESS__)
+  /* Проверяем что курсор в связанном списке для отслеживания.
+   * Исключение допускается только для read-only операций для служебных/временных курсоров на стеке.
+   * Но при включении ASAN и LTO компилятор может выносить размещение курсоров со стека очень далеко,
+   * из-за чего эта проверка может ложно срабатывать.
+   * Например, при вызове mdbx_estimate_distance() из mdbx_estimate_range(). */
   MDBX_MAYBE_UNUSED char stack_top[sizeof(void *)];
   ENSURE_OBJ(mc, cursor_is_tracked(mc) || (!(txn_bad_bits & txn_ro_flat) && stack_top < (char *)mc &&
                                            (char *)mc - stack_top < (ptrdiff_t)globals.sys_pagesize * 4));
+#endif /* __SANITIZE_ADDRESS__ */
 
   if (txn_bad_bits) {
     int rc = check_txn(mc->txn, txn_bad_bits & ~MDBX_TXN_HAS_CHILD);
@@ -37284,8 +37290,8 @@ static int page_merge(MDBX_cursor *csrc, MDBX_cursor *cdst) {
   cASSERT0(cdst, cdst->top > 0);
   page_t *const top_page = cdst->pg[cdst->top];
   const indx_t top_indx = cdst->ki[cdst->top];
-  const int save_top = cdst->top;
   const uint16_t save_height = cdst->tree->height;
+  const int save_top = cdst->top;
   cursor_pop(cdst);
   rc = tree_rebalance(cdst);
   if (unlikely(rc != MDBX_SUCCESS))
@@ -37303,9 +37309,10 @@ static int page_merge(MDBX_cursor *csrc, MDBX_cursor *cdst) {
   }
 
   cASSERT0(cdst, page_numkeys(top_page) == dst_nkeys + src_nkeys);
-
+  const int new_top = save_top - save_height + cdst->tree->height;
   if (unlikely(pagetype != page_type(top_page))) {
     /* LY: LEAF-page becomes BRANCH, unable restore cursor's stack */
+    ERROR("unexpected top-page type 0x%x, expect 0x%x", page_type(top_page), pagetype);
     goto bailout;
   }
 
@@ -37316,9 +37323,10 @@ static int page_merge(MDBX_cursor *csrc, MDBX_cursor *cdst) {
     return MDBX_SUCCESS;
   }
 
-  const int new_top = save_top - save_height + cdst->tree->height;
   if (unlikely(new_top < 0 || new_top >= cdst->tree->height)) {
     /* LY: out of range, unable restore cursor's stack */
+    ERROR("cursor top-new %i is out of range %u..%u (top-before %i, height-before %i, height-new %i)", new_top, 0,
+          cdst->tree->height, save_top, save_height, cdst->tree->height);
     goto bailout;
   }
 
@@ -37331,10 +37339,7 @@ static int page_merge(MDBX_cursor *csrc, MDBX_cursor *cdst) {
     return MDBX_SUCCESS;
   }
 
-  page_t *const stub_page = (page_t *)(~(uintptr_t)top_page);
-  const indx_t stub_indx = top_indx;
-  if (save_height > cdst->tree->height && ((cdst->pg[save_top] == top_page && cdst->ki[save_top] == top_indx) ||
-                                           (cdst->pg[save_top] == stub_page && cdst->ki[save_top] == stub_indx))) {
+  if (save_height > cdst->tree->height && cdst->pg[save_top] == top_page && cdst->ki[save_top] == top_indx) {
     /* LY: restore cursor stack */
     cdst->pg[new_top] = top_page;
     cdst->ki[new_top] = top_indx;
@@ -37349,7 +37354,12 @@ static int page_merge(MDBX_cursor *csrc, MDBX_cursor *cdst) {
   }
 
 bailout:
-  /* LY: unable restore cursor's stack */
+  ERROR("unable restore %scursor stack after merge; "
+        " new: height %i top %i top-idx %i top-page %p;"
+        " before: height %i top %i, top-indx %i top-page %p",
+        is_inner(cdst) ? "sub-" : "", cdst->tree->height, new_top, cdst->ki[save_top],
+        __Wpedantic_format_voidptr(cdst->pg[save_top]), save_height, save_top, top_indx,
+        __Wpedantic_format_voidptr(top_page));
   be_poor(cdst);
   return MDBX_CURSOR_FULL;
 }
@@ -38116,8 +38126,13 @@ cursor_to_search_foliage(const MDBX_cursor *mc) {
       return search_foliage_lenfast_dupfix;
 
     if (mc->tree->flags & MDBX_INTEGERKEY) {
-      size_t ordinal = 0, keylen = mc->tree->dupfix_size;
-      cASSERT0(mc, mc->clc->k.lmax == mc->clc->k.lmin && mc->clc->k.lmax == keylen && (keylen == 4 || keylen == 8));
+      const size_t keylen = mc->tree->dupfix_size;
+      cASSERT0(mc, keylen >= mc->clc->k.lmin && keylen <= mc->clc->k.lmax && (keylen == 4 || keylen == 8));
+      if (/* paranoia */ keylen >= mc->clc->k.lmin && keylen <= mc->clc->k.lmax && (keylen == 4 || keylen == 8)) {
+        mc->clc->k.lmin = keylen;
+        mc->clc->k.lmax = keylen;
+      }
+      size_t ordinal = 0;
 #ifndef cmp_uint_align2
       if (comparator == cmp_uint_align2)
         ordinal = keylen;
@@ -38129,7 +38144,7 @@ cursor_to_search_foliage(const MDBX_cursor *mc) {
       if (comparator == cmp_uint_unaligned)
         ordinal = keylen;
       if (ordinal) {
-        if ((mc->txn->env->flags & MDBX_VALIDATION) == 0) {
+        if ((mc->txn->env->flags & MDBX_VALIDATION) == 0 && ordinal == mc->clc->k.lmin && ordinal == mc->clc->k.lmax) {
           if (ordinal == 4)
             return search_foliage_uint32_dupfix;
           if (ordinal == 8)
@@ -38150,8 +38165,16 @@ cursor_to_search_foliage(const MDBX_cursor *mc) {
     return search_foliage_lenfast_usual;
 
   if (mc->tree->flags & MDBX_INTEGERKEY) {
-    size_t ordinal = 0, keylen = mc->clc->k.lmax;
-    cASSERT0(mc, mc->clc->k.lmax == mc->clc->k.lmin && (keylen == 4 || keylen == 8));
+    cASSERT0(mc, mc->top >= 0);
+    page_t *mp = mc->pg[mc->top];
+    cASSERT0(mc, !is_dupfix_leaf(mp) && page_numkeys(mp) > 0);
+    const size_t keylen = node_ks(page_node(mp, 0));
+    cASSERT0(mc, keylen >= mc->clc->k.lmin && keylen <= mc->clc->k.lmax && (keylen == 4 || keylen == 8));
+    if (/* paranoia */ keylen >= mc->clc->k.lmin && keylen <= mc->clc->k.lmax && (keylen == 4 || keylen == 8)) {
+      mc->clc->k.lmin = keylen;
+      mc->clc->k.lmax = keylen;
+    }
+    size_t ordinal = 0;
 #ifndef cmp_uint_align2
     if (comparator == cmp_uint_align2)
       ordinal = keylen;
@@ -38163,7 +38186,7 @@ cursor_to_search_foliage(const MDBX_cursor *mc) {
     if (comparator == cmp_uint_unaligned)
       ordinal = keylen;
     if (ordinal) {
-      if ((mc->txn->env->flags & MDBX_VALIDATION) == 0 && ordinal == mc->clc->k.lmin) {
+      if ((mc->txn->env->flags & MDBX_VALIDATION) == 0 && ordinal == mc->clc->k.lmin && ordinal == mc->clc->k.lmax) {
         if (ordinal == 4)
           return search_foliage_uint32_usual;
         if (ordinal == 8)
@@ -38260,7 +38283,17 @@ cursor_to_search_branch(const MDBX_cursor *mc) {
     return search_branch_lenfast;
 
   if (mc->tree->flags & MDBX_INTEGERKEY) {
-    size_t ordinal = 0, keylen = mc->clc->k.lmax;
+    cASSERT0(mc, mc->top >= 0);
+    page_t *mp = mc->pg[mc->top];
+    cASSERT0(mc, page_numkeys(mp) > 0);
+    STATIC_ASSERT(P_BRANCH == 1);
+    const size_t keylen = is_dupfix_leaf(mp) ? mp->dupfix_ksize : node_ks(page_node(mp, mp->flags & P_BRANCH));
+    cASSERT0(mc, keylen >= mc->clc->k.lmin && keylen <= mc->clc->k.lmax && (keylen == 4 || keylen == 8));
+    if (/* paranoia */ keylen >= mc->clc->k.lmin && keylen <= mc->clc->k.lmax && (keylen == 4 || keylen == 8)) {
+      mc->clc->k.lmin = keylen;
+      mc->clc->k.lmax = keylen;
+    }
+    size_t ordinal = 0;
 #ifndef cmp_uint_align2
     if (comparator == cmp_uint_align2)
       ordinal = keylen;
@@ -38272,7 +38305,7 @@ cursor_to_search_branch(const MDBX_cursor *mc) {
     if (comparator == cmp_uint_unaligned)
       ordinal = keylen;
     if (ordinal) {
-      if ((mc->txn->env->flags & MDBX_VALIDATION) == 0 && ordinal == mc->clc->k.lmin) {
+      if ((mc->txn->env->flags & MDBX_VALIDATION) == 0 && ordinal == mc->clc->k.lmin && ordinal == mc->clc->k.lmax) {
         if (ordinal == 4)
           return search_branch_uint32;
         if (ordinal == 8)
@@ -41101,10 +41134,10 @@ __dll_export
         0,
         14,
         1,
-        571,
+        576,
         "", /* pre-release suffix of SemVer
-                                        0.14.1.571 */
-        {"2026-04-13T19:52:03+03:00", "04c6843494894ba2497b71d5b387bad3bfd5f60e", "562d63be0d49bb1a5c1e50e9b488eaec80a3b4b5", "v0.14.1-571-g562d63be"},
+                                        0.14.1.576 */
+        {"2026-04-18T23:47:05+03:00", "912fd0366d9808683e099ee101d31e49ac24f741", "adae1965975c678bae3ad00a0bcb58eee6e16c11", "v0.14.1-576-gadae1965"},
         sourcery};
 
 __dll_export
