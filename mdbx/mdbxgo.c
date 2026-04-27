@@ -22,13 +22,29 @@ int mdbxgo_msg_func_proxy(const char *msg, void *ctx) {
     return mdbxgoMDBMsgFuncBridge(s, (size_t)ctx);
 }
 
-// int mdbxgo_reader_list(MDBX_env *env, size_t ctx) {
-//     // list readers using a static proxy function that does dynamic dispatch on
-//     // ctx.
-//	if (ctx)
-//		return mdbx_reader_list(env, &mdbxgo_msg_func_proxy, (void *)ctx);
-//	return mdbx_reader_list(env, 0, (void *)ctx);
-// }
+uint64_t mdbxgo_tid_to_u64(mdbx_tid_t tid) {
+    return (uint64_t)(uintptr_t)tid;
+}
+
+uint64_t mdbxgo_tid_txn_parked(void) {
+    return mdbxgo_tid_to_u64((mdbx_tid_t)(uintptr_t)UINT64_MAX);
+}
+
+uint64_t mdbxgo_tid_txn_ousted(void) {
+    return mdbxgo_tid_to_u64((mdbx_tid_t)(uintptr_t)(UINT64_MAX - 1));
+}
+
+int mdbxgo_reader_list_proxy(void *ctx, int num, int slot, mdbx_pid_t pid, mdbx_tid_t thread, uint64_t txnid,
+                             uint64_t lag, size_t bytes_used, size_t bytes_retained) {
+    return mdbxgoMDBReaderListBridge((size_t)ctx, num, slot, pid, mdbxgo_tid_to_u64(thread), txnid, lag, bytes_used,
+                                     bytes_retained);
+}
+
+int mdbxgo_reader_list(MDBX_env *env, size_t ctx) {
+    // List readers using a static proxy function that does dynamic dispatch on
+    // ctx in Go without passing Go pointers through C.
+    return mdbx_reader_list(env, &mdbxgo_reader_list_proxy, (void *)ctx);
+}
 
 int mdbxgo_del(MDBX_txn *txn, MDBX_dbi dbi, char *kdata, size_t kn, char *vdata, size_t vn) {
     MDBX_val key, val;
@@ -186,6 +202,27 @@ mdbxgo_uint_result mdbxgo_dbi_open_ex(MDBX_txn *txn, const char *name, MDBX_db_f
 mdbxgo_commit_result mdbxgo_txn_commit_ex(MDBX_txn *txn) {
     mdbxgo_commit_result r = {0};
     r.err = mdbx_txn_commit_ex(txn, &r.lat);
+    return r;
+}
+
+mdbxgo_gc_info_result mdbxgo_gc_info(MDBX_txn *txn) {
+    mdbxgo_gc_info_result r = {0};
+    MDBX_gc_info_t info = {0};
+    r.err = mdbx_gc_info(txn, &info, sizeof(info), NULL, NULL);
+    if (r.err == MDBX_NOTFOUND) {
+        r.err = MDBX_SUCCESS;
+        return r;
+    }
+    if (r.err == MDBX_SUCCESS) {
+        r.pages_allocated = info.pages_allocated;
+        r.pages_backed = info.pages_backed;
+        r.pages_total = info.pages_total;
+        r.pages_gc = info.pages_gc;
+        r.pages_reclaimable = info.gc_reclaimable.pages;
+        r.pages_retained = (info.pages_gc > info.gc_reclaimable.pages) ? info.pages_gc - info.gc_reclaimable.pages : 0;
+        r.max_reader_lag = info.max_reader_lag;
+        r.max_retained_pages = info.max_retained_pages;
+    }
     return r;
 }
 
