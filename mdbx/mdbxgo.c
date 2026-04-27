@@ -207,10 +207,11 @@ mdbxgo_commit_result mdbxgo_txn_commit_ex(MDBX_txn *txn) {
 
 mdbxgo_gc_info_result mdbxgo_gc_info(MDBX_txn *txn) {
     mdbxgo_gc_info_result r = {0};
-    MDBX_gc_info_t info;
+    MDBX_gc_info_t info = {0};
     r.err = mdbx_gc_info(txn, &info, sizeof(info), NULL, NULL);
     if (r.err == MDBX_NOTFOUND) {
         r.err = MDBX_SUCCESS;
+        return r;
     }
     if (r.err == MDBX_SUCCESS) {
         r.pages_allocated = info.pages_allocated;

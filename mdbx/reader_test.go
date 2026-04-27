@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -57,6 +58,26 @@ func TestEnv_ReaderListCallbackError(t *testing.T) {
 		return want
 	})
 	if !errors.Is(err, want) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestEnv_ReaderListCallbackPanic(t *testing.T) {
+	env, _ := setupReaderInfoEnv(t)
+
+	txn, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin reader: %v", err)
+	}
+	defer txn.Abort()
+
+	err = env.ReaderList(func(ReaderInfo) error {
+		panic("stop reader list")
+	})
+	if err == nil {
+		t.Fatalf("expected panic to be converted to error")
+	}
+	if !strings.Contains(err.Error(), "stop reader list") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

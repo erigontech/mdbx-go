@@ -5,6 +5,7 @@ package mdbx
 */
 import "C"
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 )
@@ -33,8 +34,15 @@ func mdbxgoMDBMsgFuncBridge(cmsg C.mdbxgo_ConstCString, _ctx C.size_t) C.int {
 // iteration.
 //
 //export mdbxgoMDBReaderListBridge
-func mdbxgoMDBReaderListBridge(_ctx C.size_t, num C.int, slot C.int, pid C.mdbx_pid_t, thread C.uint64_t, txnid C.uint64_t, lag C.uint64_t, bytesUsed C.size_t, bytesRetained C.size_t) C.int {
+func mdbxgoMDBReaderListBridge(_ctx C.size_t, num C.int, slot C.int, pid C.mdbx_pid_t, thread C.uint64_t, txnid C.uint64_t, lag C.uint64_t, bytesUsed C.size_t, bytesRetained C.size_t) (rc C.int) {
 	ctx := readerctx(_ctx).get()
+	defer func() {
+		if r := recover(); r != nil {
+			ctx.err = fmt.Errorf("mdbx: panic in ReaderList callback: %v", r)
+			rc = C.MDBX_RESULT_TRUE
+		}
+	}()
+
 	info := ReaderInfo{
 		Num:           int(num),
 		Slot:          int(slot),
