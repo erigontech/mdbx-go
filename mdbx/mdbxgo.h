@@ -30,11 +30,14 @@ int mdbxgo_cursor_putmulti(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata
  * */
 typedef struct { const char *p; } mdbxgo_ConstCString;
 
-/* mdbxgo_reader_list is a proxy for mdb_reader_list that uses a special
- * mdb_msg_func proxy function to relay messages over the
- * mdbxgo_reader_list_bridge external Go func.
+/* mdbxgo_reader_list is a proxy for mdbx_reader_list that uses a special
+ * callback proxy function to relay structured reader records over the
+ * mdbxgoMDBReaderListBridge external Go func.
  * */
 int mdbxgo_reader_list(MDBX_env *env, size_t ctx);
+uint64_t mdbxgo_tid_to_u64(mdbx_tid_t tid);
+uint64_t mdbxgo_tid_txn_parked(void);
+uint64_t mdbxgo_tid_txn_ousted(void);
 
 int mdbxgo_cmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn);
 int mdbxgo_dcmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata, size_t bn);
@@ -66,6 +69,19 @@ mdbxgo_commit_result     mdbxgo_txn_commit_ex(MDBX_txn *txn);
 typedef struct { int err; char *kbase; size_t klen; char *vbase; size_t vlen; } mdbxgo_val_result;
 mdbxgo_val_result        mdbxgo_cursor_get_empty(MDBX_cursor *cur, MDBX_cursor_op op);
 mdbxgo_val_result        mdbxgo_cursor_get_val(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_cursor_op op);
+
+typedef struct {
+    int err;
+    uint64_t pages_allocated;
+    uint64_t pages_backed;
+    uint64_t pages_total;
+    uint64_t pages_gc;
+    uint64_t pages_reclaimable;
+    uint64_t pages_retained;
+    uint64_t max_reader_lag;
+    uint64_t max_retained_pages;
+} mdbxgo_gc_info_result;
+mdbxgo_gc_info_result    mdbxgo_gc_info(MDBX_txn *txn);
 
 #ifndef _WIN32
 mdbxgo_int_result        mdbxgo_env_get_fd(MDBX_env *env);

@@ -26,6 +26,35 @@ func mdbxgoMDBMsgFuncBridge(cmsg C.mdbxgo_ConstCString, _ctx C.size_t) C.int {
 	return 0
 }
 
+// mdbxgoMDBReaderListBridge provides a static C function for handling
+// MDBX_reader_list_func callbacks.  It performs type conversion and dynamic
+// dispatch to a callback provided to Env.ReaderList.  Any error returned by the
+// callback is cached and MDBX_RESULT_TRUE is returned to terminate the
+// iteration.
+//
+//export mdbxgoMDBReaderListBridge
+func mdbxgoMDBReaderListBridge(_ctx C.size_t, num C.int, slot C.int, pid C.mdbx_pid_t, thread C.uint64_t, txnid C.uint64_t, lag C.uint64_t, bytesUsed C.size_t, bytesRetained C.size_t) C.int {
+	ctx := readerctx(_ctx).get()
+	info := ReaderInfo{
+		Num:           int(num),
+		Slot:          int(slot),
+		PID:           int(pid),
+		TID:           uint64(thread),
+		TxID:          uint64(txnid),
+		Lag:           uint64(lag),
+		BytesUsed:     uint64(bytesUsed),
+		BytesRetained: uint64(bytesRetained),
+	}
+	info.Parked = info.TID == readerTIDTxnParked
+	info.Ousted = info.TID == readerTIDTxnOusted
+	err := ctx.fn(info)
+	if err != nil {
+		ctx.err = err
+		return C.MDBX_RESULT_TRUE
+	}
+	return C.MDBX_RESULT_FALSE
+}
+
 type msgfunc func(string) error
 
 // msgctx is the type used for context pointers passed to mdb_reader_list.  A
@@ -79,5 +108,49 @@ func (ctx msgctx) get() *_msgctx {
 	msgctxmlock.RLock()
 	_ctx := msgctxm[ctx]
 	msgctxmlock.RUnlock()
+	return _ctx
+}
+
+type readerfunc func(ReaderInfo) error
+
+// readerctx is the type used for context pointers passed to mdbx_reader_list.
+// It keeps Go pointers out of C memory by storing callback state in a Go map
+// and passing only an integer handle through libmdbx.
+type readerctx uintptr
+type _readerctx struct {
+	fn  readerfunc
+	err error
+}
+
+var readerctxn uint32
+var readerctxm = map[readerctx]*_readerctx{}
+var readerctxmlock sync.RWMutex
+
+func newReaderFunc(fn readerfunc) (ctx readerctx, done func()) {
+	ctx = readerctx(atomic.AddUint32(&readerctxn, 1))
+	ctx.register(fn)
+	return ctx, ctx.deregister
+}
+
+func (ctx readerctx) register(fn readerfunc) {
+	readerctxmlock.Lock()
+	if _, ok := readerctxm[ctx]; ok {
+		readerctxmlock.Unlock()
+		panic("readerfunc conflict")
+	}
+	readerctxm[ctx] = &_readerctx{fn: fn}
+	readerctxmlock.Unlock()
+}
+
+func (ctx readerctx) deregister() {
+	readerctxmlock.Lock()
+	delete(readerctxm, ctx)
+	readerctxmlock.Unlock()
+}
+
+func (ctx readerctx) get() *_readerctx {
+	readerctxmlock.RLock()
+	_ctx := readerctxm[ctx]
+	readerctxmlock.RUnlock()
 	return _ctx
 }
