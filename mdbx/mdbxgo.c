@@ -27,11 +27,11 @@ uint64_t mdbxgo_tid_to_u64(mdbx_tid_t tid) {
 }
 
 uint64_t mdbxgo_tid_txn_parked(void) {
-    return (uint64_t)(uintptr_t)UINT64_MAX;
+    return mdbxgo_tid_to_u64((mdbx_tid_t)(uintptr_t)UINT64_MAX);
 }
 
 uint64_t mdbxgo_tid_txn_ousted(void) {
-    return (uint64_t)(uintptr_t)(UINT64_MAX - 1);
+    return mdbxgo_tid_to_u64((mdbx_tid_t)(uintptr_t)(UINT64_MAX - 1));
 }
 
 int mdbxgo_reader_list_proxy(void *ctx, int num, int slot, mdbx_pid_t pid, mdbx_tid_t thread, uint64_t txnid,
