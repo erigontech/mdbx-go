@@ -1,8 +1,8 @@
 /// \copyright SPDX-License-Identifier: Apache-2.0
-/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
+/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2026
 /* clang-format off */
 
-#define MDBX_BUILD_SOURCERY 8916c04a1d0598afd3f4e15336ada8cc6684b27d706e5f1ddb4a870da3d86f91_v0_13_10_0_gcc5debac
+#define MDBX_BUILD_SOURCERY a575a490fc080ca11e89ff6db9f0bd38aa830959905998cac0e45274b9e6bb0e_v0_13_12_0_gf619d43d
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -1198,6 +1198,8 @@ typedef struct osal_mmap {
 
 #define MDBX_HAVE_PWRITEV 0
 
+MDBX_INTERNAL int osal_waitstatus2errcode(DWORD result);
+
 #elif defined(__ANDROID_API__)
 
 #if __ANDROID_API__ < 24
@@ -1481,7 +1483,7 @@ MDBX_INTERNAL int osal_lockfile(mdbx_filehandle_t fd, bool wait);
 #define MMAP_OPTION_SEMAPHORE 2
 MDBX_INTERNAL int osal_mmap(const int flags, osal_mmap_t *map, size_t size, const size_t limit, const unsigned options,
                             const pathchar_t *pathname4logging);
-MDBX_INTERNAL int osal_munmap(osal_mmap_t *map);
+MDBX_INTERNAL void osal_munmap(osal_mmap_t *map);
 #define MDBX_MRESIZE_MAY_MOVE 0x00000100
 #define MDBX_MRESIZE_MAY_UNMAP 0x00000200
 MDBX_INTERNAL int osal_mresize(const int flags, osal_mmap_t *map, size_t size, size_t limit);
@@ -3237,7 +3239,7 @@ MDBX_NOTHROW_CONST_FUNCTION MDBX_MAYBE_UNUSED static inline pgno_t pgno_sub(size
   return int64pgno((int64_t)base - (int64_t)subtrahend);
 }
 /// \copyright SPDX-License-Identifier: Apache-2.0
-/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2020-2025
+/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2020-2026
 ///
 /// \brief Non-inline part of the libmdbx C++ API
 ///
@@ -3666,15 +3668,16 @@ __cold void error::throw_exception() const {
 
 bool slice::is_printable(bool disable_utf8) const noexcept {
   enum : byte {
-    LS = 4,                     // shift for UTF8 sequence length
-    P_ = 1 << LS,               // printable ASCII flag
-    N_ = 0,                     // non-printable ASCII
-    second_range_mask = P_ - 1, // mask for range flag
-    r80_BF = 0,                 // flag for UTF8 2nd byte range
-    rA0_BF = 1,                 // flag for UTF8 2nd byte range
-    r80_9F = 2,                 // flag for UTF8 2nd byte range
-    r90_BF = 3,                 // flag for UTF8 2nd byte range
-    r80_8F = 4,                 // flag for UTF8 2nd byte range
+    LS = 4,                // shift for UTF8 sequence length
+    P_ = 1 << LS,          // printable ASCII flag
+    X_ = 1 << (LS - 1),    // printable extended ASCII flag
+    N_ = 0,                // non-printable ASCII
+    r80_BF = 0,            // flag for UTF8 2nd byte range
+    rA0_BF = 1,            // flag for UTF8 2nd byte range
+    r80_9F = 2,            // flag for UTF8 2nd byte range
+    r90_BF = 3,            // flag for UTF8 2nd byte range
+    r80_8F = 4,            // flag for UTF8 2nd byte range
+    second_range_mask = 7, // mask for range flag
 
     // valid utf-8 byte sequences
     // http://www.unicode.org/versions/Unicode6.0.0/ch03.pdf - page 94
@@ -3704,14 +3707,14 @@ bool slice::is_printable(bool disable_utf8) const noexcept {
       P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, // 50
       P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, // 60
       P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, N_, // 70
-      N_, N_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, N_, P_, N_, // 80
-      N_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, N_, P_, P_, // 90
-      P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, // a0
-      P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, // b0
-      P_, P_, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, // c0
+      N_, N_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, N_, X_, N_, // 80
+      N_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, N_, X_, X_, // 90
+      X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, // a0
+      X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, // b0
+      X_, X_, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, // c0
       C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, C2, // df
       E0, E1, E1, E1, E1, E1, E1, E1, E1, E1, E1, E1, E1, ED, EE, EE, // e0
-      F0, F1, F1, F1, F4, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_  // f0
+      F0, F1, F1, F1, F4, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_, X_  // f0
   };
 
   if (MDBX_UNLIKELY(length() < 1))
@@ -3721,7 +3724,7 @@ bool slice::is_printable(bool disable_utf8) const noexcept {
   const auto end = src + length();
   if (MDBX_UNLIKELY(disable_utf8)) {
     do
-      if (MDBX_UNLIKELY((P_ & map[*src]) == 0))
+      if (MDBX_UNLIKELY(((P_ | X_) & map[*src]) == 0))
         MDBX_CXX20_UNLIKELY return false;
     while (++src < end);
     return true;
@@ -4412,11 +4415,11 @@ bool from_base64::is_erroneous() const noexcept {
 #pragma warning(disable : 4251)
 #endif /* MSVC */
 
-MDBX_INSTALL_API_TEMPLATE(LIBMDBX_API_TYPE, buffer<legacy_allocator>);
+MDBX_INSTALL_API_TEMPLATE(LIBMDBX_API_TYPE, buffer<legacy_allocator, default_capacity_policy>);
 
-#if defined(__cpp_lib_memory_resource) && __cpp_lib_memory_resource >= 201603L && _GLIBCXX_USE_CXX11_ABI
-MDBX_INSTALL_API_TEMPLATE(LIBMDBX_API_TYPE, buffer<polymorphic_allocator>);
-#endif /* __cpp_lib_memory_resource >= 201603L */
+#if MDBX_CXX_HAS_POLYMORPHIC_ALLOCATOR
+MDBX_INSTALL_API_TEMPLATE(LIBMDBX_API_TYPE, buffer<polymorphic_allocator, default_capacity_policy>);
+#endif /* MDBX_CXX_HAS_POLYMORPHIC_ALLOCATOR */
 
 #if defined(_MSC_VER)
 #pragma warning(pop)
@@ -4850,13 +4853,13 @@ __cold ::std::ostream &operator<<(::std::ostream &out, const slice &it) {
   else if (it.empty())
     out << "EMPTY->" << it.data();
   else {
-    const slice root(it.head(std::min(it.length(), size_t(64))));
+    const slice head(it.head(std::min(it.length(), size_t(64))));
     out << it.length() << ".";
-    if (root.is_printable())
-      (out << "\"").write(root.char_ptr(), root.length()) << "\"";
+    if (head.is_printable())
+      (out << "\"").write(head.char_ptr(), head.length()) << "\"";
     else
-      out << root.encode_base58();
-    if (root.length() < it.length())
+      out << to_hex(head);
+    if (head.length() < it.length())
       out << "...";
   }
   return out << "}";

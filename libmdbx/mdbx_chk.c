@@ -1,5 +1,5 @@
 /// \copyright SPDX-License-Identifier: Apache-2.0
-/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
+/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2026
 ///
 
 ///
@@ -16,9 +16,9 @@
 
 #define xMDBX_TOOLS /* Avoid using internal eASSERT() */
 /// \copyright SPDX-License-Identifier: Apache-2.0
-/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
+/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2026
 
-#define MDBX_BUILD_SOURCERY 8916c04a1d0598afd3f4e15336ada8cc6684b27d706e5f1ddb4a870da3d86f91_v0_13_10_0_gcc5debac
+#define MDBX_BUILD_SOURCERY a575a490fc080ca11e89ff6db9f0bd38aa830959905998cac0e45274b9e6bb0e_v0_13_12_0_gf619d43d
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -1214,6 +1214,8 @@ typedef struct osal_mmap {
 
 #define MDBX_HAVE_PWRITEV 0
 
+MDBX_INTERNAL int osal_waitstatus2errcode(DWORD result);
+
 #elif defined(__ANDROID_API__)
 
 #if __ANDROID_API__ < 24
@@ -1497,7 +1499,7 @@ MDBX_INTERNAL int osal_lockfile(mdbx_filehandle_t fd, bool wait);
 #define MMAP_OPTION_SEMAPHORE 2
 MDBX_INTERNAL int osal_mmap(const int flags, osal_mmap_t *map, size_t size, const size_t limit, const unsigned options,
                             const pathchar_t *pathname4logging);
-MDBX_INTERNAL int osal_munmap(osal_mmap_t *map);
+MDBX_INTERNAL void osal_munmap(osal_mmap_t *map);
 #define MDBX_MRESIZE_MAY_MOVE 0x00000100
 #define MDBX_MRESIZE_MAY_UNMAP 0x00000200
 MDBX_INTERNAL int osal_mresize(const int flags, osal_mmap_t *map, size_t size, size_t limit);

@@ -1,28 +1,44 @@
-﻿/// \copyright SPDX-License-Identifier: Apache-2.0
-/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2020-2025
-///
-/// Donations are welcome to ETH `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`.
-/// Всё будет хорошо!
-///
-/// \file mdbx.h++
+﻿/// \file mdbx.h++
 /// \brief The libmdbx C++ API header file.
 ///
-/// Tested with:
-///  - Elbrus LCC >= 1.23 (http://www.mcst.ru/lcc);
-///  - GNU C++ >= 4.8;
-///  - clang >= 3.9;
-///  - MSVC >= 14.0 (Visual Studio 2015),
-///    but 19.2x could hang due optimizer bug;
-///  - AppleClang, but without C++20 concepts.
+/// \details _libmdbx_ (aka MDBX) is an extremely fast, compact, powerful, embeddable,
+/// transactional [key-value
+/// store](https://en.wikipedia.org/wiki/Key-value_database), with [Apache 2.0
+/// license](./LICENSE). _MDBX_ has a specific set of properties and capabilities,
+/// focused on creating unique lightweight solutions with extraordinary performance.
 ///
-
+/// Please visit https://libmdbx.dqdkfa.ru for more information, documentation,
+/// C++ API description and links to the origin git repo with the source code.
+/// Questions, feedback and suggestions are welcome to the Telegram' group
+/// https://t.me/libmdbx.
+///
+/// Donations are welcome to ETH `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`,
+/// BTC `bc1qzvl9uegf2ea6cwlytnanrscyv8snwsvrc0xfsu`, SOL `FTCTgbHajoLVZGr8aEFWMzx3NDMyS5wXJgfeMTmJznRi`.
+/// Всё будет хорошо!
 ///
 /// The libmdbx project has been completely relocated to the jurisdiction of the Russian Federation.
-/// Please refer to https://libmdbx.dqdkfa.ru for documentation
-/// and https://sourcecraft.dev/dqdkfa/libmdbx for the source code (it is still open and provided with first-class free support).
+/// \note _libmdbx_ is still open and provided with first-class free support.
+///
+/// \copyright SPDX-License-Identifier: Apache-2.0
+/// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2020-2026
 ///
 
 #pragma once
+
+//
+// Tested with, since 2026:
+//  - Elbrus LCC >= 1.28 (http://www.mcst.ru/lcc);
+//  - GNU C++ >= 11.3;
+//  - CLANG >= 14.0;
+//  - MSVC >= 19.44 (Visual Studio 2022 toolchain v143),
+// before 2026:
+//  - Elbrus LCC >= 1.23 (http://www.mcst.ru/lcc);
+//  - GNU C++ >= 4.8;
+//  - CLANG >= 3.9;
+//  - MSVC >= 14.0 (Visual Studio 2015),
+//    but 19.2x could hang due optimizer bug;
+//  - AppleClang, but without C++20 concepts.
+//
 
 /* Workaround for modern libstdc++ with CLANG < 4.x */
 #if defined(__SIZEOF_INT128__) && !defined(__GLIBCXX_TYPE_INT_N_0) && defined(__clang__) && __clang_major__ < 4
@@ -106,13 +122,11 @@
 #endif
 
 #if !defined(_MSC_VER) || defined(__clang__)
-/* adequate compilers */
-#define MDBX_EXTERN_API_TEMPLATE(API_ATTRIBUTES, API_TYPENAME) extern template class API_ATTRIBUTES API_TYPENAME
-#define MDBX_INSTALL_API_TEMPLATE(API_ATTRIBUTES, API_TYPENAME) template class API_TYPENAME
+#define MDBX_EXTERN_API_TEMPLATE(API_ATTRIBUTES, ...) extern template class API_ATTRIBUTES __VA_ARGS__
+#define MDBX_INSTALL_API_TEMPLATE(API_ATTRIBUTES, ...) template class __VA_ARGS__
 #else
-/* stupid microsoft showing off */
-#define MDBX_EXTERN_API_TEMPLATE(API_ATTRIBUTES, API_TYPENAME) extern template class API_TYPENAME
-#define MDBX_INSTALL_API_TEMPLATE(API_ATTRIBUTES, API_TYPENAME) template class API_ATTRIBUTES API_TYPENAME
+#define MDBX_EXTERN_API_TEMPLATE(API_ATTRIBUTES, ...) extern template class __VA_ARGS__
+#define MDBX_INSTALL_API_TEMPLATE(API_ATTRIBUTES, ...) template class API_ATTRIBUTES __VA_ARGS__
 #endif
 
 #if __cplusplus >= 201103L
@@ -305,18 +319,27 @@ namespace mdbx {
 /// \defgroup cxx_api C++ API
 /// @{
 
-// Functions whose signature depends on the `mdbx::byte` type
-// must be strictly defined as inline!
+/// \brief The byte-like type that don't presumes aliases for pointers as does the `char`.
+/// \details Essentially, to enable all kinds of an compiler optimization, we need just
+/// the `unsigned char * restrict` type in C99 terms, i.e. the non-aliasing pointer to `unsigned char`.
+/// However, C++ still doesn't have `restrict` keyword not `non-aliases` type attribute, but a char-pointers may be
+/// aliased.
+///
+/// On the other hand, while `uint8_t` is provided and `CHAR_BIT = 8` the `char8_t *` actually act the same as the C99
+/// `unsigned char * restrict`. So using `char8_t` should not be an issue, since both the `CHAR_BIT = 8` and `uint8_t
+/// `are required.
+///
+/// At the same time, the approach of using `char8_t` has several advantages:
+///  - the `restrict` attribute is defined on level of the base type and is inherited by any derived pointer type;
+///  - some compilers treat `__restrict` as an attribute of an instance of a type (i.e. a variable, a specific
+///    pointer), but not a type attribute.
+///
+/// Nonetheless, I should think about switching to the `uint8_t * __restrict__` for byte pointers.
+/// \note Functions whose signature depends on the `mdbx::byte` type must be strictly defined as inline!
 #if defined(DOXYGEN) || (defined(__cpp_char8_t) && __cpp_char8_t >= 201811)
-// To enable all kinds of an compiler optimizations we use a byte-like type
-// that don't presumes aliases for pointers as does the `char` type and its
-// derivatives/typedefs.
-// Please see https://libmdbx.dqdkfa.ru/dead-github/issues/263
-// for reasoning of the use of `char8_t` type and switching to `__restrict__`.
 using byte = char8_t;
 #else
-// Avoid `std::byte` since it doesn't add features but inconvenient
-// restrictions.
+// Avoid `std::byte` since it doesn't add features but inconvenient restrictions.
 using byte = unsigned char;
 #endif /* __cpp_char8_t >= 201811*/
 
@@ -349,14 +372,22 @@ static MDBX_CXX20_CONSTEXPR int memcmp(const void *a, const void *b, size_t byte
 /// but it is recommended to use \ref polymorphic_allocator.
 using legacy_allocator = ::std::string::allocator_type;
 
-#if defined(DOXYGEN) ||                                                                                                \
-    (defined(__cpp_lib_memory_resource) && __cpp_lib_memory_resource >= 201603L && _GLIBCXX_USE_CXX11_ABI)
+#ifndef MDBX_CXX_POLYMORPHIC_ALLOCATOR
+#if defined(DOXYGEN) || (defined(__cpp_lib_memory_resource) && __cpp_lib_memory_resource >= 201603L &&                 \
+                         (!defined(_GLIBCXX_USE_CXX11_ABI) || _GLIBCXX_USE_CXX11_ABI))
+#define MDBX_CXX_HAS_POLYMORPHIC_ALLOCATOR 1
+#else
+#define MDBX_CXX_HAS_POLYMORPHIC_ALLOCATOR 0
+#endif
+#endif /* MDBX_CXX_HAS_POLYMORPHIC_ALLOCATOR */
+
+#if MDBX_CXX_HAS_POLYMORPHIC_ALLOCATOR
 /// \brief Default polymorphic allocator for modern code.
 using polymorphic_allocator = ::std::pmr::string::allocator_type;
 using default_allocator = polymorphic_allocator;
 #else
 using default_allocator = legacy_allocator;
-#endif /* __cpp_lib_memory_resource >= 201603L */
+#endif /* MDBX_CXX_HAS_POLYMORPHIC_ALLOCATOR */
 
 struct slice;
 struct default_capacity_policy;
@@ -1210,7 +1241,7 @@ struct LIBMDBX_API to_hex {
   /// \brief Returns a buffer with a hexadecimal dump of a passed slice.
   template <class ALLOCATOR = default_allocator, typename CAPACITY_POLICY = default_capacity_policy>
   buffer<ALLOCATOR, CAPACITY_POLICY> as_buffer(const ALLOCATOR &allocator = ALLOCATOR()) const {
-    return make_buffer<ALLOCATOR>(*this, allocator);
+    return make_buffer<ALLOCATOR, CAPACITY_POLICY>(*this, allocator);
   }
 
   /// \brief Returns the buffer size in bytes needed for hexadecimal
@@ -1258,7 +1289,7 @@ struct LIBMDBX_API to_base58 {
   /// [Base58](https://en.wikipedia.org/wiki/Base58) dump of a passed slice.
   template <class ALLOCATOR = default_allocator, typename CAPACITY_POLICY = default_capacity_policy>
   buffer<ALLOCATOR, CAPACITY_POLICY> as_buffer(const ALLOCATOR &allocator = ALLOCATOR()) const {
-    return make_buffer<ALLOCATOR>(*this, allocator);
+    return make_buffer<ALLOCATOR, CAPACITY_POLICY>(*this, allocator);
   }
 
   /// \brief Returns the buffer size in bytes needed for
@@ -1304,7 +1335,7 @@ struct LIBMDBX_API to_base64 {
   /// [Base64](https://en.wikipedia.org/wiki/Base64) dump of a passed slice.
   template <class ALLOCATOR = default_allocator, typename CAPACITY_POLICY = default_capacity_policy>
   buffer<ALLOCATOR, CAPACITY_POLICY> as_buffer(const ALLOCATOR &allocator = ALLOCATOR()) const {
-    return make_buffer<ALLOCATOR>(*this, allocator);
+    return make_buffer<ALLOCATOR, CAPACITY_POLICY>(*this, allocator);
   }
 
   /// \brief Returns the buffer size in bytes needed for
@@ -1355,7 +1386,7 @@ struct LIBMDBX_API from_hex {
   /// \brief Decodes hexadecimal dump from a passed slice to returned buffer.
   template <class ALLOCATOR = default_allocator, typename CAPACITY_POLICY = default_capacity_policy>
   buffer<ALLOCATOR, CAPACITY_POLICY> as_buffer(const ALLOCATOR &allocator = ALLOCATOR()) const {
-    return make_buffer<ALLOCATOR>(*this, allocator);
+    return make_buffer<ALLOCATOR, CAPACITY_POLICY>(*this, allocator);
   }
 
   /// \brief Returns the number of bytes needed for conversion
@@ -1395,7 +1426,7 @@ struct LIBMDBX_API from_base58 {
   /// passed slice to returned buffer.
   template <class ALLOCATOR = default_allocator, typename CAPACITY_POLICY = default_capacity_policy>
   buffer<ALLOCATOR, CAPACITY_POLICY> as_buffer(const ALLOCATOR &allocator = ALLOCATOR()) const {
-    return make_buffer<ALLOCATOR>(*this, allocator);
+    return make_buffer<ALLOCATOR, CAPACITY_POLICY>(*this, allocator);
   }
 
   /// \brief Returns the number of bytes needed for conversion
@@ -1438,7 +1469,7 @@ struct LIBMDBX_API from_base64 {
   /// passed slice to returned buffer.
   template <class ALLOCATOR = default_allocator, typename CAPACITY_POLICY = default_capacity_policy>
   buffer<ALLOCATOR, CAPACITY_POLICY> as_buffer(const ALLOCATOR &allocator = ALLOCATOR()) const {
-    return make_buffer<ALLOCATOR>(*this, allocator);
+    return make_buffer<ALLOCATOR, CAPACITY_POLICY>(*this, allocator);
   }
 
   /// \brief Returns the number of bytes needed for conversion
@@ -1527,11 +1558,16 @@ private:
 #endif /* __cpp_lib_to_address */
     }
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4324) /* structure was padded due to alignment specifier */
+#endif                          /* _MSC_VER */
+
     union alignas(max_align_t) bin {
       struct stub_allocated_holder /* используется только для вычисления (минимального необходимого) размера,
                                       с учетом выравнивания */
       {
-        allocator_pointer ptr_;
+        allocator_pointer stub_ptr_;
         size_t stub_capacity_bytes_;
       };
 
@@ -1630,6 +1666,10 @@ private:
       }
       constexpr size_t capacity() const noexcept { return is_inplace() ? inplace_capacity() : capacity_.bytes_; }
     } bin_;
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif /* _MSC_VER */
 
     constexpr bool is_inplace(const void *ptr) const noexcept { return bin_.is_inplace(ptr); }
 
@@ -2796,11 +2836,13 @@ inline string<ALLOCATOR> make_string(const PRODUCER &producer, const ALLOCATOR &
   return result;
 }
 
-MDBX_EXTERN_API_TEMPLATE(LIBMDBX_API_TYPE, buffer<legacy_allocator>);
+#if !(defined(__MINGW__) || defined(__MINGW32__) || defined(__MINGW64__)) || defined(LIBMDBX_EXPORTS)
+MDBX_EXTERN_API_TEMPLATE(LIBMDBX_API_TYPE, buffer<legacy_allocator, default_capacity_policy>);
 
-#if defined(__cpp_lib_memory_resource) && __cpp_lib_memory_resource >= 201603L && _GLIBCXX_USE_CXX11_ABI
-MDBX_EXTERN_API_TEMPLATE(LIBMDBX_API_TYPE, buffer<polymorphic_allocator>);
-#endif /* __cpp_lib_memory_resource >= 201603L */
+#if MDBX_CXX_HAS_POLYMORPHIC_ALLOCATOR
+MDBX_EXTERN_API_TEMPLATE(LIBMDBX_API_TYPE, buffer<polymorphic_allocator, default_capacity_policy>);
+#endif /* MDBX_CXX_HAS_POLYMORPHIC_ALLOCATOR */
+#endif /* !MinGW || MDBX_EXPORTS */
 
 /// \brief Combines data slice with boolean flag to represent result of certain operations.
 struct value_result {
