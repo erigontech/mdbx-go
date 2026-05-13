@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.1-549-g80cecf04 at 2026-04-09T23:32:20+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.1-614-ga9e2717d at 2026-05-11T12:08:45+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -24,6 +24,8 @@
 
 #define xMDBX_TOOLS /* Avoid using internal ASSERT(), etc */
 #include "mdbx-internals.h"
+
+enum { MDBX_STAT_MAXDBS = 2 };
 
 #if defined(_WIN32) || defined(_WIN64)
 
@@ -170,8 +172,8 @@ int main(int argc, char *argv[]) {
   prog = argv[0];
   char *envname;
   char *table = nullptr;
-  bool alltbl = false, en = false, op = false;
-  int gc = 0, rd = 0;
+  bool alltbl = false, show_env_info = false, show_page_ops = false;
+  short show_gc = 0, show_readers = 0;
 
   if (argc < 2)
     usage(prog);
@@ -202,7 +204,7 @@ int main(int argc, char *argv[]) {
       quiet = true;
       break;
     case 'p':
-      op = true;
+      show_page_ops = true;
       break;
     case 'a':
       if (table)
@@ -210,15 +212,15 @@ int main(int argc, char *argv[]) {
       alltbl = true;
       break;
     case 'e':
-      en = true;
+      show_env_info = true;
       break;
     case 'f':
-      gc += 1;
+      show_gc += 1;
       break;
     case 'n':
       break;
     case 'r':
-      rd += 1;
+      show_readers += 1;
       break;
     case 's':
       if (alltbl)
@@ -261,7 +263,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (alltbl || table) {
-    rc = mdbx_env_set_maxdbs(env, 2);
+    rc = mdbx_env_set_maxdbs(env, MDBX_STAT_MAXDBS);
     if (unlikely(rc != MDBX_SUCCESS)) {
       error("mdbx_env_set_maxdbs", rc);
       goto env_close;
@@ -280,7 +282,7 @@ int main(int argc, char *argv[]) {
     goto txn_abort;
   }
 
-  if (en || gc || op) {
+  if (show_env_info || show_gc || show_page_ops) {
     rc = mdbx_env_info_ex(env, txn, &mei, sizeof(mei));
     if (unlikely(rc != MDBX_SUCCESS)) {
       error("mdbx_env_info_ex", rc);
@@ -291,7 +293,7 @@ int main(int argc, char *argv[]) {
     memset(&mei, 0, sizeof(mei));
   }
 
-  if (op) {
+  if (show_page_ops) {
     printf("Page Operations (for current session):\n");
     printf("      New: %8" PRIu64 "\t// quantity of a new pages added\n", mei.mi_pgop_stat.newly);
     printf("      CoW: %8" PRIu64 "\t// quantity of pages copied for altering\n", mei.mi_pgop_stat.cow);
@@ -317,7 +319,7 @@ int main(int argc, char *argv[]) {
            mei.mi_pgop_stat.fsync);
   }
 
-  if (en) {
+  if (show_env_info) {
     printf("Environment Info\n");
     printf("  Pagesize: %u\n", mei.mi_dxb_pagesize);
     if (mei.mi_geo.lower != mei.mi_geo.upper) {
@@ -349,7 +351,7 @@ int main(int argc, char *argv[]) {
     printf("  Number of reader slots uses: %u\n", mei.mi_numreaders);
   }
 
-  if (rd) {
+  if (show_readers) {
     rc = mdbx_reader_list(env, reader_list_func, nullptr);
     if (MDBX_IS_ERROR(rc)) {
       error("mdbx_reader_list", rc);
@@ -357,7 +359,7 @@ int main(int argc, char *argv[]) {
     }
     if (rc == MDBX_RESULT_TRUE)
       printf("Reader Table is absent\n");
-    else if (rc == MDBX_SUCCESS && rd > 1) {
+    else if (rc == MDBX_SUCCESS && show_readers > 1) {
       int dead;
       rc = mdbx_reader_check(env, &dead);
       if (MDBX_IS_ERROR(rc)) {
@@ -372,13 +374,13 @@ int main(int argc, char *argv[]) {
       } else
         printf("  No stale readers.\n");
     }
-    if (!(table || alltbl || gc))
+    if (!(table || alltbl || show_gc))
       goto txn_abort;
   }
 
-  if (gc) {
+  if (show_gc) {
     printf("Page Usage & Garbage Collection%s\n",
-           (gc > 1) ? " (please use `mdbx_chk` tool for detailed GC information instead)" : "");
+           (show_gc > 1) ? " (please use `mdbx_chk` tool for detailed GC information instead)" : "");
     MDBX_gc_info_t info;
     rc = mdbx_gc_info(txn, &info, sizeof(info), gc_list_func, nullptr);
 
@@ -405,7 +407,7 @@ int main(int argc, char *argv[]) {
     print_pages_percentage("Used", used_pages, info.pages_backed, info.pages_total);
     print_pages_percentage("GC|whole", info.pages_gc, info.pages_backed, info.pages_total);
     print_pages_percentage("GC|reclaimable", info.gc_reclaimable.pages, info.pages_backed, info.pages_total);
-    if (gc > 1) {
+    if (show_gc > 1) {
       printf("  %s: ", "GC|reclaimable span-length distribution");
       const char *suffix = "empty";
       if (info.gc_reclaimable.span_histogram.amount) {

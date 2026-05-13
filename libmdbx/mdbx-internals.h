@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.1-549-g80cecf04 at 2026-04-09T23:32:20+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.1-614-ga9e2717d at 2026-05-11T12:08:45+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -24,7 +24,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 69e7465a90bc26718ed4bee887c8e49ceb083b8481bc29b356847efbe5e99294_v0_14_1_549_g80cecf04
+#define MDBX_BUILD_SOURCERY 84bdbacbdae1132dc0a72ddf4d29b329be7bcd731691c945b016c23dc0718d8b_v0_14_1_614_ga9e2717d
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -1303,9 +1303,9 @@ typedef struct osal_mmap {
  * https://android.googlesource.com/platform/bionic/+/master/docs/32-bit-abi.md */
 #define MDBX_HAVE_PWRITEV 0
 #if defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS != MDBX_WORDBITS
-#error "_FILE_OFFSET_BITS != MDBX_WORDBITS and __ANDROID_API__ < 24" (_FILE_OFFSET_BITS != MDBX_WORDBITS)
+#error "_FILE_OFFSET_BITS != MDBX_WORDBITS and __ANDROID_API__ < 24"
 #elif defined(__FILE_OFFSET_BITS) && __FILE_OFFSET_BITS != MDBX_WORDBITS
-#error "__FILE_OFFSET_BITS != MDBX_WORDBITS and __ANDROID_API__ < 24" (__FILE_OFFSET_BITS != MDBX_WORDBITS)
+#error "__FILE_OFFSET_BITS != MDBX_WORDBITS and __ANDROID_API__ < 24"
 #endif
 #else
 #define MDBX_HAVE_PWRITEV 1
@@ -1812,6 +1812,13 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 #error MDBX_ENABLE_BIGFOOT must be defined as 0 or 1
 #endif /* MDBX_ENABLE_BIGFOOT */
 
+/** Enables fast deletion by whole b-tree branches feature. */
+#ifndef MDBX_ENABLE_BUNCHES_REMOVAL
+#define MDBX_ENABLE_BUNCHES_REMOVAL 1
+#elif !(MDBX_ENABLE_BUNCHES_REMOVAL == 0 || MDBX_ENABLE_BUNCHES_REMOVAL == 1)
+#error MDBX_ENABLE_BUNCHES_REMOVAL must be MDBX_ENABLE_BUNCHES_REMOVAL as 0 or 1
+#endif /* MDBX_ENABLE_BUNCHES_REMOVAL */
+
 /** Disable some checks to reduce an overhead and detection probability of
  * database corruption to a values closer to the LMDB. */
 #ifndef MDBX_DISABLE_VALIDATION
@@ -2232,7 +2239,7 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 #endif
 #endif /* MDBX_CACHELINE_SIZE */
 
-/* Max length of iov-vector passed to writev() call, used for auxilary writes */
+/* Max length of iov-vector passed to writev() call, used for auxiliary writes */
 #ifndef MDBX_AUXILARY_IOV_MAX
 #define MDBX_AUXILARY_IOV_MAX 64
 #endif
@@ -2664,7 +2671,7 @@ typedef enum node_flags {
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint8_t page_type(const page_t *mp) { return mp->flags; }
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint8_t page_type_compat(const page_t *mp) {
-  /* Drop legacy P_DIRTY flag for sub-pages for compatilibity,
+  /* Drop legacy P_DIRTY flag for sub-pages for compatibility,
    * for assertions only. */
   return unlikely(mp->flags & P_SUBP) ? mp->flags & ~(P_SUBP | P_LEGACY_DIRTY) : mp->flags;
 }

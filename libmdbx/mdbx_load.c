@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.1-549-g80cecf04 at 2026-04-09T23:32:20+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.1-614-ga9e2717d at 2026-05-11T12:08:45+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -700,7 +700,7 @@ int main(int argc, char *argv[]) {
         if (!quiet)
           fprintf(stderr,
                   "Database size is too large for current system (mapsize=%" PRIu64
-                  " is great than system-limit %zu)\n",
+                  " is greater than system-limit %zu)\n",
                   envinfo.mi_mapsize, (size_t)MAX_MAPSIZE);
         goto bailout;
       }
@@ -855,7 +855,7 @@ int main(int argc, char *argv[]) {
       if (should_checkpoint) {
         err = mdbx_txn_checkpoint(txn, MDBX_TXN_NOMETASYNC, nullptr);
         if (unlikely(err != MDBX_SUCCESS)) {
-          error("mdbx_txn_commit", err);
+          error("mdbx_txn_checkpoint", err);
           goto bailout;
         }
         count = 0;

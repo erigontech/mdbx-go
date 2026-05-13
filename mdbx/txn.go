@@ -558,6 +558,36 @@ type TxInfo struct {
 	Unspill uint64
 }
 
+// GCInfo describes MDBX garbage collection and page usage for a transaction.
+type GCInfo struct {
+	PagesAllocated   uint64
+	PagesBacked      uint64
+	PagesTotal       uint64
+	PagesGC          uint64
+	PagesReclaimable uint64
+	PagesRetained    uint64
+	MaxReaderLag     uint64
+	MaxRetainedPages uint64
+}
+
+// GCInfo returns garbage collection and page usage information for txn.
+func (txn *Txn) GCInfo() (*GCInfo, error) {
+	r := C.mdbxgo_gc_info(txn._txn)
+	if r.err != success {
+		return nil, operrno("mdbx_gc_info", r.err)
+	}
+	return &GCInfo{
+		PagesAllocated:   uint64(r.pages_allocated),
+		PagesBacked:      uint64(r.pages_backed),
+		PagesTotal:       uint64(r.pages_total),
+		PagesGC:          uint64(r.pages_gc),
+		PagesReclaimable: uint64(r.pages_reclaimable),
+		PagesRetained:    uint64(r.pages_retained),
+		MaxReaderLag:     uint64(r.max_reader_lag),
+		MaxRetainedPages: uint64(r.max_retained_pages),
+	}, nil
+}
+
 // scan_rlt   The boolean flag controls the scan of the read lock
 //
 //	table to provide complete information. Such scan
