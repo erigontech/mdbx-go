@@ -9,7 +9,7 @@ Donations are welcome to ETH `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`,
 BTC `bc1qzvl9uegf2ea6cwlytnanrscyv8snwsvrc0xfsu`, SOL `FTCTgbHajoLVZGr8aEFWMzx3NDMyS5wXJgfeMTmJznRi`.
 Всё будет хорошо!
 
-## v0.14.2 в разработке без конкретизации даты выпуска
+## v0.14.2 "Буревестник" (stormy petrel, aka Bourevestnik) запланирован на 2026-05-14
 
 Продолжение развития нового куста/линейки версий с добавлением функционала, расширением API и внутренними переработками.
 
@@ -26,6 +26,7 @@ BTC `bc1qzvl9uegf2ea6cwlytnanrscyv8snwsvrc0xfsu`, SOL `FTCTgbHajoLVZGr8aEFWMzx3N
  - [Chloe Cano](https://github.com/Segwaz) for fuzzing, bug reporing and fixes.
  - [Weixie Cui](https://github.com/cuiweixie) for bug fixing through many pull-requests.
  - [Александру Кельчину](https://serebrium.ru/) (Компания Серебриум) за сообщения об ошибках и прототипы эксплоитов.
+ - [Anton Maisak](https://public.git.amsoft.spb.ru/libmdbx/libmdbx-dotnet) for new .NET bindings.
 
 Новое:
 
@@ -52,8 +53,9 @@ BTC `bc1qzvl9uegf2ea6cwlytnanrscyv8snwsvrc0xfsu`, SOL `FTCTgbHajoLVZGr8aEFWMzx3N
     - добавлена функция `mdbx_gc_info()` для получения информации о GC, использовании страниц, с возможностью итерирования содержимого GC.
     - добавлена функция `mdbx_env_defrag()` для явной дефрагментации БД, а также утилита `mdbx_defrag`.
     - добавлена опция `MDBX_opt_split_reserve` для управления заполненностью страниц дерева при их расщеплении.
+    - добавлены функции `mdbx_cursor_distance()`, `mdbx_cursor_scroll()` и `mdbx_cursor_distribute()` для упрощения многопоточного параллельного сканирования.
 
- - Поддержка Harmony OS (OHOS).
+ - Поддержка Harmony OS (OHOS) и Haiku OS.
 
  - Операции с плавающей точкой больше не используются как внутри библиотеки, так и в утилитах, а из сценариев сборки удалено связывание c `libm`.
 
@@ -601,7 +603,7 @@ Other:
 
 --------------------------------------------------------------------------------
 
-## v0.13.8 "Всеобуч" (v`seabooch) от 2025-08-31
+## v0.13.8 "Всеобуч" (v'seabooch) от 2025-08-31
 
 Поддерживающий выпуск стабильной ветки с исправлением обнаруженных ошибок и устранением недочётов,
 в день 100 летнего юбилея Постановления Всероссийского центрального исполнительного комитета о всеобщем бесплатном начальном образовании.
@@ -2159,7 +2161,7 @@ Signed-off-by: Леонид Юрьев (Leonid Yuriev) <leo@yuriev.ru>
    где макросы `ATOMIC_*_LOCK_FREE` ошибочно переопределяются через функции.
  - Использование `fcntl64(F_GETLK64/F_SETLK64/F_SETLKW64)` при наличии.
    Это решает проблему срабатывания проверочного утверждения при сборке для
-   платформ где тип `off_t` шире соответствующих полей `структуры flock`,
+   платформ где тип `off_t` шире соответствующих полей структуры `flock`,
    используемой для блокировки файлов.
  - Доработан сбор информации о задержках при фиксации транзакций:
     * Устранено искажение замеров длительности обновления GC
