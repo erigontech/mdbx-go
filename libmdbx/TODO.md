@@ -22,7 +22,7 @@ TODO
 
 In development
 --------------
- - v0.14.2 milestone
+ - v0.14.2 miletone
 
 Done
 ----

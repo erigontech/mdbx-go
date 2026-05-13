@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.1-614-ga9e2717d at 2026-05-11T12:08:45+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.1-580-g5055775a at 2026-04-24T01:06:56+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -24,7 +24,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 84bdbacbdae1132dc0a72ddf4d29b329be7bcd731691c945b016c23dc0718d8b_v0_14_1_614_ga9e2717d
+#define MDBX_BUILD_SOURCERY 77a24c1e960f9eff6e6239c9e9a89952d05ff24924eb17abae1275860e746613_v0_14_1_580_g5055775a
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -1303,9 +1303,9 @@ typedef struct osal_mmap {
  * https://android.googlesource.com/platform/bionic/+/master/docs/32-bit-abi.md */
 #define MDBX_HAVE_PWRITEV 0
 #if defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS != MDBX_WORDBITS
-#error "_FILE_OFFSET_BITS != MDBX_WORDBITS and __ANDROID_API__ < 24"
+#error "_FILE_OFFSET_BITS != MDBX_WORDBITS and __ANDROID_API__ < 24" (_FILE_OFFSET_BITS != MDBX_WORDBITS)
 #elif defined(__FILE_OFFSET_BITS) && __FILE_OFFSET_BITS != MDBX_WORDBITS
-#error "__FILE_OFFSET_BITS != MDBX_WORDBITS and __ANDROID_API__ < 24"
+#error "__FILE_OFFSET_BITS != MDBX_WORDBITS and __ANDROID_API__ < 24" (__FILE_OFFSET_BITS != MDBX_WORDBITS)
 #endif
 #else
 #define MDBX_HAVE_PWRITEV 1
@@ -2239,7 +2239,7 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 #endif
 #endif /* MDBX_CACHELINE_SIZE */
 
-/* Max length of iov-vector passed to writev() call, used for auxiliary writes */
+/* Max length of iov-vector passed to writev() call, used for auxilary writes */
 #ifndef MDBX_AUXILARY_IOV_MAX
 #define MDBX_AUXILARY_IOV_MAX 64
 #endif
@@ -2671,7 +2671,7 @@ typedef enum node_flags {
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint8_t page_type(const page_t *mp) { return mp->flags; }
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint8_t page_type_compat(const page_t *mp) {
-  /* Drop legacy P_DIRTY flag for sub-pages for compatibility,
+  /* Drop legacy P_DIRTY flag for sub-pages for compatilibity,
    * for assertions only. */
   return unlikely(mp->flags & P_SUBP) ? mp->flags & ~(P_SUBP | P_LEGACY_DIRTY) : mp->flags;
 }

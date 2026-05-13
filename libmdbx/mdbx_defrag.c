@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.1-614-ga9e2717d at 2026-05-11T12:08:45+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.1-580-g5055775a at 2026-04-24T01:06:56+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -53,8 +53,7 @@ static void signal_handler(int sig) {
 static char *prog;
 static void usage(void) {
   fprintf(stderr,
-          "usage: %s [-V] [-v[v[v...]]] [-q] [-1..9] [-t seconds] [-f percent] [-r percent] [-s megabytes] [-c] [-u|U] "
-          "db_pathname\n"
+          "usage: %s [-V] [-v[v[v...]]] [-q] [-1..9] [-t seconds] [-f percent] [-r percent] [-s megabytes] [-c] [-u|U] db_pathname\n"
           "  -V\t\tprint version and exit\n"
           "  -v\t\tmore verbose, could be repeated for extra details from debug-enabled builds.\n"
           "  -q\t\tbe quiet.\n"
@@ -348,11 +347,10 @@ int main(int argc, char *argv[]) {
     rc = MDBX_IS_ERROR(rc) ? rc : MDBX_SUCCESS;
   }
 
+  act = "preparing";
   MDBX_txn *txn = nullptr;
-  if (rc == MDBX_SUCCESS) {
-    act = "preparing";
+  if (rc == MDBX_SUCCESS)
     rc = mdbx_txn_begin(env, nullptr, MDBX_TXN_READWRITE, &txn);
-  }
 
   MDBX_envinfo info_env;
   memset(&info_env, 0, sizeof(info_env)); /* zap `uninitialized` warning */

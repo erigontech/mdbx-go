@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.1-614-ga9e2717d at 2026-05-11T12:08:45+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.1-580-g5055775a at 2026-04-24T01:06:56+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -1673,7 +1673,7 @@ char *from_hex::write_bytes(char *__restrict const dest, size_t dest_size) const
       continue;
     }
 
-    if (MDBX_UNLIKELY(left < 2 || !isxdigit(src[0]) || !isxdigit(src[1])))
+    if (MDBX_UNLIKELY(left < 1 || !isxdigit(src[0]) || !isxdigit(src[1])))
       MDBX_CXX20_UNLIKELY throw std::domain_error("mdbx::from_hex:: invalid hexadecimal string");
 
     int8_t hi = src[0];
@@ -1705,7 +1705,7 @@ bool from_hex::is_erroneous() const noexcept {
       continue;
     }
 
-    if (MDBX_UNLIKELY(left < 2 || !isxdigit(src[0]) || !isxdigit(src[1])))
+    if (MDBX_UNLIKELY(left < 1 || !isxdigit(src[0]) || !isxdigit(src[1])))
       MDBX_CXX20_UNLIKELY return true;
 
     got = true;
@@ -2332,21 +2332,8 @@ static inline MDBX_env *create_env() {
   return ptr;
 }
 
-env_managed &env_managed::operator=(env_managed &&other) {
-  if (this != &other) {
-    if (MDBX_UNLIKELY(handle_))
-      MDBX_CXX20_UNLIKELY {
-        assert(handle_ != other.handle_);
-        close();
-      }
-    inherited::operator=(std::move(other));
-  }
-  return *this;
-}
-
-__cold env_managed::~env_managed() {
+__cold env_managed::~env_managed() noexcept {
   if (MDBX_UNLIKELY(handle_))
-    /* coverity[UNCAUGHT_EXCEPT] */
     MDBX_CXX20_UNLIKELY error::success_or_throw(::mdbx_env_close(handle_));
 }
 
@@ -2439,37 +2426,6 @@ __cold env_managed::env_managed(const MDBX_STD_FILESYSTEM_PATH &pathname, const 
 
 //------------------------------------------------------------------------------
 
-void cursor_managed::close() {
-  error::success_or_throw(::mdbx_cursor_close2(handle_));
-  handle_ = nullptr;
-}
-
-cursor_managed cursor::clone(void *your_context) const {
-  cursor_managed clone(your_context);
-  clone.assign(*this);
-  return clone;
-}
-
-cursor_managed &cursor_managed::operator=(cursor_managed &&other) {
-  if (this != &other) {
-    if (MDBX_UNLIKELY(handle_))
-      MDBX_CXX20_UNLIKELY {
-        assert(handle_ != other.handle_);
-        close();
-      }
-    inherited::operator=(std::move(other));
-  }
-  return *this;
-}
-
-cursor_managed::~cursor_managed() {
-  if (handle_)
-    /* coverity[UNCAUGHT_EXCEPT] */
-    error::success_or_throw(::mdbx_cursor_close2(handle_));
-}
-
-//------------------------------------------------------------------------------
-
 txn_managed txn::start_nested() { return start_nested(false); }
 
 txn_managed txn::start_nested(bool readonly) {
@@ -2481,21 +2437,8 @@ txn_managed txn::start_nested(bool readonly) {
   return txn_managed(nested);
 }
 
-txn_managed &txn_managed::operator=(txn_managed &&other) {
-  if (this != &other) {
-    if (MDBX_UNLIKELY(handle_))
-      MDBX_CXX20_UNLIKELY {
-        assert(handle_ != other.handle_);
-        abort();
-      }
-    inherited::operator=(std::move(other));
-  }
-  return *this;
-}
-
-txn_managed::~txn_managed() {
+txn_managed::~txn_managed() noexcept {
   if (MDBX_UNLIKELY(handle_))
-    /* coverity[UNCAUGHT_EXCEPT] */
     MDBX_CXX20_UNLIKELY error::success_or_throw(::mdbx_txn_abort(handle_));
 }
 
