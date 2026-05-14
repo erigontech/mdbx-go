@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.1-580-g5055775a at 2026-04-24T01:06:56+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.2-0-g530d0265 at 2026-05-14T21:14:59+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -75,7 +75,6 @@ static MDBX_chk_context_t chk;
 static bool turn_meta = false;
 static bool force_turn_meta = false;
 static MDBX_chk_flags_t chk_flags = MDBX_CHK_DEFAULTS;
-static MDBX_chk_stage_t chk_stage = MDBX_chk_none;
 
 static MDBX_chk_line_t line_struct;
 static size_t anchor_cookie;
@@ -287,7 +286,7 @@ static MDBX_chk_user_table_cookie_t *table_filter(MDBX_chk_context_t *ctx, const
 
 static int stage_begin(MDBX_chk_context_t *ctx, enum MDBX_chk_stage stage) {
   (void)ctx;
-  chk_stage = stage;
+  (void)stage;
   anchor_cookie = line_count;
   flush();
   return MDBX_SUCCESS;
@@ -299,7 +298,6 @@ static int stage_end(MDBX_chk_context_t *ctx, enum MDBX_chk_stage stage, int err
     err = conclude(ctx);
   suffix(anchor_cookie, err ? "error(s)" : "done");
   flush();
-  chk_stage = MDBX_chk_none;
   return err;
 }
 
