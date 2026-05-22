@@ -385,7 +385,7 @@ func (c *Cursor) Count() (uint64, error) {
 }
 
 var cursorPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return CreateCursor()
 	},
 }

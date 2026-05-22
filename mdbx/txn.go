@@ -65,7 +65,7 @@ type Txn struct {
 	key  C.MDBX_val
 	val  C.MDBX_val
 
-	errLogf func(format string, v ...interface{})
+	errLogf func(format string, v ...any)
 
 	// Pooled may be set to true while a Txn is stored in a sync.Pool, after
 	// Txn.Reset reset has been called and before Txn.Renew.  This will keep
@@ -773,7 +773,7 @@ func (txn *Txn) OpenCursor(dbi DBI) (*Cursor, error) {
 	return openCursor(txn, dbi)
 }
 
-func (txn *Txn) errf(format string, v ...interface{}) {
+func (txn *Txn) errf(format string, v ...any) {
 	if txn.errLogf != nil {
 		txn.errLogf(format, v...)
 		return
