@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.1-580-g5055775a at 2026-04-24T01:06:56+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.2-0-g530d0265 at 2026-05-14T21:14:59+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -53,7 +53,8 @@ static void signal_handler(int sig) {
 static char *prog;
 static void usage(void) {
   fprintf(stderr,
-          "usage: %s [-V] [-v[v[v...]]] [-q] [-1..9] [-t seconds] [-f percent] [-r percent] [-s megabytes] [-c] [-u|U] db_pathname\n"
+          "usage: %s [-V] [-v[v[v...]]] [-q] [-1..9] [-t seconds] [-f percent] [-r percent] [-s megabytes] [-c] [-u|U] "
+          "db_pathname\n"
           "  -V\t\tprint version and exit\n"
           "  -v\t\tmore verbose, could be repeated for extra details from debug-enabled builds.\n"
           "  -q\t\tbe quiet.\n"
@@ -128,8 +129,8 @@ static void defrag_report_progress(const MDBX_defrag_result_t *progress, unsigne
     for (unsigned i = 0; i < 3 || (i < dots / 8 && i < 64); ++i)
       putchar('.');
     if (is_console && dots) {
-      static char вертушка[] = "\\|/-\\|/-";
-      putchar(вертушка[(progress->spent_time_dot16 >> 13) % (ARRAY_LENGTH(вертушка) - 1)]);
+      static char twirl[] = "\\|/-\\|/-";
+      putchar(twirl[(progress->spent_time_dot16 >> 13) % (ARRAY_LENGTH(twirl) - 1)]);
       putchar('\b');
     }
     fflush(nullptr);
@@ -347,10 +348,11 @@ int main(int argc, char *argv[]) {
     rc = MDBX_IS_ERROR(rc) ? rc : MDBX_SUCCESS;
   }
 
-  act = "preparing";
   MDBX_txn *txn = nullptr;
-  if (rc == MDBX_SUCCESS)
+  if (rc == MDBX_SUCCESS) {
+    act = "preparing";
     rc = mdbx_txn_begin(env, nullptr, MDBX_TXN_READWRITE, &txn);
+  }
 
   MDBX_envinfo info_env;
   memset(&info_env, 0, sizeof(info_env)); /* zap `uninitialized` warning */

@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.1-580-g5055775a at 2026-04-24T01:06:56+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.2-0-g530d0265 at 2026-05-14T21:14:59+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -130,7 +130,6 @@ static bool valbool(char *line, const char *item, bool *value) {
 
 static char *subname = nullptr;
 static int dbi_flags;
-static txnid_t txnid;
 static uint64_t sequence;
 static MDBX_canary canary;
 static MDBX_envinfo envinfo;
@@ -164,7 +163,6 @@ static int readhdr(void) {
     subname = nullptr;
   }
   dbi_flags = 0;
-  txnid = 0;
   sequence = 0;
 
   while (true) {
@@ -283,8 +281,7 @@ static int readhdr(void) {
         if (!quiet)
           fprintf(stderr, "%s: line %" PRIiSIZE ": ignore unsupported value 0x%" PRIx64 " for %s\n", prog, lineno, u64,
                   "txnid");
-      } else
-        txnid = u64;
+      }
       continue;
     }
 
@@ -700,7 +697,7 @@ int main(int argc, char *argv[]) {
         if (!quiet)
           fprintf(stderr,
                   "Database size is too large for current system (mapsize=%" PRIu64
-                  " is great than system-limit %zu)\n",
+                  " is greater than system-limit %zu)\n",
                   envinfo.mi_mapsize, (size_t)MAX_MAPSIZE);
         goto bailout;
       }
@@ -855,7 +852,7 @@ int main(int argc, char *argv[]) {
       if (should_checkpoint) {
         err = mdbx_txn_checkpoint(txn, MDBX_TXN_NOMETASYNC, nullptr);
         if (unlikely(err != MDBX_SUCCESS)) {
-          error("mdbx_txn_commit", err);
+          error("mdbx_txn_checkpoint", err);
           goto bailout;
         }
         count = 0;
