@@ -3,6 +3,7 @@
   - [Packages](#packages)
       - [mdbx  ](#mdbx--)
       - [exp/mdbxpool  ](#expmdbxpool--)
+  - [Quickstart](#quickstart)
   - [Key Features](#key-features)
     - [Idiomatic API](#idiomatic-api)
     - [High-Performance notices](#high-performance-notices)
@@ -17,20 +18,27 @@
 
 # mdbx-go
 
+[![Test](https://github.com/erigontech/mdbx-go/actions/workflows/test.yml/badge.svg)](https://github.com/erigontech/mdbx-go/actions/workflows/test.yml)
+[![Lint](https://github.com/erigontech/mdbx-go/actions/workflows/lint.yml/badge.svg)](https://github.com/erigontech/mdbx-go/actions/workflows/lint.yml)
+[![CodeQL](https://github.com/erigontech/mdbx-go/actions/workflows/codeql.yml/badge.svg)](https://github.com/erigontech/mdbx-go/actions/workflows/codeql.yml)
+[![Release](https://img.shields.io/github/v/release/erigontech/mdbx-go?label=release)](https://github.com/erigontech/mdbx-go/releases)
+[![libmdbx](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Ferigontech%2Fmdbx-go%2Fmaster%2Flibmdbx%2FVERSION.json&query=%24.semver&prefix=v&label=libmdbx&color=informational)](libmdbx/VERSION.json)
+[![Go Reference](https://pkg.go.dev/badge/github.com/erigontech/mdbx-go.svg)](https://pkg.go.dev/github.com/erigontech/mdbx-go)
+
 Go bindings to the libmdbx: <https://libmdbx.dqdkfa.ru>
 
-**Notice**: page `./mdbx` contains only `mdbx.h` and `mdbx.c` - to minimize go build time/size.
-But full version of libmdbx (produced by it's `make dist` command) is in `./../libmdbx/`.
-License is also there.
+**Notice**: directory `./mdbx` contains the Go bindings package and a small cgo helper
+(`mdbxgo.c` / `mdbxgo.h`). The libmdbx amalgamation (`mdbx.h`, `mdbx.c`), produced by libmdbx's
+`make dist` command, lives in `./libmdbx/`. License is also there.
 
 Most of articles in internet about LMDB are applicable to MDBX. But mdbx has more features.
 
-For deeper DB understanding please read through [mdbx.h](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h)
+For deeper DB understanding please read through [mdbx.h](https://sourcecraft.dev/dqdkfa/libmdbx/blob?file=mdbx.h)
 
 ## Min Requirements
 
 C language Compilers compatible with GCC or CLANG (mingw 10 on windows)
-Golang: 1.15
+Golang: 1.24
 
 ## Packages
 
@@ -42,18 +50,18 @@ application dependencies are managed and pinned by tag/commit.
 
 Developers concerned with package stability should consult the documentation.
 
-#### mdbx [![GoDoc](https://godoc.org/github.com/torquem-ch/mdbx-go/mdbx?status.svg)](https://godoc.org/github.com/github.com/torquem-ch/mdbx-go/mdbx) [![stable](https://img.shields.io/badge/stability-stable-brightgreen.svg)](#user-content-versioning-and-stability)
+#### mdbx [![GoDoc](https://pkg.go.dev/badge/github.com/erigontech/mdbx-go/mdbx.svg)](https://pkg.go.dev/github.com/erigontech/mdbx-go/mdbx) [![stable](https://img.shields.io/badge/stability-stable-brightgreen.svg)](#user-content-versioning-and-stability)
 
 ```go
-import "github.com/torquem-ch/mdbx-go/mdbx"
+import "github.com/erigontech/mdbx-go/mdbx"
 ```
 
 Core bindings allowing low-level access to MDBX.
 
-#### exp/mdbxpool [![GoDoc](https://godoc.org/github.com/torquem-ch/mdbx-go/mdbx/exp/mdbxpool?status.svg)](https://godoc.org/github.com/torquem-ch/mdbx-go/mdbx/exp/mdbxpool) [![experimental](https://img.shields.io/badge/stability-experimental-red.svg)](#user-content-versioning-and-stability)
+#### exp/mdbxpool [![GoDoc](https://pkg.go.dev/badge/github.com/erigontech/mdbx-go/exp/mdbxpool.svg)](https://pkg.go.dev/github.com/erigontech/mdbx-go/exp/mdbxpool) [![experimental](https://img.shields.io/badge/stability-experimental-red.svg)](#user-content-versioning-and-stability)
 
 ```go
-import "github.com/torquem-ch/mdbx-go/exp/mdbxpool"
+import "github.com/erigontech/mdbx-go/exp/mdbxpool"
 ```
 
 A utility package which facilitates reuse of mdbx.Txn objects using a sync.Pool. Naively storing mdbx.Txn objects in
@@ -63,6 +71,68 @@ reference for applications attempting to write their own pooling implementation.
 The mdbxpool package is relatively new. But it has a lot of potential utility. And once the mdbxpool API has been ironed
 out, and the implementation hardened through use by real applications it can be integrated directly into the mdbx
 package for more transparent integration. Please test this package and provide feedback to speed this process up.
+
+## Quickstart
+
+Install:
+
+```sh
+go get github.com/erigontech/mdbx-go/mdbx
+```
+
+A minimal example — open an environment, write a key, read it back:
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/erigontech/mdbx-go/mdbx"
+)
+
+func main() {
+	env, err := mdbx.NewEnv(mdbx.Default)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer env.Close()
+
+	// pageSize=4096, growth=1MiB, shrink=-1 (default), upper=1GiB
+	if err := env.SetGeometry(-1, -1, 1<<30, 1<<20, -1, 4096); err != nil {
+		log.Fatal(err)
+	}
+	if err := env.Open("./mydb", 0, 0o664); err != nil {
+		log.Fatal(err)
+	}
+
+	var dbi mdbx.DBI
+	if err := env.Update(func(txn *mdbx.Txn) error {
+		var err error
+		dbi, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		return txn.Put(dbi, []byte("hello"), []byte("world"), 0)
+	}); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := env.View(func(txn *mdbx.Txn) error {
+		v, err := txn.Get(dbi, []byte("hello"))
+		if err != nil {
+			return err
+		}
+		fmt.Printf("hello = %s\n", v)
+		return nil
+	}); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+More examples — see `*_test.go` files in [./mdbx](mdbx).
 
 ## Key Features
 
@@ -74,7 +144,7 @@ mdbx-go is to provide idiomatic database interactions without compromising the f
 **NOTE:** While the mdbx package tries hard to make MDBX as easy to use as possible there are compromises, gotchas, and
 caveats that application developers must be aware of when relying on MDBX to store their data. All users are encouraged
 to fully read the [documentation](https://libmdbx.dqdkfa.ru) so they are aware of these caveats. And even
-better if read through [mdbx.h](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h)
+better if read through [mdbx.h](https://sourcecraft.dev/dqdkfa/libmdbx/blob?file=mdbx.h)
 
 ### High-Performance notices
 
@@ -111,7 +181,7 @@ Use NoReadahead if Data > RAM
 - Its simpler design and implementation in pure Go mean it is free of many caveats and gotchas which are present using
   the MDBX package. For more information about caveats with the MDBX package, consult its
   [documentation](https://libmdbx.dqdkfa.ru) so they are aware of these caveats. And even better if read
-  through [mdbx.h](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h).
+  through [mdbx.h](https://sourcecraft.dev/dqdkfa/libmdbx/blob?file=mdbx.h).
 
 ### Advantages of LMDB over BoltDB
 
@@ -135,7 +205,17 @@ Use NoReadahead if Data > RAM
 
 ### Advantages of MDBX over LMDB
 
-See in mdbx's readme.md
+A short, opinionated highlight reel — for the full list see libmdbx's own
+[README](libmdbx/README.md) (sections *Features*, *Some Added Features*, *Other fixes and specifics*).
+
+- Automatic on-the-fly database size adjustment via `SetGeometry` — no more "set MapSize once and pray".
+- Tunable durability modes per environment: `Durable`, `NoMetaSync`, `SafeNoSync`, `UtterlyNoSync`.
+- Per-sub-DB sequence counters (`Txn.Sequence`) — durable and transactional, no extra book-keeping.
+- `Upsert` semantics on cursors — replace-or-insert in one call.
+- Extra cursor navigation: `ExactKeyValueEqual`, `ExactKeyValueLesserThan/OrEqual`, `ExactKeyValueGreaterThan/OrEqual` and friends — on top of stock LMDB cursor ops.
+- Robustness against stuck/dead readers (slot eviction) — long-running readers don't grow the map without bound.
+- Built-in introspection: reader slot table (`ReaderList`), env/db stats and info exposed through the Go API.
+- Many more (range estimation, atomic multi-value ops, etc.) live in the C API — read [libmdbx/README.md](libmdbx/README.md) and [mdbx.h](https://sourcecraft.dev/dqdkfa/libmdbx/blob?file=mdbx.h) for details.
 
 ## Build
 
@@ -147,10 +227,12 @@ On FreeBSD 10, you must explicitly set `CC` (otherwise it will fail with a crypt
 
 In `libmdbx` repo: `make dist && cp -R ./dist/* ./../mdbx-go/libmdbx/`. Then in mdbx-go repo: `make cp`
 
-On mac: 
+On mac (`--default-names` was removed from Homebrew long ago — install plain `gnu-sed` and prepend its `gnubin` to `PATH`):
 ```
-brew install --default-names gnu-sed
-PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH" make cp
+brew install gnu-sed
+# Intel macs:        /usr/local/opt/gnu-sed/libexec/gnubin
+# Apple Silicon:     /opt/homebrew/opt/gnu-sed/libexec/gnubin
+PATH="$(brew --prefix gnu-sed)/libexec/gnubin:$PATH" make cp
 ```
 
 ## Build binaries
@@ -160,7 +242,7 @@ In mdbx-go repo: `MDBX_BUILD_TIMESTAMP=unknown make tools`
 Or if use mdbx-go as a library:
 
 ```sh
-go mod vendor && cd vendor/github.com/torquem-ch/mdbx-go && make tools 
+go mod vendor && cd vendor/github.com/erigontech/mdbx-go && make tools 
 rm -rf vendor
 ```
 
@@ -168,8 +250,8 @@ rm -rf vendor
 
 - Examples see in *_test.go files of this repo
 - [The MDBX](https://libmdbx.dqdkfa.ru) And even better if read
-  through [mdbx.h](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h).
-- [godoc.org](https://godoc.org/github.com/torquem-ch/mdbx-go)
+  through [mdbx.h](https://sourcecraft.dev/dqdkfa/libmdbx/blob?file=mdbx.h).
+- [pkg.go.dev](https://pkg.go.dev/github.com/erigontech/mdbx-go)
 - [The LMDB](http://symas.com/lmdb/)
 
 ### Versioning and Stability
@@ -186,7 +268,7 @@ indicated at least one release in advance and all functionality will remain avai
 
 ## Benchmark Notice
 It's noticed that GODEBUG=cgocheck=0 significantly increase mdbx-go perfomance (but be aware of misuse, it's 
-cgoCheckPointer disable, so of course it could be dangerous DIOR)
+cgoCheckPointer disable, so of course it could be dangerous DYOR)
 ```shell
 goos: darwin
 goarch: arm64
