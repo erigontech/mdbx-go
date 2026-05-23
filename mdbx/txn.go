@@ -254,47 +254,45 @@ func (txn *Txn) commit() (CommitLatency, error) {
 	txn.strictThreadCheck()
 	r := C.mdbxgo_txn_commit_ex(txn._txn)
 	txn.clearTxn()
-	s := CommitLatency{
-		Preparation: toDuration(r.lat.preparation),
-		GCWallClock: toDuration(r.lat.gc_wallclock),
-		GCCpuTime:   toDuration(r.lat.gc_cputime),
-		Audit:       toDuration(r.lat.audit),
-		Write:       toDuration(r.lat.write),
-		Sync:        toDuration(r.lat.sync),
-		Ending:      toDuration(r.lat.ending),
-		Whole:       toDuration(r.lat.whole),
-		GCDetails: CommitLatencyGC{
-			WorkRtime:   toDuration(r.lat.gc_prof.work_rtime_monotonic),
-			WorkRsteps:  uint32(r.lat.gc_prof.work_rsteps),
-			WorkRxpages: uint32(r.lat.gc_prof.work_xpages),
-			WorkMajflt:  uint32(r.lat.gc_prof.work_majflt),
-			//WorkPnlMergeTime:   toDuration(r.lat.gc_prof.pnl_merge_work.time),
-			//WorkPnlMergeVolume: uint64(r.lat.gc_prof.pnl_merge_work.volume),
-			//WorkPnlMergeCalls:  uint32(r.lat.gc_prof.pnl_merge_work.calls),
-			//SelfPnlMergeTime:   toDuration(r.lat.gc_prof.pnl_merge_self.time),
-			//SelfPnlMergeVolume: uint64(r.lat.gc_prof.pnl_merge_self.volume),
-			//SelfPnlMergeCalls:  uint32(r.lat.gc_prof.pnl_merge_self.calls),
-			SelfRtime:        toDuration(r.lat.gc_prof.self_rtime_monotonic),
-			SelfXtime:        toDuration(r.lat.gc_prof.self_xtime_cpu),
-			WorkXtime:        toDuration(r.lat.gc_prof.work_xtime_cpu),
-			SelfRsteps:       uint32(r.lat.gc_prof.self_rsteps),
-			SelfXpages:       uint32(r.lat.gc_prof.self_xpages),
-			SelfMajflt:       uint32(r.lat.gc_prof.self_majflt),
-			Wloops:           uint32(r.lat.gc_prof.wloops),
-			Coalescences:     uint32(r.lat.gc_prof.coalescences),
-			Wipes:            uint32(r.lat.gc_prof.wipes),
-			Flushes:          uint32(r.lat.gc_prof.flushes),
-			Kicks:            uint32(r.lat.gc_prof.kicks),
-			MaxReaderLag:     uint32(r.lat.gc_prof.max_reader_lag),
-			MaxRetainedPages: uint32(r.lat.gc_prof.max_retained_pages),
-			SelfCounter:      uint32(r.lat.gc_prof.self_counter),
-			WorkCounter:      uint32(r.lat.gc_prof.work_counter),
-		},
-	}
+	s := buildCommitLatency(&r.lat)
 	if r.err != success {
 		return s, operrno("mdbx_txn_commit_ex", r.err)
 	}
 	return s, nil
+}
+
+func buildCommitLatency(lat *C.MDBX_commit_latency) CommitLatency {
+	return CommitLatency{
+		Preparation: toDuration(lat.preparation),
+		GCWallClock: toDuration(lat.gc_wallclock),
+		GCCpuTime:   toDuration(lat.gc_cputime),
+		Audit:       toDuration(lat.audit),
+		Write:       toDuration(lat.write),
+		Sync:        toDuration(lat.sync),
+		Ending:      toDuration(lat.ending),
+		Whole:       toDuration(lat.whole),
+		GCDetails: CommitLatencyGC{
+			WorkRtime:        toDuration(lat.gc_prof.work_rtime_monotonic),
+			WorkRsteps:       uint32(lat.gc_prof.work_rsteps),
+			WorkRxpages:      uint32(lat.gc_prof.work_xpages),
+			WorkMajflt:       uint32(lat.gc_prof.work_majflt),
+			SelfRtime:        toDuration(lat.gc_prof.self_rtime_monotonic),
+			SelfXtime:        toDuration(lat.gc_prof.self_xtime_cpu),
+			WorkXtime:        toDuration(lat.gc_prof.work_xtime_cpu),
+			SelfRsteps:       uint32(lat.gc_prof.self_rsteps),
+			SelfXpages:       uint32(lat.gc_prof.self_xpages),
+			SelfMajflt:       uint32(lat.gc_prof.self_majflt),
+			Wloops:           uint32(lat.gc_prof.wloops),
+			Coalescences:     uint32(lat.gc_prof.coalescences),
+			Wipes:            uint32(lat.gc_prof.wipes),
+			Flushes:          uint32(lat.gc_prof.flushes),
+			Kicks:            uint32(lat.gc_prof.kicks),
+			MaxReaderLag:     uint32(lat.gc_prof.max_reader_lag),
+			MaxRetainedPages: uint32(lat.gc_prof.max_retained_pages),
+			SelfCounter:      uint32(lat.gc_prof.self_counter),
+			WorkCounter:      uint32(lat.gc_prof.work_counter),
+		},
+	}
 }
 
 // Abort discards pending writes in the transaction and clears the finalizer on
@@ -431,6 +429,201 @@ func (txn *Txn) renew() error {
 	txn.resetID()
 
 	return operrno("mdbx_txn_renew", ret)
+}
+
+// Refresh advances a read-only transaction to the most recent MVCC-snapshot
+// without aborting and renewing the reader slot. It is cheaper than
+// Reset+Renew because it keeps the reader registration alive.
+//
+// The returned `atTip` bool is true when the transaction was already viewing
+// the latest snapshot and no work was performed.
+//
+// See mdbx_txn_refresh.
+func (txn *Txn) Refresh() (atTip bool, err error) {
+	if txn.managed {
+		panic("managed transaction cannot be refreshed directly")
+	}
+	ret := C.mdbx_txn_refresh(txn._txn)
+	txn.resetID()
+	if ret == C.MDBX_RESULT_TRUE {
+		return true, nil
+	}
+	return false, operrno("mdbx_txn_refresh", ret)
+}
+
+// Checkpoint commits the operations of the write transaction and immediately
+// starts a new write transaction reusing the same handle, without releasing
+// any locks. This is useful for breaking up long write pipelines into smaller
+// committed chunks while preventing other writers from interleaving.
+//
+// weakeningDurability may be used to relax sync/durability for the committed
+// changes (e.g. TxNoSync or TxNoMetaSync). Pass 0 for default durability.
+//
+// noChanges is true when the transaction contained no changes (MDBX_RESULT_TRUE).
+//
+// See mdbx_txn_checkpoint.
+func (txn *Txn) Checkpoint(weakeningDurability uint) (lat CommitLatency, noChanges bool, err error) {
+	if txn.managed {
+		panic("managed transaction cannot be checkpointed directly")
+	}
+	txn.strictThreadCheck()
+	r := C.mdbxgo_txn_checkpoint(txn._txn, C.MDBX_txn_flags_t(weakeningDurability))
+	lat = buildCommitLatency(&r.lat)
+	txn.resetID()
+	if r.err == C.MDBX_RESULT_TRUE {
+		return lat, true, nil
+	}
+	if r.err != success {
+		return lat, false, operrno("mdbx_txn_checkpoint", r.err)
+	}
+	return lat, false, nil
+}
+
+// CommitEmbarkRead commits the write transaction and atomically starts a new
+// read-only transaction observing the just-committed snapshot, all without
+// releasing the writer locks between the two operations. This guarantees that
+// no other writer can interleave a commit between the write commit and the
+// new reader.
+//
+// On success the same Txn handle is reused and transitions to read-only mode.
+// noChanges is true when the transaction had no changes to commit
+// (MDBX_RESULT_TRUE).
+//
+// See mdbx_txn_commit_embark_read.
+func (txn *Txn) CommitEmbarkRead() (lat CommitLatency, noChanges bool, err error) {
+	if txn.managed {
+		panic("managed transaction cannot be committed directly")
+	}
+	txn.strictThreadCheck()
+	r := C.mdbxgo_txn_commit_embark_read(&txn._txn)
+	lat = buildCommitLatency(&r.lat)
+	txn.resetID()
+	if r.err == C.MDBX_RESULT_TRUE {
+		// Reused as read txn even on no-op commit per docs.
+		txn.readonly = true
+		return lat, true, nil
+	}
+	if r.err != success {
+		// On error the transaction is terminated.
+		txn.clearTxn()
+		return lat, false, operrno("mdbx_txn_commit_embark_read", r.err)
+	}
+	txn.readonly = true
+	return lat, false, nil
+}
+
+// Rollback aborts all uncommitted changes in a write transaction and
+// immediately restarts it on a fresh snapshot, keeping the writer locks held.
+// Unlike Abort followed by BeginTxn, no other writer can grab the lock in
+// between.
+//
+// The Txn handle remains valid after a successful Rollback and may continue
+// to be used. On error, the transaction is terminated.
+//
+// See mdbx_txn_rollback.
+func (txn *Txn) Rollback() error {
+	if txn.managed {
+		panic("managed transaction cannot be rolled back directly")
+	}
+	txn.strictThreadCheck()
+	ret := C.mdbx_txn_rollback(txn._txn)
+	txn.resetID()
+	if ret == success {
+		return nil
+	}
+	// On failure libmdbx tears down the transaction.
+	txn.clearTxn()
+	return operrno("mdbx_txn_rollback", ret)
+}
+
+// Amend promotes a read-only transaction into a write transaction that
+// modifies data relative to the read transaction's MVCC-snapshot. This only
+// succeeds if no other write transaction has committed since the read
+// transaction started; otherwise snapshotTooOld is true and no actions have
+// been performed.
+//
+// If TxPrepareRO is included in flags, the original read transaction handle
+// is preserved (in reset state) and may be reused via Renew. Otherwise the
+// original read transaction handle is consumed and must not be used again.
+//
+// On success a new *Txn representing the write transaction is returned.
+//
+// See mdbx_txn_amend.
+func (txn *Txn) Amend(flags uint) (writeTxn *Txn, snapshotTooOld bool, err error) {
+	if txn.managed {
+		panic("managed transaction cannot be amended directly")
+	}
+	if !txn.readonly {
+		return nil, false, &OpError{Op: "mdbx_txn_amend", Errno: BadTxn}
+	}
+	txn.strictThreadCheck()
+
+	newTxn := &Txn{
+		env:      txn.env,
+		readonly: false,
+		tid:      txn.tid,
+	}
+	if txn.env.strictThreadCheck {
+		newTxn.tid = threads.CurrentThreadID()
+	}
+
+	ret := C.mdbx_txn_amend(txn._txn, &newTxn._txn, C.MDBX_txn_flags_t(flags), nil)
+	if ret == C.MDBX_RESULT_TRUE {
+		return nil, true, nil
+	}
+	if ret != success {
+		return nil, false, operrno("mdbx_txn_amend", ret)
+	}
+	// Original read txn is consumed unless TxPrepareRO was requested.
+	if flags&TxPrepareRO == 0 {
+		txn.clearTxn()
+	} else {
+		txn.resetID()
+	}
+	return newTxn, false, nil
+}
+
+// Clone creates a new read-only transaction that observes the same
+// MVCC-snapshot as the origin transaction. Cloning a write transaction is
+// also allowed and yields a read-only view of the pre-write snapshot (without
+// uncommitted changes).
+//
+// The origin transaction must not be used concurrently while Clone runs. It
+// is the caller's responsibility to keep the origin alive on its own thread
+// until this function returns.
+//
+// See mdbx_txn_clone.
+func (txn *Txn) Clone() (*Txn, error) {
+	cloned := &Txn{
+		env:      txn.env,
+		readonly: true,
+	}
+	if txn.env.strictThreadCheck {
+		cloned.tid = threads.CurrentThreadID()
+	}
+	ret := C.mdbx_txn_clone(txn._txn, &cloned._txn, nil)
+	if ret != success {
+		return nil, operrno("mdbx_txn_clone", ret)
+	}
+	return cloned, nil
+}
+
+// CloneInto re-uses an existing (reset) read-only transaction handle as the
+// destination for a clone of the origin transaction. The target *Txn must be
+// a reset read-only transaction obtained from the same Env. On success the
+// target is renewed against the origin's snapshot.
+//
+// See mdbx_txn_clone.
+func (txn *Txn) CloneInto(target *Txn) error {
+	if target == nil || target._txn == nil {
+		return &OpError{Op: "mdbx_txn_clone", Errno: BadTxn}
+	}
+	ret := C.mdbx_txn_clone(txn._txn, &target._txn, nil)
+	if ret != success {
+		return operrno("mdbx_txn_clone", ret)
+	}
+	target.resetID()
+	return nil
 }
 
 // OpenDBI opens a named database in the environment.  An error is returned if

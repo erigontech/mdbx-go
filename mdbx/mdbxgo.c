@@ -211,6 +211,18 @@ mdbxgo_commit_result mdbxgo_txn_commit_ex(MDBX_txn *txn) {
     return r;
 }
 
+mdbxgo_commit_result mdbxgo_txn_checkpoint(MDBX_txn *txn, MDBX_txn_flags_t weakening) {
+    mdbxgo_commit_result r = {0};
+    r.err = mdbx_txn_checkpoint(txn, weakening, &r.lat);
+    return r;
+}
+
+mdbxgo_commit_result mdbxgo_txn_commit_embark_read(MDBX_txn **ptxn) {
+    mdbxgo_commit_result r = {0};
+    r.err = mdbx_txn_commit_embark_read(ptxn, &r.lat);
+    return r;
+}
+
 mdbxgo_gc_info_result mdbxgo_gc_info(MDBX_txn *txn) {
     mdbxgo_gc_info_result r = {0};
     MDBX_gc_info_t info = {0};

@@ -1420,3 +1420,445 @@ func TestTxnEnvWarmup(t *testing.T) {
 	}
 	defer txn.Abort()
 }
+
+// TestTxn_Refresh exercises mdbx_txn_refresh against a read-only transaction.
+// After a write has occurred, refreshing the older reader must expose the
+// new value without going through Reset/Renew.
+func TestTxn_Refresh(t *testing.T) {
+	env, _ := setup(t)
+
+	var dbi DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		dbi, err = txn.OpenDBISimple("refresh", Create)
+		return err
+	}); err != nil {
+		t.Fatalf("create dbi: %v", err)
+	}
+
+	roTxn, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin ro: %v", err)
+	}
+	defer roTxn.Abort()
+
+	// Already at tip — nothing committed since this snapshot started.
+	atTip, err := roTxn.Refresh()
+	if err != nil {
+		t.Fatalf("refresh (tip): %v", err)
+	}
+	if !atTip {
+		t.Errorf("expected atTip=true on freshly-started reader")
+	}
+
+	if _, err := roTxn.Get(dbi, []byte("k")); !IsNotFound(err) {
+		t.Errorf("expected NotFound before write, got %v", err)
+	}
+
+	if err := env.Update(func(txn *Txn) error {
+		return txn.Put(dbi, []byte("k"), []byte("v"), 0)
+	}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Reader still sees the old snapshot before refresh.
+	if _, err := roTxn.Get(dbi, []byte("k")); !IsNotFound(err) {
+		t.Errorf("expected NotFound on stale snapshot, got %v", err)
+	}
+
+	atTip, err = roTxn.Refresh()
+	if err != nil {
+		t.Fatalf("refresh (advance): %v", err)
+	}
+	if atTip {
+		t.Errorf("expected atTip=false after a fresh commit landed")
+	}
+
+	v, err := roTxn.Get(dbi, []byte("k"))
+	if err != nil {
+		t.Fatalf("get after refresh: %v", err)
+	}
+	if string(v) != "v" {
+		t.Errorf("unexpected value after refresh: %q", v)
+	}
+}
+
+// TestTxn_Checkpoint commits a chunk of work in the middle of a longer write
+// pipeline and verifies the data is visible to a new reader without
+// releasing the write lock.
+func TestTxn_Checkpoint(t *testing.T) {
+	env, _ := setup(t)
+
+	var dbi DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		dbi, err = txn.OpenDBISimple("ckpt", Create)
+		return err
+	}); err != nil {
+		t.Fatalf("create dbi: %v", err)
+	}
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	txn, err := env.BeginTxn(nil, 0)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() {
+		if txn._txn != nil {
+			txn.Abort()
+		}
+	}()
+
+	if err := txn.Put(dbi, []byte("a"), []byte("1"), 0); err != nil {
+		t.Fatalf("put a: %v", err)
+	}
+
+	lat, noChanges, err := txn.Checkpoint(0)
+	if err != nil {
+		t.Fatalf("checkpoint: %v", err)
+	}
+	if noChanges {
+		t.Errorf("expected noChanges=false after a put")
+	}
+	_ = lat // latency is informational
+
+	// Pipeline continues in the same write txn.
+	if err := txn.Put(dbi, []byte("b"), []byte("2"), 0); err != nil {
+		t.Fatalf("put b: %v", err)
+	}
+
+	// First key must be visible to a fresh reader (mid-pipeline).
+	if err := env.View(func(view *Txn) error {
+		got, gerr := view.Get(dbi, []byte("a"))
+		if gerr != nil {
+			return fmt.Errorf("get a: %w", gerr)
+		}
+		if string(got) != "1" {
+			return fmt.Errorf("a=%q, want %q", got, "1")
+		}
+		// b not yet committed
+		if _, gerr := view.Get(dbi, []byte("b")); !IsNotFound(gerr) {
+			return fmt.Errorf("b visible before second commit: %v", gerr)
+		}
+		return nil
+	}); err != nil {
+		t.Errorf("mid-pipeline view: %v", err)
+	}
+
+	if _, err := txn.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	if err := env.View(func(view *Txn) error {
+		got, gerr := view.Get(dbi, []byte("b"))
+		if gerr != nil {
+			return fmt.Errorf("get b: %w", gerr)
+		}
+		if string(got) != "2" {
+			return fmt.Errorf("b=%q, want %q", got, "2")
+		}
+		return nil
+	}); err != nil {
+		t.Errorf("final view: %v", err)
+	}
+}
+
+// TestTxn_Checkpoint_NoChanges asserts the noChanges flag is returned when a
+// write transaction is checkpointed without any modifications.
+func TestTxn_Checkpoint_NoChanges(t *testing.T) {
+	env, _ := setup(t)
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	txn, err := env.BeginTxn(nil, 0)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() {
+		if txn._txn != nil {
+			txn.Abort()
+		}
+	}()
+
+	_, noChanges, err := txn.Checkpoint(0)
+	if err != nil {
+		t.Fatalf("checkpoint: %v", err)
+	}
+	if !noChanges {
+		t.Errorf("expected noChanges=true for an empty write txn")
+	}
+}
+
+// TestTxn_CommitEmbarkRead commits a write txn and immediately observes the
+// resulting snapshot through the same handle (now in read-only mode).
+func TestTxn_CommitEmbarkRead(t *testing.T) {
+	env, _ := setup(t)
+
+	var dbi DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		dbi, err = txn.OpenDBISimple("embark", Create)
+		return err
+	}); err != nil {
+		t.Fatalf("create dbi: %v", err)
+	}
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	txn, err := env.BeginTxn(nil, 0)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() {
+		if txn._txn != nil {
+			txn.Abort()
+		}
+	}()
+
+	if err := txn.Put(dbi, []byte("k"), []byte("v"), 0); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	_, noChanges, err := txn.CommitEmbarkRead()
+	if err != nil {
+		t.Fatalf("commit embark read: %v", err)
+	}
+	if noChanges {
+		t.Errorf("expected noChanges=false after a put")
+	}
+	if !txn.readonly {
+		t.Errorf("expected txn to be read-only after CommitEmbarkRead")
+	}
+
+	got, err := txn.Get(dbi, []byte("k"))
+	if err != nil {
+		t.Fatalf("get on embarked read: %v", err)
+	}
+	if string(got) != "v" {
+		t.Errorf("unexpected value on embarked read: %q", got)
+	}
+}
+
+// TestTxn_Rollback verifies that writes performed before Rollback are
+// discarded but the same Txn handle can continue to be used.
+func TestTxn_Rollback(t *testing.T) {
+	env, _ := setup(t)
+
+	var dbi DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		dbi, err = txn.OpenDBISimple("rollback", Create)
+		return err
+	}); err != nil {
+		t.Fatalf("create dbi: %v", err)
+	}
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	txn, err := env.BeginTxn(nil, 0)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() {
+		if txn._txn != nil {
+			txn.Abort()
+		}
+	}()
+
+	if err := txn.Put(dbi, []byte("dropped"), []byte("x"), 0); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	if err := txn.Rollback(); err != nil {
+		t.Fatalf("rollback: %v", err)
+	}
+	if txn._txn == nil {
+		t.Fatal("Rollback unexpectedly tore down the txn handle")
+	}
+
+	// The handle must still be usable for further writes.
+	if _, err := txn.Get(dbi, []byte("dropped")); !IsNotFound(err) {
+		t.Errorf("expected NotFound after Rollback, got %v", err)
+	}
+	if err := txn.Put(dbi, []byte("kept"), []byte("y"), 0); err != nil {
+		t.Fatalf("put after rollback: %v", err)
+	}
+	if _, err := txn.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	if err := env.View(func(view *Txn) error {
+		if _, gerr := view.Get(dbi, []byte("dropped")); !IsNotFound(gerr) {
+			return fmt.Errorf("rolled-back key visible: %v", gerr)
+		}
+		got, gerr := view.Get(dbi, []byte("kept"))
+		if gerr != nil {
+			return fmt.Errorf("get kept: %w", gerr)
+		}
+		if string(got) != "y" {
+			return fmt.Errorf("kept=%q, want %q", got, "y")
+		}
+		return nil
+	}); err != nil {
+		t.Errorf("post-rollback view: %v", err)
+	}
+}
+
+// TestTxn_Amend converts a fresh read snapshot into a write transaction and
+// commits a modification to that snapshot.
+func TestTxn_Amend(t *testing.T) {
+	env, _ := setup(t)
+
+	var dbi DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		dbi, err = txn.OpenDBISimple("amend", Create)
+		return err
+	}); err != nil {
+		t.Fatalf("create dbi: %v", err)
+	}
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	ro, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin ro: %v", err)
+	}
+	defer func() {
+		if ro._txn != nil {
+			ro.Abort()
+		}
+	}()
+
+	writeTxn, snapshotTooOld, err := ro.Amend(0)
+	if err != nil {
+		t.Fatalf("amend: %v", err)
+	}
+	if snapshotTooOld {
+		t.Fatal("unexpected snapshotTooOld for an untouched snapshot")
+	}
+	if writeTxn == nil {
+		t.Fatal("expected non-nil write txn")
+	}
+	if ro._txn != nil {
+		t.Errorf("expected original read txn handle to be consumed without TxPrepareRO")
+	}
+
+	if err := writeTxn.Put(dbi, []byte("amended"), []byte("ok"), 0); err != nil {
+		writeTxn.Abort()
+		t.Fatalf("put: %v", err)
+	}
+	if _, err := writeTxn.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	if err := env.View(func(view *Txn) error {
+		got, gerr := view.Get(dbi, []byte("amended"))
+		if gerr != nil {
+			return fmt.Errorf("get amended: %w", gerr)
+		}
+		if string(got) != "ok" {
+			return fmt.Errorf("amended=%q, want %q", got, "ok")
+		}
+		return nil
+	}); err != nil {
+		t.Errorf("post-amend view: %v", err)
+	}
+}
+
+// TestTxn_Amend_SnapshotTooOld asserts the snapshotTooOld signal is set when
+// the read transaction's snapshot has been superseded by a committed write.
+func TestTxn_Amend_SnapshotTooOld(t *testing.T) {
+	env, _ := setup(t)
+
+	var dbi DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		dbi, err = txn.OpenDBISimple("amend_stale", Create)
+		return err
+	}); err != nil {
+		t.Fatalf("create dbi: %v", err)
+	}
+
+	ro, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin ro: %v", err)
+	}
+	defer ro.Abort()
+
+	// Race a write past the read snapshot.
+	if err := env.Update(func(txn *Txn) error {
+		return txn.Put(dbi, []byte("racer"), []byte("1"), 0)
+	}); err != nil {
+		t.Fatalf("race write: %v", err)
+	}
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	writeTxn, snapshotTooOld, err := ro.Amend(0)
+	if err != nil {
+		t.Fatalf("amend: %v", err)
+	}
+	if !snapshotTooOld {
+		if writeTxn != nil {
+			writeTxn.Abort()
+		}
+		t.Fatalf("expected snapshotTooOld=true after concurrent commit")
+	}
+	if writeTxn != nil {
+		t.Errorf("expected nil writeTxn on snapshotTooOld")
+	}
+}
+
+// TestTxn_Clone creates a clone of a read transaction and verifies it sees
+// the same MVCC snapshot independently of the origin.
+func TestTxn_Clone(t *testing.T) {
+	env, _ := setup(t)
+
+	var dbi DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		dbi, err = txn.OpenDBISimple("clone", Create)
+		if err != nil {
+			return err
+		}
+		return txn.Put(dbi, []byte("k"), []byte("v0"), 0)
+	}); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	origin, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer origin.Abort()
+
+	clone, err := origin.Clone()
+	if err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+	defer clone.Abort()
+
+	if clone.ID() != origin.ID() {
+		t.Errorf("clone id %d != origin id %d", clone.ID(), origin.ID())
+	}
+
+	// A subsequent commit must not be visible to either the origin or the
+	// clone — they both share the same pre-commit MVCC snapshot.
+	if err := env.Update(func(txn *Txn) error {
+		return txn.Put(dbi, []byte("k"), []byte("v1"), 0)
+	}); err != nil {
+		t.Fatalf("post-clone write: %v", err)
+	}
+
+	for name, view := range map[string]*Txn{"origin": origin, "clone": clone} {
+		got, gerr := view.Get(dbi, []byte("k"))
+		if gerr != nil {
+			t.Errorf("%s get: %v", name, gerr)
+			continue
+		}
+		if string(got) != "v0" {
+			t.Errorf("%s saw %q, want %q", name, got, "v0")
+		}
+	}
+}
