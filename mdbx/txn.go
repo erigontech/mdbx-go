@@ -490,6 +490,8 @@ func (txn *Txn) Checkpoint(weakeningDurability uint) (lat CommitLatency, noChang
 // (MDBX_RESULT_TRUE).
 //
 // See mdbx_txn_commit_embark_read.
+//
+//nolint:gocritic // false positive on dupSubExpr
 func (txn *Txn) CommitEmbarkRead() (lat CommitLatency, noChanges bool, err error) {
 	if txn.managed {
 		panic("managed transaction cannot be committed directly")
@@ -549,6 +551,8 @@ func (txn *Txn) Rollback() error {
 // On success a new *Txn representing the write transaction is returned.
 //
 // See mdbx_txn_amend.
+//
+//nolint:gocritic // false positive on dupSubExpr
 func (txn *Txn) Amend(flags uint) (writeTxn *Txn, snapshotTooOld bool, err error) {
 	if txn.managed {
 		panic("managed transaction cannot be amended directly")
@@ -593,6 +597,8 @@ func (txn *Txn) Amend(flags uint) (writeTxn *Txn, snapshotTooOld bool, err error
 // until this function returns.
 //
 // See mdbx_txn_clone.
+//
+//nolint:gocritic // false positive on dupSubExpr
 func (txn *Txn) Clone() (*Txn, error) {
 	cloned := &Txn{
 		env:      txn.env,
@@ -614,6 +620,8 @@ func (txn *Txn) Clone() (*Txn, error) {
 // target is renewed against the origin's snapshot.
 //
 // See mdbx_txn_clone.
+//
+//nolint:gocritic // false positive on dupSubExpr
 func (txn *Txn) CloneInto(target *Txn) error {
 	if target == nil || target._txn == nil {
 		return &OpError{Op: "mdbx_txn_clone", Errno: BadTxn}

@@ -1538,7 +1538,7 @@ func TestTxn_Checkpoint(t *testing.T) {
 		}
 		// b not yet committed
 		if _, gerr := view.Get(dbi, []byte("b")); !IsNotFound(gerr) {
-			return fmt.Errorf("b visible before second commit: %v", gerr)
+			return fmt.Errorf("b visible before second commit: %w", gerr)
 		}
 		return nil
 	}); err != nil {
@@ -1690,7 +1690,7 @@ func TestTxn_Rollback(t *testing.T) {
 
 	if err := env.View(func(view *Txn) error {
 		if _, gerr := view.Get(dbi, []byte("dropped")); !IsNotFound(gerr) {
-			return fmt.Errorf("rolled-back key visible: %v", gerr)
+			return fmt.Errorf("rolled-back key visible: %w", gerr)
 		}
 		got, gerr := view.Get(dbi, []byte("kept"))
 		if gerr != nil {
