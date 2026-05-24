@@ -66,6 +66,8 @@ mdbxgo_uint_result       mdbxgo_dbi_open_ex(MDBX_txn *txn, const char *name, MDB
 
 typedef struct { int err; MDBX_commit_latency lat; } mdbxgo_commit_result;
 mdbxgo_commit_result     mdbxgo_txn_commit_ex(MDBX_txn *txn);
+mdbxgo_commit_result     mdbxgo_txn_checkpoint(MDBX_txn *txn, MDBX_txn_flags_t weakening);
+mdbxgo_commit_result     mdbxgo_txn_commit_embark_read(MDBX_txn **ptxn);
 
 typedef struct { int err; char *kbase; size_t klen; char *vbase; size_t vlen; } mdbxgo_val_result;
 mdbxgo_val_result        mdbxgo_cursor_get_empty(MDBX_cursor *cur, MDBX_cursor_op op);
