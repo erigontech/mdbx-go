@@ -1862,3 +1862,152 @@ func TestTxn_Clone(t *testing.T) {
 		}
 	}
 }
+
+// TestTxn_Checkpoint_OnReadOnly verifies the !readonly guard on Checkpoint:
+// calling it on a read txn must return BadTxn without destroying the handle.
+func TestTxn_Checkpoint_OnReadOnly(t *testing.T) {
+	env, _ := setup(t)
+
+	ro, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin ro: %v", err)
+	}
+	defer ro.Abort()
+
+	_, _, err = ro.Checkpoint(0)
+	if !IsErrno(err, BadTxn) {
+		t.Fatalf("expected BadTxn from Checkpoint on read txn, got %v", err)
+	}
+	if ro._txn == nil {
+		t.Fatal("read txn handle was destroyed by failed Checkpoint guard")
+	}
+	// Reader must still be usable after the failed guard.
+	if _, gerr := ro.OpenRoot(0); gerr != nil {
+		t.Fatalf("read txn unusable after guard: %v", gerr)
+	}
+}
+
+// TestTxn_Rollback_OnReadOnly verifies the !readonly guard on Rollback.
+func TestTxn_Rollback_OnReadOnly(t *testing.T) {
+	env, _ := setup(t)
+
+	ro, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin ro: %v", err)
+	}
+	defer ro.Abort()
+
+	if err := ro.Rollback(); !IsErrno(err, BadTxn) {
+		t.Fatalf("expected BadTxn from Rollback on read txn, got %v", err)
+	}
+	if ro._txn == nil {
+		t.Fatal("read txn handle was destroyed by failed Rollback guard")
+	}
+	if _, gerr := ro.OpenRoot(0); gerr != nil {
+		t.Fatalf("read txn unusable after guard: %v", gerr)
+	}
+}
+
+// TestTxn_CommitEmbarkRead_OnReadOnly verifies the !readonly guard.
+func TestTxn_CommitEmbarkRead_OnReadOnly(t *testing.T) {
+	env, _ := setup(t)
+
+	ro, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin ro: %v", err)
+	}
+	defer ro.Abort()
+
+	_, _, err = ro.CommitEmbarkRead()
+	if !IsErrno(err, BadTxn) {
+		t.Fatalf("expected BadTxn from CommitEmbarkRead on read txn, got %v", err)
+	}
+	if ro._txn == nil {
+		t.Fatal("read txn handle was destroyed by failed CommitEmbarkRead guard")
+	}
+}
+
+// TestTxn_CloneInto_RejectsWriteTarget verifies that CloneInto refuses a
+// write-txn target before invoking libmdbx (which would otherwise reset the
+// write handle via its read-only bailout, corrupting state).
+func TestTxn_CloneInto_RejectsWriteTarget(t *testing.T) {
+	env, _ := setup(t)
+
+	// A live read source.
+	src, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin src: %v", err)
+	}
+	defer src.Abort()
+
+	// A live write target — must be rejected at the wrapper boundary.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	writeTarget, err := env.BeginTxn(nil, 0)
+	if err != nil {
+		t.Fatalf("begin write target: %v", err)
+	}
+	defer func() {
+		if writeTarget._txn != nil {
+			writeTarget.Abort()
+		}
+	}()
+
+	if err := src.CloneInto(writeTarget); !IsErrno(err, BadTxn) {
+		t.Fatalf("expected BadTxn from CloneInto with write target, got %v", err)
+	}
+	if writeTarget._txn == nil {
+		t.Fatal("write target handle was corrupted by CloneInto")
+	}
+	// Sanity: the write target is still usable as a write txn.
+	root, gerr := writeTarget.OpenRoot(0)
+	if gerr != nil {
+		t.Fatalf("write target unusable after rejected CloneInto: %v", gerr)
+	}
+	if perr := writeTarget.Put(root, []byte("k"), []byte("v"), 0); perr != nil {
+		t.Fatalf("put on write target failed: %v", perr)
+	}
+}
+
+// TestTxn_CloneInto_Reuse exercises the happy path of reusing an existing
+// (reset) read-only handle as the clone destination.
+func TestTxn_CloneInto_Reuse(t *testing.T) {
+	env, _ := setup(t)
+
+	var dbi DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		dbi, err = txn.OpenDBISimple("clone_into", Create)
+		if err != nil {
+			return err
+		}
+		return txn.Put(dbi, []byte("k"), []byte("v"), 0)
+	}); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	src, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin src: %v", err)
+	}
+	defer src.Abort()
+
+	target, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin target: %v", err)
+	}
+	defer target.Abort()
+
+	if err := src.CloneInto(target); err != nil {
+		t.Fatalf("clone into: %v", err)
+	}
+	if target.ID() != src.ID() {
+		t.Errorf("target id %d != src id %d after CloneInto", target.ID(), src.ID())
+	}
+	got, gerr := target.Get(dbi, []byte("k"))
+	if gerr != nil {
+		t.Fatalf("get on cloned target: %v", gerr)
+	}
+	if string(got) != "v" {
+		t.Errorf("target saw %q, want %q", got, "v")
+	}
+}
