@@ -754,7 +754,7 @@ func (env *Env) Defrag(opts DefragOptions) (*DefragResult, error) {
 		CycleProgress:   uint(r.rough_estimation_cycle_progress_permille),
 		Cycles:          uint(r.cycles),
 		StoppingReasons: uint(r.stopping_reasons),
-		SpentTime:       toDurationU64(C.uint64_t(r.spent_time_dot16)),
+		SpentTime:       toDurationU64(r.spent_time_dot16),
 	}
 	return res, operrno("mdbx_env_defrag", r.err)
 }
