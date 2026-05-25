@@ -254,11 +254,13 @@ func (env *Env) CopyFD(fd uintptr) error {
 	return env.CopyFDFlag(fd, 0)
 }
 
-// CopyFDFlag copies env to the file descriptor fd, with options.
+// CopyFDFlag copies env to the file descriptor fd, with options. On Windows
+// fd must be a native HANDLE value (as returned by os.File.Fd); on POSIX it
+// is a regular int file descriptor.
 //
 // See mdbx_env_copy2fd.
 func (env *Env) CopyFDFlag(fd uintptr, flags uint) error {
-	ret := C.mdbx_env_copy2fd(env._env, C.mdbx_filehandle_t(fd), C.MDBX_copy_flags_t(flags))
+	ret := C.mdbxgo_env_copy2fd(env._env, C.uintptr_t(fd), C.MDBX_copy_flags_t(flags))
 	return operrno("mdbx_env_copy2fd", ret)
 }
 

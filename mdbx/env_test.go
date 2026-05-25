@@ -384,9 +384,6 @@ func TestEnv_CopyFlag_Compact(t *testing.T) {
 }
 
 func TestEnv_CopyFD(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("CopyFD test uses os.File.Fd() semantics not portable to Windows HANDLE")
-	}
 	testEnvCopy(t, CopyCompact, true, true)
 }
 

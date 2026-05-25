@@ -108,6 +108,12 @@ typedef struct {
     uint64_t spent_time_dot16;
 } mdbxgo_defrag_result;
 
+/* mdbxgo_env_copy2fd wraps mdbx_env_copy2fd so callers can pass the file
+ * descriptor as a uintptr regardless of platform. On POSIX mdbx_filehandle_t
+ * is int, on Windows it is HANDLE (a void*); doing the cast in C keeps the
+ * Go side identical on every target. */
+int mdbxgo_env_copy2fd(MDBX_env *env, uintptr_t fd, MDBX_copy_flags_t flags);
+
 mdbxgo_defrag_result mdbxgo_env_defrag(MDBX_env *env,
                                        size_t defrag_atleast,
                                        size_t time_atleast_dot16,

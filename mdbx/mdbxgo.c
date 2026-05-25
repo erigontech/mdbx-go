@@ -223,6 +223,10 @@ mdbxgo_commit_result mdbxgo_txn_commit_embark_read(MDBX_txn **ptxn) {
     return r;
 }
 
+int mdbxgo_env_copy2fd(MDBX_env *env, uintptr_t fd, MDBX_copy_flags_t flags) {
+    return mdbx_env_copy2fd(env, (mdbx_filehandle_t)(intptr_t)fd, flags);
+}
+
 mdbxgo_defrag_result mdbxgo_env_defrag(MDBX_env *env,
                                        size_t defrag_atleast,
                                        size_t time_atleast_dot16,
