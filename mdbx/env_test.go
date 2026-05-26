@@ -518,14 +518,6 @@ func testEnvCopy(t *testing.T, flags uint, useflags bool, usefd bool) {
 }
 
 func TestEnv_Defrag(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		// On Windows the defrag worker takes a region lock through
-		// LockFileEx and trips ERROR_LOCK_VIOLATION when run on the
-		// same handle that has just committed writes. This is a
-		// libmdbx-side interaction with Windows file locking, not an
-		// issue with the binding itself.
-		t.Skip("mdbx_env_defrag conflicts with the env's own LockFileEx region on Windows")
-	}
 	env, _ := setup(t)
 
 	// Make some pages by writing and then deleting data so there's
