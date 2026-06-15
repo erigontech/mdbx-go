@@ -109,6 +109,11 @@ const (
 	OptMergeThreshold16dot16Percent = C.MDBX_opt_merge_threshold
 	OptPreferWafInsteadofBalance    = C.MDBX_opt_prefer_waf_insteadof_balance
 	OptGCTimeLimit                  = C.MDBX_opt_gc_time_limit
+	// OptPrefaultWriteEnable controls the prefault-write optimization (mincore() + pwrite()
+	// of each not-in-core page before it is touched via the writemap). It only pays off when
+	// the database is much larger than RAM; when the working set fits in RAM it is pure
+	// overhead. Set to 0 to disable, 1 to force-enable, or use the env default when unset.
+	OptPrefaultWriteEnable = C.MDBX_opt_prefault_write_enable
 )
 
 var (
