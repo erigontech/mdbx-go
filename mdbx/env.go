@@ -100,7 +100,7 @@ const (
 	OptSyncPeriod                   = C.MDBX_opt_sync_period
 	OptRpAugmentLimit               = C.MDBX_opt_rp_augment_limit
 	OptLooseLimit                   = C.MDBX_opt_loose_limit
-	OptDpReverseLimit               = C.MDBX_opt_dp_reserve_limit
+	OptDpReserveLimit               = C.MDBX_opt_dp_reserve_limit
 	OptTxnDpLimit                   = C.MDBX_opt_txn_dp_limit
 	OptTxnDpInitial                 = C.MDBX_opt_txn_dp_initial
 	OptSpillMaxDenominator          = C.MDBX_opt_spill_max_denominator
