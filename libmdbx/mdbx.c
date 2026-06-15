@@ -22364,6 +22364,95 @@ bool gc_repnl_has_span(const MDBX_txn *txn, const size_t num) {
                    : !MDBX_PNL_IS_EMPTY(txn->wr.repnl);
 }
 
+/* Упреждающая запись (prefault-write) вновь выделяемых страниц.
+ *
+ * Содержимое выделенной страницы не нужно, но если страница отсутствует
+ * в ОЗУ (что весьма вероятно), то любое обращение к ней приведет
+ * к page-fault:
+ *  - прерыванию по отсутствию страницы;
+ *  - переключение контекста в режим ядра с засыпанием процесса;
+ *  - чтение страницы с диска;
+ *  - обновление PTE и пробуждением процесса;
+ *  - переключение контекста по доступности ЦПУ.
+ *
+ * Пытаемся минимизировать накладные расходы записывая страницу, что при
+ * наличии unified page cache приведет к появлению страницы в ОЗУ без чтения
+ * с диска. При этом запись на диск должна быть отложена адекватным ядром,
+ * так как страница отображена в память в режиме чтения-записи и следом в
+ * неё пишет ЦПУ.
+ *
+ * В случае если страница в памяти процесса, то излишняя запись может быть
+ * достаточно дорогой. Кроме системного вызова и копирования данных, в особо
+ * одаренных ОС при этом могут включаться файловая система, выделяться
+ * временная страница, пополняться очереди асинхронного выполнения,
+ * обновляться PTE с последующей генерацией page-fault и чтением данных из
+ * грязной I/O очереди. Из-за этого штраф за лишнюю запись может быть
+ * сравним с избегаемым ненужным чтением.
+ *
+ * NOTE: вынесено в отдельную (__noinline) функцию для наглядности в профиле
+ * (pprof) — чтобы стоимость mincore()+pwrite() была видна отдельно от стоимости
+ * инициализации страницы (page_alloc_init). */
+static __noinline bool page_alloc_prefault(MDBX_env *const env, const pgno_t pgno, const size_t num, bool need_clean) {
+  void *const pattern = ptr_disp(env->page_auxbuf, need_clean ? env->ps : env->ps * 2);
+  size_t file_offset = pgno2bytes(env, pgno);
+  if (likely(num == 1)) {
+    if (!env_is_page_incore(env, pgno)) {
+      osal_pwrite(env->lazy_fd, pattern, env->ps, file_offset);
+      if (MDBX_ENABLE_PGOP_STAT)
+        env->lck->pgops.prefault.weak += 1;
+      need_clean = false;
+    }
+  } else {
+    struct iovec iov[MDBX_AUXILARY_IOV_MAX];
+    size_t n = 0, cleared = 0;
+    for (size_t i = 0; i < num; ++i) {
+      if (!env_is_page_incore(env, pgno + (pgno_t)i)) {
+        ++cleared;
+        iov[n].iov_len = env->ps;
+        iov[n].iov_base = pattern;
+        if (unlikely(++n == MDBX_AUXILARY_IOV_MAX)) {
+          osal_pwritev(env->lazy_fd, iov, MDBX_AUXILARY_IOV_MAX, file_offset);
+          if (MDBX_ENABLE_PGOP_STAT)
+            env->lck->pgops.prefault.weak += 1;
+          file_offset += pgno2bytes(env, MDBX_AUXILARY_IOV_MAX);
+          n = 0;
+        }
+      }
+    }
+    if (likely(n > 0)) {
+      osal_pwritev(env->lazy_fd, iov, n, file_offset);
+      if (MDBX_ENABLE_PGOP_STAT)
+        env->lck->pgops.prefault.weak += 1;
+    }
+    if (cleared == num)
+      need_clean = false;
+  }
+  return need_clean;
+}
+
+/* Первое обращение к (вновь выделенной) странице через отображение и
+ * инициализация её заголовка. Именно здесь возникает page-fault на запись
+ * (minor — если страница уже в page cache, либо если файл расширен в "дыру";
+ * major — если переиспользуемая страница была вытеснена из ОЗУ).
+ *
+ * NOTE: вынесено в отдельную (__noinline) функцию для наглядности в профиле
+ * (pprof) — чтобы стоимость самого page-fault была видна отдельно от
+ * упреждающей записи (page_alloc_prefault) и от page_dirty(). */
+static __noinline void page_alloc_init(MDBX_env *const env, page_t *const page, const pgno_t pgno, const size_t num,
+                                       const bool need_clean) {
+  if (unlikely(need_clean))
+    memset(page, -1, pgno2bytes(env, num));
+
+  VALGRIND_MAKE_MEM_UNDEFINED(page, pgno2bytes(env, num));
+  page->pgno = pgno;
+  page->dupfix_ksize = 0;
+  page->flags = 0;
+  if (num > 1 && CHECKS0_ENABLED()) {
+    page->pages = (pgno_t)num;
+    page->flags = P_LARGE;
+  }
+}
+
 static inline pgr_t page_alloc_finalize(MDBX_env *const env, MDBX_txn *const txn, const MDBX_cursor *const mc,
                                         const pgno_t pgno, const size_t num) {
 #if MDBX_ENABLE_PROFGC
@@ -22383,64 +22472,8 @@ static inline pgr_t page_alloc_finalize(MDBX_env *const env, MDBX_txn *const txn
     MDBX_ASAN_UNPOISON_MEMORY_REGION(ret.page, pgno2bytes(env, num));
     VALGRIND_MAKE_MEM_UNDEFINED(ret.page, pgno2bytes(env, num));
 
-    /* Содержимое выделенной страницы не нужно, но если страница отсутствует
-     * в ОЗУ (что весьма вероятно), то любое обращение к ней приведет
-     * к page-fault:
-     *  - прерыванию по отсутствию страницы;
-     *  - переключение контекста в режим ядра с засыпанием процесса;
-     *  - чтение страницы с диска;
-     *  - обновление PTE и пробуждением процесса;
-     *  - переключение контекста по доступности ЦПУ.
-     *
-     * Пытаемся минимизировать накладные расходы записывая страницу, что при
-     * наличии unified page cache приведет к появлению страницы в ОЗУ без чтения
-     * с диска. При этом запись на диск должна быть отложена адекватным ядром,
-     * так как страница отображена в память в режиме чтения-записи и следом в
-     * неё пишет ЦПУ. */
-
-    /* В случае если страница в памяти процесса, то излишняя запись может быть
-     * достаточно дорогой. Кроме системного вызова и копирования данных, в особо
-     * одаренных ОС при этом могут включаться файловая система, выделяться
-     * временная страница, пополняться очереди асинхронного выполнения,
-     * обновляться PTE с последующей генерацией page-fault и чтением данных из
-     * грязной I/O очереди. Из-за этого штраф за лишнюю запись может быть
-     * сравним с избегаемым ненужным чтением. */
-    if (txn->wr.prefault_write_activated) {
-      void *const pattern = ptr_disp(env->page_auxbuf, need_clean ? env->ps : env->ps * 2);
-      size_t file_offset = pgno2bytes(env, pgno);
-      if (likely(num == 1)) {
-        if (!env_is_page_incore(env, pgno)) {
-          osal_pwrite(env->lazy_fd, pattern, env->ps, file_offset);
-          if (MDBX_ENABLE_PGOP_STAT)
-            env->lck->pgops.prefault.weak += 1;
-          need_clean = false;
-        }
-      } else {
-        struct iovec iov[MDBX_AUXILARY_IOV_MAX];
-        size_t n = 0, cleared = 0;
-        for (size_t i = 0; i < num; ++i) {
-          if (!env_is_page_incore(env, pgno + (pgno_t)i)) {
-            ++cleared;
-            iov[n].iov_len = env->ps;
-            iov[n].iov_base = pattern;
-            if (unlikely(++n == MDBX_AUXILARY_IOV_MAX)) {
-              osal_pwritev(env->lazy_fd, iov, MDBX_AUXILARY_IOV_MAX, file_offset);
-              if (MDBX_ENABLE_PGOP_STAT)
-                env->lck->pgops.prefault.weak += 1;
-              file_offset += pgno2bytes(env, MDBX_AUXILARY_IOV_MAX);
-              n = 0;
-            }
-          }
-        }
-        if (likely(n > 0)) {
-          osal_pwritev(env->lazy_fd, iov, n, file_offset);
-          if (MDBX_ENABLE_PGOP_STAT)
-            env->lck->pgops.prefault.weak += 1;
-        }
-        if (cleared == num)
-          need_clean = false;
-      }
-    }
+    if (txn->wr.prefault_write_activated)
+      need_clean = page_alloc_prefault(env, pgno, num, need_clean);
   } else {
     ret.page = page_shadow_alloc(txn, num);
     if (unlikely(!ret.page)) {
@@ -22449,17 +22482,7 @@ static inline pgr_t page_alloc_finalize(MDBX_env *const env, MDBX_txn *const txn
     }
   }
 
-  if (unlikely(need_clean))
-    memset(ret.page, -1, pgno2bytes(env, num));
-
-  VALGRIND_MAKE_MEM_UNDEFINED(ret.page, pgno2bytes(env, num));
-  ret.page->pgno = pgno;
-  ret.page->dupfix_ksize = 0;
-  ret.page->flags = 0;
-  if (num > 1 && CHECKS0_ENABLED()) {
-    ret.page->pages = (pgno_t)num;
-    ret.page->flags = P_LARGE;
-  }
+  page_alloc_init(env, ret.page, pgno, num, need_clean);
 
   ret.err = page_dirty(txn, ret.page, (pgno_t)num);
 bailout:
