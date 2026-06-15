@@ -109,6 +109,13 @@ const (
 	OptMergeThreshold16dot16Percent = C.MDBX_opt_merge_threshold
 	OptPreferWafInsteadofBalance    = C.MDBX_opt_prefer_waf_insteadof_balance
 	OptGCTimeLimit                  = C.MDBX_opt_gc_time_limit
+	OptWritethroughThreshold        = C.MDBX_opt_writethrough_threshold
+	OptPrefaultWriteEnable          = C.MDBX_opt_prefault_write_enable
+	OptSubpageLimit                 = C.MDBX_opt_subpage_limit
+	OptSubpageRoomThreshold         = C.MDBX_opt_subpage_room_threshold
+	OptSubpageReservePrereq         = C.MDBX_opt_subpage_reserve_prereq
+	OptSubpageReserveLimit          = C.MDBX_opt_subpage_reserve_limit
+	OptSplitReserve                 = C.MDBX_opt_split_reserve
 )
 
 var (
