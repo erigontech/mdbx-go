@@ -22392,7 +22392,7 @@ bool gc_repnl_has_span(const MDBX_txn *txn, const size_t num) {
  * NOTE: вынесено в отдельную (__noinline) функцию для наглядности в профиле
  * (pprof) — чтобы стоимость mincore()+pwrite() была видна отдельно от стоимости
  * инициализации страницы (page_alloc_init). */
-static __noinline bool page_alloc_prefault(MDBX_env *const env, const pgno_t pgno, const size_t num, bool need_clean) {
+__hot __noinline static bool page_alloc_prefault(MDBX_env *const env, const pgno_t pgno, const size_t num, bool need_clean) {
   void *const pattern = ptr_disp(env->page_auxbuf, need_clean ? env->ps : env->ps * 2);
   size_t file_offset = pgno2bytes(env, pgno);
   if (likely(num == 1)) {
@@ -22438,7 +22438,7 @@ static __noinline bool page_alloc_prefault(MDBX_env *const env, const pgno_t pgn
  * NOTE: вынесено в отдельную (__noinline) функцию для наглядности в профиле
  * (pprof) — чтобы стоимость самого page-fault была видна отдельно от
  * упреждающей записи (page_alloc_prefault) и от page_dirty(). */
-static __noinline void page_alloc_init(MDBX_env *const env, page_t *const page, const pgno_t pgno, const size_t num,
+__hot __noinline static void page_alloc_init(MDBX_env *const env, page_t *const page, const pgno_t pgno, const size_t num,
                                        const bool need_clean) {
   if (unlikely(need_clean))
     memset(page, -1, pgno2bytes(env, num));
