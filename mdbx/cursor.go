@@ -404,9 +404,11 @@ func (c *Cursor) DeleteRange(end *Cursor, endIncluding bool) (numberAffected uin
 }
 
 // EstimateDistance estimates the number of elements between the position of the
-// receiver cursor and the position of last. Both cursors must be positioned and
-// initialized for the same table and transaction. The result is a rough estimate
-// suitable for building/optimizing query plans, not an exact count.
+// receiver cursor and the position of last. Both cursors must be non-nil,
+// positioned, and initialized for the same table and transaction. Unlike
+// Distance, this estimate has no end-of-table sentinel: a nil last is not a
+// valid argument. The result is a rough estimate suitable for building/optimizing
+// query plans, not an exact count.
 //
 // See mdbx_estimate_distance.
 func (c *Cursor) EstimateDistance(last *Cursor) (int, error) {
@@ -491,9 +493,9 @@ func (c *Cursor) Scroll(amount int, deepness uint) error {
 // (e.g. concurrent range deletion or warm-up).
 //
 // A nil first means the beginning of the table and a nil last means the end;
-// at least one of them must be non-nil and positioned. All cursors must be bound
-// to the same table and transaction. cursors must contain at least one cursor
-// that is neither first nor last.
+// at least one of them must be non-nil and positioned. Every entry in cursors
+// must be a non-nil open cursor bound to the same table and transaction (a nil
+// entry returns an error); these are the cursors that get positioned.
 //
 // deepness selects the B-tree level at which the distribution is computed: for
 // the positions to match a number of keys/values it must be at least the B-tree
