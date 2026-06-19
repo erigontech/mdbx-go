@@ -264,7 +264,7 @@ func (env *Env) CopyFDFlag(fd uintptr, flags uint) error {
 	return operrno("mdbx_env_copy2fd", ret)
 }
 
-// Copy copies the data in env 	to an environment at path. The target path must
+// Copy copies the data in env to an environment at path. The target path must
 // not already exist; pass CopyOverwrite via CopyFlag to overwrite.
 //
 // See mdbx_env_copy.
