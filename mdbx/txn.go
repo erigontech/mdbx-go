@@ -1108,6 +1108,43 @@ func (txn *Txn) DCmp(dbi DBI, a []byte, b []byte) int {
 	return 0
 }
 
+// EstimateRange estimates, as a number of elements, the size of the key range
+// that starts at beginKey and ends at endKey. The result is a rough estimate
+// based on the b-tree structure, intended for building and optimizing query
+// plans (e.g. splitting a key range into evenly-sized chunks for parallel
+// workers); it is not an exact count.
+//
+// A nil beginKey means the range starts at the first item of dbi; a nil endKey
+// means it ends at the last item. beginData/endData are only meaningful for
+// DupSort databases (pass nil otherwise) and may only be supplied together with
+// the corresponding key.
+//
+// See mdbx_estimate_range.
+func (txn *Txn) EstimateRange(dbi DBI, beginKey, beginData, endKey, endData []byte) (int, error) {
+	var bk, bd, ek, ed *C.char
+	if len(beginKey) > 0 {
+		bk = (*C.char)(unsafe.Pointer(&beginKey[0]))
+	}
+	if len(beginData) > 0 {
+		bd = (*C.char)(unsafe.Pointer(&beginData[0]))
+	}
+	if len(endKey) > 0 {
+		ek = (*C.char)(unsafe.Pointer(&endKey[0]))
+	}
+	if len(endData) > 0 {
+		ed = (*C.char)(unsafe.Pointer(&endData[0]))
+	}
+	r := C.mdbxgo_estimate_range(
+		txn._txn, C.MDBX_dbi(dbi),
+		bk, C.size_t(len(beginKey)), bd, C.size_t(len(beginData)),
+		ek, C.size_t(len(endKey)), ed, C.size_t(len(endData)),
+	)
+	if err := operrno("mdbx_estimate_range", r.err); err != nil {
+		return 0, err
+	}
+	return int(r.val), nil
+}
+
 func (txn *Txn) Sequence(dbi DBI, increment uint64) (uint64, error) {
 	r := C.mdbxgo_dbi_sequence(txn._txn, C.MDBX_dbi(dbi), C.uint64_t(increment))
 	if r.err != success {
