@@ -373,6 +373,164 @@ func (c *Cursor) RangeDel(mode uint) (numberAffected uint64, err error) {
 	return uint64(r.val), nil
 }
 
+// cptr returns c's underlying C cursor, or NULL when c is nil. The range/
+// distribution APIs accept a nil bound cursor to mean "the start/end of the
+// table", which maps to a NULL MDBX_cursor* on the C side.
+func cptr(c *Cursor) *C.MDBX_cursor {
+	if c == nil {
+		return nil
+	}
+	return c._c
+}
+
+// DeleteRange performs a mass deletion of the items between the position of the
+// receiver cursor (the beginning of the range) and the position of end (the end
+// of the range). It is much faster than deleting items one by one because whole
+// pages and branches are cut out of the B+ tree.
+//
+// Both cursors must already be positioned (see Cursor.Get) and bound to the same
+// table and write transaction. A nil end deletes up to the last item.
+// endIncluding controls whether the item at end's position is itself deleted.
+//
+// It returns the number of deleted items.
+//
+// See mdbx_cursor_delete_range.
+func (c *Cursor) DeleteRange(end *Cursor, endIncluding bool) (numberAffected uint64, err error) {
+	r := C.mdbxgo_cursor_delete_range(c._c, cptr(end), C.bool(endIncluding))
+	if err := operrno("mdbx_cursor_delete_range", r.err); err != nil {
+		return 0, err
+	}
+	return uint64(r.val), nil
+}
+
+// EstimateDistance estimates the number of elements between the position of the
+// receiver cursor and the position of last. Both cursors must be non-nil,
+// positioned, and initialized for the same table and transaction. Unlike
+// Distance, this estimate has no end-of-table sentinel: a nil last is not a
+// valid argument. The result is a rough estimate suitable for building/optimizing
+// query plans, not an exact count.
+//
+// See mdbx_estimate_distance.
+func (c *Cursor) EstimateDistance(last *Cursor) (int, error) {
+	r := C.mdbxgo_estimate_distance(c._c, cptr(last))
+	if err := operrno("mdbx_estimate_distance", r.err); err != nil {
+		return 0, err
+	}
+	return int(r.val), nil
+}
+
+// EstimateMove estimates the distance, as a number of elements, that the cursor
+// would move if the given key/data + op were applied via Get. The cursor's own
+// position and state are left unchanged. The result is a rough estimate suitable
+// for building/optimizing query plans, not an exact count.
+//
+// key/data are interpreted the same way as in Get for the given op; pass nil
+// where the op does not require them.
+//
+// See mdbx_estimate_move.
+func (c *Cursor) EstimateMove(key, data []byte, op uint) (int, error) {
+	var k, d *C.char
+	if len(key) > 0 {
+		k = (*C.char)(unsafe.Pointer(&key[0]))
+	}
+	if len(data) > 0 {
+		d = (*C.char)(unsafe.Pointer(&data[0]))
+	}
+	r := C.mdbxgo_estimate_move(
+		c._c,
+		k, C.size_t(len(key)),
+		d, C.size_t(len(data)),
+		C.MDBX_cursor_op(op),
+	)
+	if err := operrno("mdbx_estimate_move", r.err); err != nil {
+		return 0, err
+	}
+	return int(r.val), nil
+}
+
+// Distance calculates the number of elements between the position of the
+// receiver cursor and the position of last. Both cursors must be positioned and
+// bound to the same table and transaction; a nil last means the end of the
+// table.
+//
+// deepness limits the B-tree level at which the difference is measured: 0 is the
+// root (fast but rough), larger values descend toward the leaves (slower but
+// exact). For an exact count deepness must be at least the B-tree height (plus
+// the nested height for DupSort tables); when in doubt pass a deliberately large
+// value such as 42.
+//
+// See mdbx_cursor_distance.
+func (c *Cursor) Distance(last *Cursor, deepness uint) (int, error) {
+	r := C.mdbxgo_cursor_distance(c._c, cptr(last), C.unsigned(deepness))
+	if err := operrno("mdbx_cursor_distance", r.err); err != nil {
+		return 0, err
+	}
+	return int(r.val), nil
+}
+
+// Scroll moves the cursor by amount logical positions at the given B-tree level.
+// A positive amount moves forward (toward the end of the table), a negative one
+// moves backward. The cursor must already be positioned.
+//
+// deepness selects the B-tree level the steps are taken at: for the movement to
+// match a number of keys/values it must be at least the B-tree height (plus the
+// nested height for DupSort tables); when in doubt pass a deliberately large
+// value such as 42.
+//
+// Scroll returns an error for which IsNotFound reports true if the end of the
+// data is reached before the cursor moved by the full amount.
+//
+// See mdbx_cursor_scroll.
+func (c *Cursor) Scroll(amount int, deepness uint) error {
+	ret := C.mdbx_cursor_scroll(c._c, C.intptr_t(amount), C.unsigned(deepness))
+	return operrno("mdbx_cursor_scroll", ret)
+}
+
+// DistributeCursors positions each cursor in cursors at an evenly-spaced
+// position across the range delimited by first and last, so that consecutive
+// cursors delimit approximately equally-sized sub-ranges. This is the intended
+// primitive for splitting a key range into balanced chunks for parallel workers
+// (e.g. concurrent range deletion or warm-up).
+//
+// A nil first means the beginning of the table and a nil last means the end;
+// at least one of them must be non-nil and positioned. Every entry in cursors
+// must be a non-nil open cursor bound to the same table and transaction (a nil
+// entry returns an error); these are the cursors that get positioned.
+//
+// deepness selects the B-tree level at which the distribution is computed: for
+// the positions to match a number of keys/values it must be at least the B-tree
+// height (plus the nested height for DupSort tables); when in doubt pass a
+// deliberately large value such as 42.
+//
+// allSet reports whether every cursor was positioned. It is false (with a nil
+// error) when the range held fewer positions than len(cursors); the surplus
+// cursors are left unset (at EOF).
+//
+// See mdbx_cursor_distribute.
+func DistributeCursors(first, last *Cursor, cursors []*Cursor, deepness uint) (allSet bool, err error) {
+	if len(cursors) == 0 {
+		return false, errors.New("mdbx: DistributeCursors requires at least one cursor")
+	}
+	arr := make([]*C.MDBX_cursor, len(cursors))
+	for i, cur := range cursors {
+		if cur == nil || cur._c == nil {
+			return false, errors.New("mdbx: DistributeCursors got a nil cursor")
+		}
+		arr[i] = cur._c
+	}
+	ret := C.mdbx_cursor_distribute(cptr(first), cptr(last), &arr[0], C.intptr_t(len(arr)), C.unsigned(deepness))
+	if ret == C.MDBX_RESULT_TRUE {
+		// Not enough positions in the range to set every cursor; the surplus
+		// cursors are left at EOF. operrno treats MDBX_RESULT_TRUE as success,
+		// so this case is reported via allSet rather than err.
+		return false, nil
+	}
+	if err := operrno("mdbx_cursor_distribute", ret); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // Count returns the number of duplicates for the current key.
 //
 // See mdb_cursor_count.

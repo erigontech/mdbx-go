@@ -45,14 +45,20 @@ int mdbxgo_dcmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata
 /* The mdbxgo_*_result structs bundle an error code with a scalar return value
  * so that helper functions can return both without taking a Go pointer as an
  * out-parameter (which would escape the Go variable to the heap). */
-typedef struct { int err; size_t   val; } mdbxgo_size_result;
-typedef struct { int err; uint64_t val; } mdbxgo_u64_result;
-typedef struct { int err; unsigned val; } mdbxgo_uint_result;
-typedef struct { int err; int      val; } mdbxgo_int_result;
+typedef struct { int err; size_t    val; } mdbxgo_size_result;
+typedef struct { int err; uint64_t  val; } mdbxgo_u64_result;
+typedef struct { int err; unsigned  val; } mdbxgo_uint_result;
+typedef struct { int err; int       val; } mdbxgo_int_result;
+typedef struct { int err; ptrdiff_t val; } mdbxgo_ptrdiff_result;
 typedef struct { int err; intptr_t pageSize, totalPages, availPages; } mdbxgo_sysraminfo_result;
 
 mdbxgo_size_result       mdbxgo_cursor_count(MDBX_cursor *cur);
 mdbxgo_u64_result        mdbxgo_cursor_bunch_delete(MDBX_cursor *cur, MDBX_bunch_action_t mode);
+mdbxgo_u64_result        mdbxgo_cursor_delete_range(MDBX_cursor *begin, MDBX_cursor *end, bool end_including);
+mdbxgo_ptrdiff_result    mdbxgo_estimate_distance(const MDBX_cursor *first, const MDBX_cursor *last);
+mdbxgo_ptrdiff_result    mdbxgo_cursor_distance(const MDBX_cursor *first, const MDBX_cursor *last, unsigned deepness);
+mdbxgo_ptrdiff_result    mdbxgo_estimate_move(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_cursor_op move_op);
+mdbxgo_ptrdiff_result    mdbxgo_estimate_range(MDBX_txn *txn, MDBX_dbi dbi, char *begin_kdata, size_t begin_kn, char *begin_vdata, size_t begin_vn, char *end_kdata, size_t end_kn, char *end_vdata, size_t end_vn);
 mdbxgo_u64_result        mdbxgo_dbi_sequence(MDBX_txn *txn, MDBX_dbi dbi, uint64_t increment);
 mdbxgo_u64_result        mdbxgo_env_get_option(MDBX_env *env, MDBX_option_t option);
 mdbxgo_uint_result       mdbxgo_env_get_syncperiod(MDBX_env *env);

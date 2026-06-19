@@ -137,6 +137,50 @@ mdbxgo_u64_result mdbxgo_cursor_bunch_delete(MDBX_cursor *cur, MDBX_bunch_action
     return r;
 }
 
+mdbxgo_u64_result mdbxgo_cursor_delete_range(MDBX_cursor *begin, MDBX_cursor *end, bool end_including) {
+    mdbxgo_u64_result r = {0};
+    r.err = mdbx_cursor_delete_range(begin, end, end_including, &r.val);
+    return r;
+}
+
+mdbxgo_ptrdiff_result mdbxgo_estimate_distance(const MDBX_cursor *first, const MDBX_cursor *last) {
+    mdbxgo_ptrdiff_result r = {0};
+    r.err = mdbx_estimate_distance(first, last, &r.val);
+    return r;
+}
+
+mdbxgo_ptrdiff_result mdbxgo_cursor_distance(const MDBX_cursor *first, const MDBX_cursor *last, unsigned deepness) {
+    mdbxgo_ptrdiff_result r = {0};
+    intptr_t d = 0;
+    r.err = mdbx_cursor_distance(first, last, &d, deepness);
+    r.val = d;
+    return r;
+}
+
+mdbxgo_ptrdiff_result mdbxgo_estimate_move(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_cursor_op move_op) {
+    mdbxgo_ptrdiff_result r = {0};
+    MDBX_val key, data;
+    MDBX_val *k = NULL, *d = NULL;
+    if (kdata) { MDBXGO_SET_VAL(&key, kn, kdata); k = &key; }
+    if (vdata) { MDBXGO_SET_VAL(&data, vn, vdata); d = &data; }
+    r.err = mdbx_estimate_move(cur, k, d, move_op, &r.val);
+    return r;
+}
+
+mdbxgo_ptrdiff_result mdbxgo_estimate_range(MDBX_txn *txn, MDBX_dbi dbi,
+                                            char *begin_kdata, size_t begin_kn, char *begin_vdata, size_t begin_vn,
+                                            char *end_kdata, size_t end_kn, char *end_vdata, size_t end_vn) {
+    mdbxgo_ptrdiff_result r = {0};
+    MDBX_val begin_key, begin_data, end_key, end_data;
+    MDBX_val *bk = NULL, *bd = NULL, *ek = NULL, *ed = NULL;
+    if (begin_kdata) { MDBXGO_SET_VAL(&begin_key, begin_kn, begin_kdata); bk = &begin_key; }
+    if (begin_vdata) { MDBXGO_SET_VAL(&begin_data, begin_vn, begin_vdata); bd = &begin_data; }
+    if (end_kdata)   { MDBXGO_SET_VAL(&end_key, end_kn, end_kdata);       ek = &end_key; }
+    if (end_vdata)   { MDBXGO_SET_VAL(&end_data, end_vn, end_vdata);       ed = &end_data; }
+    r.err = mdbx_estimate_range(txn, dbi, bk, bd, ek, ed, &r.val);
+    return r;
+}
+
 mdbxgo_u64_result mdbxgo_dbi_sequence(MDBX_txn *txn, MDBX_dbi dbi, uint64_t increment) {
     mdbxgo_u64_result r = {0};
     r.err = mdbx_dbi_sequence(txn, dbi, &r.val, increment);
