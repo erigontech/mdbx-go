@@ -85,13 +85,23 @@ func TestCursor_EstimateDistanceAndDistance(t *testing.T) {
 			return err
 		}
 
-		// Exact distance with a large deepness.
+		// Exact distance with a large deepness. first (key 100) precedes last
+		// (key 900), so the forward distance is exactly +800; the sign is
+		// deterministic and a sign-inversion regression must be caught.
 		d, err := first.Distance(last, 42)
 		if err != nil {
 			return err
 		}
-		if d != 800 && d != -800 {
-			t.Fatalf("Distance=%d, want ±800", d)
+		if d != 800 {
+			t.Fatalf("Distance(100->900)=%d, want 800", d)
+		}
+		// Reversed cursors yield the negated distance.
+		dRev, err := last.Distance(first, 42)
+		if err != nil {
+			return err
+		}
+		if dRev != -800 {
+			t.Fatalf("Distance(900->100)=%d, want -800", dRev)
 		}
 
 		// Rough estimate should be in the ballpark.
@@ -132,12 +142,12 @@ func TestCursor_EstimateMove(t *testing.T) {
 			t.Fatalf("EstimateMove(Last)=%d, want ~%d", d, n)
 		}
 		// The cursor must not have moved.
-		k, _, err := cur.Get(nil, nil, GetCurrent)
-		if err != nil {
-			return err
+		pos, ok := curKeyInt(cur)
+		if !ok {
+			t.Fatalf("cursor not positioned after EstimateMove")
 		}
-		if binary.BigEndian.Uint32(k) != 0 {
-			t.Fatalf("cursor moved after EstimateMove: key=%d", binary.BigEndian.Uint32(k))
+		if pos != 0 {
+			t.Fatalf("cursor moved after EstimateMove: key=%d", pos)
 		}
 		return nil
 	}); err != nil {
@@ -163,23 +173,15 @@ func TestCursor_Scroll(t *testing.T) {
 		if err := cur.Scroll(5, 42); err != nil {
 			return err
 		}
-		k, _, err := cur.Get(nil, nil, GetCurrent)
-		if err != nil {
-			return err
-		}
-		if got := binary.BigEndian.Uint32(k); got != 5 {
-			t.Fatalf("after Scroll(+5) key=%d, want 5", got)
+		if got, ok := curKeyInt(cur); !ok || got != 5 {
+			t.Fatalf("after Scroll(+5) key=%d ok=%v, want 5", got, ok)
 		}
 
 		if err := cur.Scroll(-2, 42); err != nil {
 			return err
 		}
-		k, _, err = cur.Get(nil, nil, GetCurrent)
-		if err != nil {
-			return err
-		}
-		if got := binary.BigEndian.Uint32(k); got != 3 {
-			t.Fatalf("after Scroll(-2) key=%d, want 3", got)
+		if got, ok := curKeyInt(cur); !ok || got != 3 {
+			t.Fatalf("after Scroll(-2) key=%d ok=%v, want 3", got, ok)
 		}
 		return nil
 	}); err != nil {

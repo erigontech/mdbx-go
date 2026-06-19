@@ -373,6 +373,16 @@ func (c *Cursor) RangeDel(mode uint) (numberAffected uint64, err error) {
 	return uint64(r.val), nil
 }
 
+// cptr returns c's underlying C cursor, or NULL when c is nil. The range/
+// distribution APIs accept a nil bound cursor to mean "the start/end of the
+// table", which maps to a NULL MDBX_cursor* on the C side.
+func cptr(c *Cursor) *C.MDBX_cursor {
+	if c == nil {
+		return nil
+	}
+	return c._c
+}
+
 // DeleteRange performs a mass deletion of the items between the position of the
 // receiver cursor (the beginning of the range) and the position of end (the end
 // of the range). It is much faster than deleting items one by one because whole
@@ -386,11 +396,7 @@ func (c *Cursor) RangeDel(mode uint) (numberAffected uint64, err error) {
 //
 // See mdbx_cursor_delete_range.
 func (c *Cursor) DeleteRange(end *Cursor, endIncluding bool) (numberAffected uint64, err error) {
-	var endC *C.MDBX_cursor
-	if end != nil {
-		endC = end._c
-	}
-	r := C.mdbxgo_cursor_delete_range(c._c, endC, C.bool(endIncluding))
+	r := C.mdbxgo_cursor_delete_range(c._c, cptr(end), C.bool(endIncluding))
 	if err := operrno("mdbx_cursor_delete_range", r.err); err != nil {
 		return 0, err
 	}
@@ -404,11 +410,7 @@ func (c *Cursor) DeleteRange(end *Cursor, endIncluding bool) (numberAffected uin
 //
 // See mdbx_estimate_distance.
 func (c *Cursor) EstimateDistance(last *Cursor) (int, error) {
-	var lastC *C.MDBX_cursor
-	if last != nil {
-		lastC = last._c
-	}
-	r := C.mdbxgo_estimate_distance(c._c, lastC)
+	r := C.mdbxgo_estimate_distance(c._c, cptr(last))
 	if err := operrno("mdbx_estimate_distance", r.err); err != nil {
 		return 0, err
 	}
@@ -457,11 +459,7 @@ func (c *Cursor) EstimateMove(key, data []byte, op uint) (int, error) {
 //
 // See mdbx_cursor_distance.
 func (c *Cursor) Distance(last *Cursor, deepness uint) (int, error) {
-	var lastC *C.MDBX_cursor
-	if last != nil {
-		lastC = last._c
-	}
-	r := C.mdbxgo_cursor_distance(c._c, lastC, C.unsigned(deepness))
+	r := C.mdbxgo_cursor_distance(c._c, cptr(last), C.unsigned(deepness))
 	if err := operrno("mdbx_cursor_distance", r.err); err != nil {
 		return 0, err
 	}
@@ -477,7 +475,7 @@ func (c *Cursor) Distance(last *Cursor, deepness uint) (int, error) {
 // nested height for DupSort tables); when in doubt pass a deliberately large
 // value such as 42.
 //
-// Scroll returns an error wrapping NotFound (see IsNotFound) if the end of the
+// Scroll returns an error for which IsNotFound reports true if the end of the
 // data is reached before the cursor moved by the full amount.
 //
 // See mdbx_cursor_scroll.
@@ -518,14 +516,7 @@ func DistributeCursors(first, last *Cursor, cursors []*Cursor, deepness uint) (a
 		}
 		arr[i] = cur._c
 	}
-	var firstC, lastC *C.MDBX_cursor
-	if first != nil {
-		firstC = first._c
-	}
-	if last != nil {
-		lastC = last._c
-	}
-	ret := C.mdbx_cursor_distribute(firstC, lastC, &arr[0], C.intptr_t(len(arr)), C.unsigned(deepness))
+	ret := C.mdbx_cursor_distribute(cptr(first), cptr(last), &arr[0], C.intptr_t(len(arr)), C.unsigned(deepness))
 	if ret == C.MDBX_RESULT_TRUE {
 		// Not enough positions in the range to set every cursor; the surplus
 		// cursors are left at EOF. operrno treats MDBX_RESULT_TRUE as success,
