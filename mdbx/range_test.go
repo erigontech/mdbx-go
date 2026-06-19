@@ -323,6 +323,8 @@ func TestDistributeCursors(t *testing.T) {
 			if !allSet {
 				t.Fatalf("allSet=false for sub-range [%d,%d]", lo, hi)
 			}
+			chunk := (hi - lo) / len(cursors)
+			tol := chunk/2 + 2
 			prev := lo
 			for i, c := range cursors {
 				pos, ok := curKeyInt(c)
@@ -331,6 +333,11 @@ func TestDistributeCursors(t *testing.T) {
 				}
 				if pos <= prev || pos > hi {
 					t.Fatalf("cursor %d pos=%d not in (%d,%d]", i, pos, prev, hi)
+				}
+				// Chunks within the explicit bounds must be balanced too, not just
+				// monotonic (guards against cursors bunching at one end).
+				if abs(pos-prev-chunk) > tol {
+					t.Fatalf("cursor %d chunk size=%d, want ~%d (tol %d)", i, pos-prev, chunk, tol)
 				}
 				prev = pos
 			}
@@ -380,8 +387,10 @@ func TestDistributeCursors(t *testing.T) {
 				}
 				prev = pos
 			}
-			if set == 0 || set > n {
-				t.Fatalf("positioned %d cursors, want 1..%d", set, n)
+			// first occupies key 0, leaving keys 1..n-1 as the only boundary
+			// positions, so exactly n-1 cursors can be set; the rest stay unset.
+			if set != n-1 {
+				t.Fatalf("positioned %d cursors, want %d", set, n-1)
 			}
 			return nil
 		}); err != nil {
