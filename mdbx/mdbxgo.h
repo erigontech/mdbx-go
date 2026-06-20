@@ -92,6 +92,42 @@ typedef struct {
 } mdbxgo_gc_info_result;
 mdbxgo_gc_info_result    mdbxgo_gc_info(MDBX_txn *txn);
 
+/* mdbxgo_defrag_result is a flat, Go-friendly view of MDBX_defrag_result_t.
+ * Wide types (intptr_t, size_t, mdbx_tid_t, mdbx_pid_t) are normalized to
+ * int64/uint64 to avoid cgo size mismatches across platforms. */
+typedef struct {
+    int err;
+    int64_t  pages_shrinked;
+    uint64_t pages_moved;
+    uint64_t pages_scheduled;
+    uint64_t pages_retained;
+    uint64_t pages_left;
+    uint64_t pages_whole;
+    uint64_t obstructed_pgno;
+    uint64_t obstructed_span;
+    uint64_t obstructed_txnid;
+    uint64_t obstructor_tid;
+    int64_t  obstructor_pid;
+    unsigned rough_estimation_cycle_progress_permille;
+    unsigned cycles;
+    unsigned stopping_reasons;
+    uint64_t spent_time_dot16;
+} mdbxgo_defrag_result;
+
+/* mdbxgo_env_copy2fd wraps mdbx_env_copy2fd so callers can pass the file
+ * descriptor as a uintptr regardless of platform. On POSIX mdbx_filehandle_t
+ * is int, on Windows it is HANDLE (a void*); doing the cast in C keeps the
+ * Go side identical on every target. */
+int mdbxgo_env_copy2fd(MDBX_env *env, uintptr_t fd, MDBX_copy_flags_t flags);
+
+mdbxgo_defrag_result mdbxgo_env_defrag(MDBX_env *env,
+                                       size_t defrag_atleast,
+                                       size_t time_atleast_dot16,
+                                       size_t defrag_enough,
+                                       size_t time_limit_dot16,
+                                       intptr_t acceptable_backlash,
+                                       intptr_t preferred_batch);
+
 #ifndef _WIN32
 mdbxgo_int_result        mdbxgo_env_get_fd(MDBX_env *env);
 #endif
