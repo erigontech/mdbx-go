@@ -1,4 +1,4 @@
-/** This file is part of the libmdbx amalgamated source code (v0.14.2-0-g530d0265 at 2026-05-14T21:14:59+03:00).
+/** This file is part of the libmdbx amalgamated source code (v0.14.2-224-g8f756694 at 2026-06-21T11:47:59+03:00).
 
 \file mdbx.h
 \brief The libmdbx C API header file.
@@ -2663,8 +2663,7 @@ LIBMDBX_API int mdbx_env_deleteW(const wchar_t *pathname, MDBX_env_delete_mode_t
  * \returns A non-zero error value on failure and 0 on success. */
 LIBMDBX_API int mdbx_env_copy(MDBX_env *env, const char *dest, MDBX_copy_flags_t flags);
 
-/** \brief Copy an MDBX environment by given read transaction to the specified
- * path, with options.
+/** \brief Copy an MDBX environment by given read transaction to the specified path, with options.
  * \ingroup c_extra
  *
  * This function may be used to make a backup of an existing environment.
@@ -2737,8 +2736,7 @@ LIBMDBX_API int mdbx_txn_copy2pathnameW(MDBX_txn *txn, const wchar_t *dest, MDBX
 #define mdbx_txn_copy2pathnameT(txn, dest, flags) mdbx_txn_copy2pathname(txn, dest, path)
 #endif /* Windows */
 
-/** \brief Copy an environment to the specified file descriptor, with
- * options.
+/** \brief Copy an environment to the specified file descriptor, with options.
  * \ingroup c_extra
  *
  * This function may be used to make a backup of an existing environment.
@@ -2763,8 +2761,7 @@ LIBMDBX_API int mdbx_txn_copy2pathnameW(MDBX_txn *txn, const wchar_t *dest, MDBX
  * \returns A non-zero error value on failure and 0 on success. */
 LIBMDBX_API int mdbx_env_copy2fd(MDBX_env *env, mdbx_filehandle_t fd, MDBX_copy_flags_t flags);
 
-/** \brief Copy an environment by given read transaction to the specified file
- * descriptor, with options.
+/** \brief Copy an environment by given read transaction to the specified file descriptor, with options.
  * \ingroup c_extra
  *
  * This function may be used to make a backup of an existing environment.
@@ -6271,8 +6268,9 @@ LIBMDBX_API int mdbx_cursor_put(MDBX_cursor *cursor, const MDBX_val *key, MDBX_v
  * return the same record after this operation.
  *
  * \param [in] cursor  A cursor handle returned by mdbx_cursor_open().
+ *
  * \param [in] flags   Options for this operation. This parameter must be set
- * to one of the values described here.
+ *                     to one of the values described here.
  *
  *  - \ref MDBX_CURRENT Delete only single entry at current cursor position.
  *  - \ref MDBX_ALLDUPS
@@ -6336,10 +6334,10 @@ LIBMDBX_API int mdbx_cursor_delete_range(MDBX_cursor *begin, MDBX_cursor *end, b
  * kinds of "dupsort" tables. If in doubt, use a deliberately large value such as `INT_MAX` or just the `42`.
  *
  * \param [in] first             Cursor pointing to the first element or NULL to using the begin of a table.
- *                               Either the `first` or the `last` must not be NULL.
+ *                               Either the "first" or the "last" can be NULL, but not both at once.
  *
  * \param [in] last              Cursor pointing to the end of the range or NULL to using the end of a table.
- *                               Either the `first` or the `last` must not be NULL.
+ *                               Either the "first" or the "last" can be NULL, but not both at once.
  *
  * \param [out] distance         The address for storing the result calculated distance.
  *
@@ -6391,6 +6389,10 @@ LIBMDBX_API int mdbx_cursor_scroll(MDBX_cursor *cursor, intptr_t amount, unsigne
 
 /** \brief Distributes cursors for multithreaded range scanning.
  * \ingroup c_cursors
+ *
+ * Places a given set of cursors as evenly as possible for subsequent scanning or parallel processing of data range by
+ * several threads. The function can accept cursors bound to different read transactions, provided that they use the
+ * same MVCC-snapshot of data.
  *
  * The value of the `deepness` parameter has a fundamental effect on the result, since it determines the level of the
  * B-tree at which the cursors distribution are performed, where zero corresponds to the root of the B-tree and

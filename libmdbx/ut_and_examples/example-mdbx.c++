@@ -82,7 +82,7 @@ static bool doit(const mdbx::path &database_pathname) {
     size_t count = 0;
     cursor.fullscan([&](const mdbx::pair &) -> bool {
       count += 1;
-      return /* continue scan */ false;
+      return /* don't break but continue scanning */ false;
     });
     nested.abort();
 
@@ -101,7 +101,7 @@ static bool doit(const mdbx::path &database_pathname) {
 int main(int, const char *[]) {
   try {
     const mdbx::path bench_database =
-#if !(defined(_WIN32) || defined(_WIN64))
+#if !(defined(_WIN32) || defined(_WIN64) || defined(_WINDOWS))
         "/tmp/"
 #endif /* !Windows */
         "bench_example_database.mdbx";

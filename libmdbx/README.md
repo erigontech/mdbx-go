@@ -241,8 +241,7 @@ _libmdbx_ is superior to legendary _[LMDB](https://symas.com/lmdb/)_ in terms of
 
 ## Other fixes and specifics
 
-* Fixed more than 10 significant errors, in particular: page leaks, wrong table/sub-database statistics, segfault in several conditions,
-nonoptimal page merge strategy, updating an existing record with a change in data size (including for multimap), etc.
+* Fixed more than a dozen bugs, many of which are still present in LMDB, in particular: page leaks, wrong table/sub-database statistics, segfaults in several conditions, nonoptimal page merge strategy, updating an existing item with resizing data (including for a multimap), etc.
 
 * All cursors can be reused and should be closed explicitly, regardless ones were opened within a write or read transaction.
 

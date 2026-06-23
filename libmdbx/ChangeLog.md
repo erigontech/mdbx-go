@@ -7,6 +7,43 @@ Donations are welcome to ETH `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`,
 BTC `bc1qzvl9uegf2ea6cwlytnanrscyv8snwsvrc0xfsu`, SOL `FTCTgbHajoLVZGr8aEFWMzx3NDMyS5wXJgfeMTmJznRi`.
 Всё будет хорошо!
 
+## v0.14.3 at a release engineering stage
+
+The supporting release of a stable branch with bug fixes.
+
+### Important:
+
+ - Starting from v0.14.3, the 0.14.x branch gets stable status and will only receive bug fixes, but other improvements only in exceptional cases.
+   Further development will be continued under the 0.15.x branch.
+
+### Appreciations:
+
+ - [Cosmin Apreutesei](https://github.com/capr) for bugs reporting.
+ - [stslam](https://github.com/stslam) for Embarcadero C++ Builder support.
+
+### Improvements:
+
+ - Deferred invalidation of the dbi-handles of dropped tables has been implemented until the corresponding transactions are committed.
+
+   Previously, libmdbx implemented the behavior historically inherited from LMDB, when handles of a dropped tables were immediately closed, regardless of the possible subsequent abortion of such transactions.
+   Now, when tables are dropped, both ones associated handles and data remain available for other transactions running in parrallel within the current process.
+
+   This improvement has been asking for a long time, but it required a lot of preparation and refactoring which are done step-by-step during a few last releases.
+
+ - Embarcadero C++ Builder now could be used to build libmdbx on Windows.
+
+ - Allowed to use cursors binded to the same table/DBI, but to different read-only transaction, in an API with multiple cursors in the parameters.
+
+### Fixes:
+
+ - Fixed assertions triggering in a specific scenarios of creating and renaming tables within nested transactions.
+
+ - Fixed the [issue](https://github.com/Mithril-mine/libmdbx/issues/361) of loosing a table content after abortion the nested transaction where such table was dropped.
+
+ - Fixed `ERROR_LOCK_VIOLATION` during defrag on Windows in operation modes using overlapped I/O.
+
+--------------------------------------------------------------------------------
+
 ## v0.14.2 "Буревестник" (stormy petrel, aka Bourevestnik) at 2026-05-14
 
 The frontward release with new major features and internal refactoring.

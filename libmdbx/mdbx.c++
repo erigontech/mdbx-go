@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.2-0-g530d0265 at 2026-05-14T21:14:59+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.2-224-g8f756694 at 2026-06-21T11:47:59+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -305,7 +305,7 @@ MDBX_MAYBE_UNUSED static inline void poke_pgno(void *const __restrict ptr, const
     memcpy(ptr, &pgno, sizeof(pgno));
 }
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 
 typedef union osal_srwlock {
   __anonymous_struct_extension__ struct {
@@ -540,6 +540,7 @@ enum dbi_state {
   DBI_FRESH = 0x04 /* table handle opened in this txn */,
   DBI_CREAT = 0x08 /* table handle created in this txn */,
   DBI_VALID = 0x10 /* Handle is valid, see also DB_VALID */,
+  DBI_SLAIN = 0x20 /* Handle and corresponding table are dropped but not committed yet */,
   DBI_OLDEN = 0x40 /* Handle was closed/reopened outside txn */,
   DBI_LINDO = 0x80 /* Lazy initialization done for DBI-slot */,
 };
@@ -768,7 +769,7 @@ struct MDBX_env {
   osal_mmap_t dxb_mmap; /* The main data file */
 #define lazy_fd dxb_mmap.fd
   mdbx_filehandle_t dsync_fd, fd4meta;
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
   HANDLE dxb_lock_event;
   HANDLE lck_lock_event;
 #endif                  /* Windows */
@@ -817,7 +818,7 @@ struct MDBX_env {
     uint8_t spill_parent4child_denominator;
     uint16_t merge_threshold_dot16;
     uint16_t split_reserve_dot16;
-#if !(defined(_WIN32) || defined(_WIN64))
+#if !IS_WINDOWS
     unsigned writethrough_threshold;
 #endif /* Windows */
     bool prefault_write;
@@ -895,7 +896,7 @@ struct MDBX_env {
 
   osal_ioring_t ioring;
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
   osal_srwlock_t remap_lock;
   /* Workaround for LockFileEx and WriteFile multithread bug */
   CRITICAL_SECTION lck_event_cs;
@@ -2266,7 +2267,7 @@ __cold env &env::copy(const ::std::string &destination, bool compactify, bool fo
   return copy(destination.c_str(), compactify, force_dynamic_size);
 }
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 __cold env &env::copy(const wchar_t *destination, bool compactify, bool force_dynamic_size) {
   error::success_or_throw(::mdbx_env_copyW(handle_, destination,
                                            (compactify ? MDBX_CP_COMPACT : MDBX_CP_DEFAULTS) |
@@ -2286,7 +2287,7 @@ __cold env &env::copy(const MDBX_STD_FILESYSTEM_PATH &destination, bool compacti
 #endif /* MDBX_STD_FILESYSTEM_PATH */
 
 __cold const mdbx::path_char *env::get_path() const {
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
   const wchar_t *c_wstr = nullptr;
   error::success_or_throw(::mdbx_env_get_pathW(handle_, &c_wstr));
   static_assert(sizeof(path::value_type) == sizeof(wchar_t), "Oops");
@@ -2307,7 +2308,7 @@ __cold bool env::remove(const ::std::string &pathname, const remove_mode mode) {
   return remove(pathname.c_str(), mode);
 }
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 __cold bool env::remove(const wchar_t *pathname, const remove_mode mode) {
   return !error::boolean_or_throw(::mdbx_env_deleteW(pathname, MDBX_env_delete_mode_t(mode)));
 }
@@ -2332,7 +2333,7 @@ static inline MDBX_env *create_env() {
   return ptr;
 }
 
-env_managed &env_managed::operator=(env_managed &&other) {
+env_managed &env_managed::operator=(env_managed &&other) noexcept {
   if (this != &other) {
     if (MDBX_UNLIKELY(handle_))
       MDBX_CXX20_UNLIKELY {
@@ -2398,7 +2399,7 @@ __cold env_managed::env_managed(const ::std::string &pathname, const env_managed
                                 const env::operate_parameters &op, bool accede)
     : env_managed(pathname.c_str(), cp, op, accede) {}
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 __cold env_managed::env_managed(const wchar_t *pathname, const operate_parameters &op, bool accede)
     : env_managed(create_env()) {
   setup(op.max_maps, op.max_readers);
@@ -2450,7 +2451,7 @@ cursor_managed cursor::clone(void *your_context) const {
   return clone;
 }
 
-cursor_managed &cursor_managed::operator=(cursor_managed &&other) {
+cursor_managed &cursor_managed::operator=(cursor_managed &&other) noexcept {
   if (this != &other) {
     if (MDBX_UNLIKELY(handle_))
       MDBX_CXX20_UNLIKELY {
@@ -2481,7 +2482,7 @@ txn_managed txn::start_nested(bool readonly) {
   return txn_managed(nested);
 }
 
-txn_managed &txn_managed::operator=(txn_managed &&other) {
+txn_managed &txn_managed::operator=(txn_managed &&other) noexcept {
   if (this != &other) {
     if (MDBX_UNLIKELY(handle_))
       MDBX_CXX20_UNLIKELY {
@@ -2656,7 +2657,7 @@ void cursor::update_current(const slice &value) {
   default_buffer holder;
   auto key = current().key;
   if (error::boolean_or_throw(mdbx_is_dirty(handle_->txn, key.iov_base)))
-    key = holder.assign(key);
+    key = holder.assign(key).slice();
 
   update(key, value);
 }
@@ -2665,7 +2666,7 @@ slice cursor::reverse_current(size_t value_length) {
   default_buffer holder;
   auto key = current().key;
   if (error::boolean_or_throw(mdbx_is_dirty(handle_->txn, key.iov_base)))
-    key = holder.assign(key);
+    key = holder.assign(key).slice();
 
   return update_reserve(key, value_length);
 }

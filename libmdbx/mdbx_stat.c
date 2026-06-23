@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.2-0-g530d0265 at 2026-05-14T21:14:59+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.2-224-g8f756694 at 2026-06-21T11:47:59+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -27,7 +27,7 @@
 
 enum { MDBX_STAT_MAXDBS = 2 };
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 
 /* Bit of madness for Windows console */
 #define mdbx_strerror mdbx_strerror_ANSI2OEM
@@ -166,7 +166,7 @@ static void print_pages_percentage(const char *caption, size_t value, size_t bac
 int main(int argc, char *argv[]) {
   int opt, rc;
   MDBX_env *env;
-  MDBX_txn *txn;
+  MDBX_txn *txn = nullptr;
   MDBX_dbi dbi;
   MDBX_envinfo mei;
   prog = argv[0];
@@ -235,7 +235,7 @@ int main(int argc, char *argv[]) {
   if (optind != argc - 1)
     usage(prog);
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
   SetConsoleCtrlHandler(ConsoleBreakHandlerRoutine, true);
 #else
 #ifdef SIGPIPE
@@ -332,12 +332,12 @@ int main(int argc, char *argv[]) {
              mei.mi_mapsize / mei.mi_dxb_pagesize);
       printf("  Current datafile: %" PRIu64 " bytes, %" PRIu64 " pages\n", mei.mi_geo.current,
              mei.mi_geo.current / mei.mi_dxb_pagesize);
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
       if (mei.mi_geo.shrink && mei.mi_geo.current != mei.mi_geo.upper)
         printf("                    WARNING: Due Windows system limitations a "
                "file couldn't\n                    be truncated while database "
                "is opened. So, the size of\n                    database file "
-               "may by large than the database itself,\n                    "
+               "may be large than the database itself,\n                    "
                "until it will be closed or reopened in read-write mode.\n");
 #endif
     } else {

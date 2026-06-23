@@ -1,4 +1,4 @@
-﻿/// This file is part of the libmdbx amalgamated source code (v0.14.2-0-g530d0265 at 2026-05-14T21:14:59+03:00).
+﻿/// This file is part of the libmdbx amalgamated source code (v0.14.2-222-g1d1906e4-dirty at 2026-06-21T11:32:13+03:00).
 /// \file mdbx.h++
 /// \brief The libmdbx C++ API header file.
 ///
@@ -54,7 +54,7 @@
 #endif /* MSVC is mad and don't define __cplusplus properly */
 #endif /* __cplusplus < 201103L */
 
-#if (defined(_WIN32) || defined(_WIN64)) && MDBX_WITHOUT_MSVC_CRT
+#if (defined(_WIN32) || defined(_WIN64)) && MDBX_WITHOUT_MSVC_CRT && !defined(__CODEGEARC__)
 #error "CRT is required for C++ API, the MDBX_WITHOUT_MSVC_CRT option must be disabled"
 #endif /* Windows */
 
@@ -1066,7 +1066,7 @@ struct pair {
   MDBX_CXX11_CONSTEXPR operator stl_pair() const noexcept { return stl_pair(key, value); }
   pair(const pair &) noexcept = default;
   pair &operator=(const pair &) noexcept = default;
-  pair &operator=(pair &&couple) {
+  pair &operator=(pair &&couple) noexcept {
     key.assign(std::move(couple.key));
     value.assign(std::move(couple.value));
     return *this;
@@ -1632,7 +1632,7 @@ private:
       struct inplace_flag_holder {
         byte buffer_[inplace_size - sizeof(byte)];
         byte lastbyte_;
-        MDBX_CXX11_CONSTEXPR inplace_flag_holder(byte signature) : lastbyte_(signature) {};
+        MDBX_CXX11_CONSTEXPR inplace_flag_holder(byte signature) : buffer_(), lastbyte_(signature) {}
       };
 
       allocator_pointer allocated_ptr_;
@@ -3685,7 +3685,7 @@ public:
   void close(bool dont_sync = false);
 
   env_managed(env_managed &&) = default;
-  env_managed &operator=(env_managed &&other);
+  env_managed &operator=(env_managed &&other) noexcept;
   env_managed(const env_managed &) = delete;
   env_managed &operator=(const env_managed &) = delete;
   virtual ~env_managed();
@@ -4067,7 +4067,7 @@ class LIBMDBX_API_TYPE txn_managed : public txn {
 public:
   MDBX_CXX11_CONSTEXPR txn_managed() noexcept = default;
   txn_managed(txn_managed &&) = default;
-  txn_managed &operator=(txn_managed &&other);
+  txn_managed &operator=(txn_managed &&other) noexcept;
   txn_managed(const txn_managed &) = delete;
   txn_managed &operator=(const txn_managed &) = delete;
   ~txn_managed();
@@ -4281,7 +4281,7 @@ protected:
 
 public:
   template <typename CALLABLE_PREDICATE>
-  bool scan(CALLABLE_PREDICATE predicate, move_operation start = first, move_operation turn = next) {
+  bool scan_until(CALLABLE_PREDICATE predicate, move_operation start = first, move_operation turn = next) {
     struct wrapper : public exception_thunk {
       static int probe(void *context, MDBX_val *key, MDBX_val *value, void *arg) noexcept {
         auto thunk = static_cast<wrapper *>(context);
@@ -4301,12 +4301,12 @@ public:
   }
 
   template <typename CALLABLE_PREDICATE> bool fullscan(CALLABLE_PREDICATE predicate, bool backward = false) {
-    return scan(std::move(predicate), backward ? last : first, backward ? previous : next);
+    return scan_until(std::move(predicate), backward ? last : first, backward ? previous : next);
   }
 
   template <typename CALLABLE_PREDICATE>
-  bool scan_from(CALLABLE_PREDICATE predicate, slice &from, move_operation start = key_greater_or_equal,
-                 move_operation turn = next) {
+  bool scan_until_from(CALLABLE_PREDICATE predicate, slice &from, move_operation start = key_greater_or_equal,
+                       move_operation turn = next) {
     struct wrapper : public exception_thunk {
       static int probe(void *context, MDBX_val *key, MDBX_val *value, void *arg) noexcept {
         auto thunk = static_cast<wrapper *>(context);
@@ -4326,8 +4326,8 @@ public:
   }
 
   template <typename CALLABLE_PREDICATE>
-  bool scan_from(CALLABLE_PREDICATE predicate, pair &from, move_operation start = pair_greater_or_equal,
-                 move_operation turn = next) {
+  bool scan_until_from(CALLABLE_PREDICATE predicate, pair &from, move_operation start = pair_greater_or_equal,
+                       move_operation turn = next) {
     struct wrapper : public exception_thunk {
       static int probe(void *context, MDBX_val *key, MDBX_val *value, void *arg) noexcept {
         auto thunk = static_cast<wrapper *>(context);
@@ -4595,7 +4595,7 @@ public:
   void close();
 
   cursor_managed(cursor_managed &&) = default;
-  cursor_managed &operator=(cursor_managed &&other);
+  cursor_managed &operator=(cursor_managed &&other) noexcept;
 
   inline MDBX_cursor *withdraw_handle() noexcept {
     MDBX_cursor *handle = handle_;

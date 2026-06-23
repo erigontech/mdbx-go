@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.2-0-g530d0265 at 2026-05-14T21:14:59+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.2-224-g8f756694 at 2026-06-21T11:47:59+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -27,7 +27,7 @@
 
 #include <ctype.h>
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 
 /* Bit of madness for Windows console */
 #define mdbx_strerror mdbx_strerror_ANSI2OEM
@@ -137,7 +137,7 @@ int main(int argc, char *argv[]) {
   if (optind != argc - 1)
     usage();
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
   SetConsoleCtrlHandler(ConsoleBreakHandlerRoutine, true);
 #else
 #ifdef SIGPIPE
