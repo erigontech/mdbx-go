@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.2-0-g530d0265 at 2026-05-14T21:14:59+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.2-246-ga9370ce8 at 2026-07-01T10:29:41+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -24,7 +24,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY e53d0d62cbaa1ca10d933353f7b6976de4c32f1a35193352c17125586bf8fa1e_v0_14_2_0_g530d0265
+#define MDBX_BUILD_SOURCERY aba439c44878aeba6fe12cadc943dfbd85a22e155678633ef76e1e4918fb500f_v0_14_2_246_ga9370ce8
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -69,10 +69,20 @@
 #endif /* MinGW */
 
 #if defined(_WIN32) || defined(_WIN64) || defined(_WINDOWS)
+#define IS_WINDOWS 1
+#else
+#define IS_WINDOWS 0
+#endif
 
+#if IS_WINDOWS
 #ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0A00 /* Windows 10 */
-#endif                      /* _WIN32_WINNT */
+#define _WIN32_WINNT                                                                                                   \
+  0x0A00 /* 0x0A00 == _WIN32_WINNT_WIN10: Windows 10 version 1507 (RTM, build 10240) baseline;                         \
+            newer feature-update APIs must be gated separately                                                         \
+            (see Microsoft _WIN32_WINNT version mapping in SDK docs/headers). */
+#elif _WIN32_WINNT < 0x0500
+#error At least 'Windows 2000' API is required for libmdbx.
+#endif /* _WIN32_WINNT */
 
 #if !defined(_CRT_SECURE_NO_WARNINGS)
 #define _CRT_SECURE_NO_WARNINGS
@@ -114,7 +124,7 @@
 #if _MSC_FULL_VER < 190024234
 /* Actually libmdbx was not tested with compilers older than 19.00.24234 (Visual
  * Studio 2015 Update 3). But you could remove this #error and try to continue
- * at your own risk. In such case please don't rise up an issues related ONLY to
+ * at your own risk. In such case please don't raise issues related ONLY to
  * old compilers.
  *
  * NOTE:
@@ -180,6 +190,8 @@
 #if defined(__GNUC__) && __GNUC__ < 9
 #pragma GCC diagnostic ignored "-Wattributes"
 #endif /* GCC < 9 */
+
+#include "mdbx.h"
 
 /*----------------------------------------------------------------------------*/
 /* Microsoft compiler generates a lot of warning for self includes... */
@@ -277,7 +289,10 @@
 /*----------------------------------------------------------------------------*/
 /* pre-requirements */
 
-#if (-6 & 5) || CHAR_BIT != 8 || UINT_MAX < 0xffffffff || ULONG_MAX % 0xFFFF
+/* `ULONG_MAX % 0xFFFF` must be zero for ULONG_MAX values of the form (2^n - 1),
+ * i.e. with all value bits set in conventional binary unsigned representation.
+ * This complements the integer model sanity checks above. */
+#if ((-6) & 5) != 0 || CHAR_BIT != 8 || UINT_MAX < 0xffffffff || ULONG_MAX % 0xFFFF
 #error "Sanity checking failed: Two's complement, reasonably sized integer types"
 #endif
 
@@ -288,7 +303,7 @@
 #if defined(__GNUC__) && !__GNUC_PREREQ(4, 2)
 /* Actually libmdbx was not tested with compilers older than GCC 4.2.
  * But you could ignore this warning at your own risk.
- * In such case please don't rise up an issues related ONLY to old compilers.
+ * In such case please don't raise issues related ONLY to old compilers.
  */
 #warning "libmdbx required GCC >= 4.2"
 #endif
@@ -296,7 +311,7 @@
 #if defined(__clang__) && !__CLANG_PREREQ(3, 8)
 /* Actually libmdbx was not tested with CLANG older than 3.8.
  * But you could ignore this warning at your own risk.
- * In such case please don't rise up an issues related ONLY to old compilers.
+ * In such case please don't raise issues related ONLY to old compilers.
  */
 #warning "libmdbx required CLANG >= 3.8"
 #endif
@@ -304,13 +319,13 @@
 #if defined(__GLIBC__) && !__GLIBC_PREREQ(2, 12)
 /* Actually libmdbx was not tested with something older than glibc 2.12.
  * But you could ignore this warning at your own risk.
- * In such case please don't rise up an issues related ONLY to old systems.
+ * In such case please don't raise issues related ONLY to old systems.
  */
 #warning "libmdbx was only tested with GLIBC >= 2.12."
 #endif
 
 #ifdef __SANITIZE_THREAD__
-#warning "libmdbx don't compatible with ThreadSanitizer, you will get a lot of false-positive issues."
+#warning "libmdbx is not compatible with ThreadSanitizer; you will get a lot of false-positive issues."
 #endif /* __SANITIZE_THREAD__ */
 
 /*----------------------------------------------------------------------------*/
@@ -342,7 +357,7 @@
 #endif
 #endif /* __extern_C */
 
-#if !defined(nullptr) && !defined(__cplusplus) || (__cplusplus < 201103L && !defined(_MSC_VER))
+#if !defined(nullptr) && (!defined(__cplusplus) || (__cplusplus < 201103L && !defined(_MSC_VER)))
 #define nullptr NULL
 #endif
 
@@ -372,7 +387,7 @@
 #endif
 #else
 #include <malloc.h>
-#if !(defined(__sun) || defined(__SVR4) || defined(__svr4__) || defined(_WIN32) || defined(_WIN64))
+#if !(defined(__sun) || defined(__SVR4) || defined(__svr4__) || IS_WINDOWS)
 #include <mntent.h>
 #endif /* !Solaris */
 #endif /* !xBSD */
@@ -416,24 +431,30 @@
 __extern_C key_t ftok(const char *, int);
 #endif /* SunOS/Solaris */
 
-#if defined(_WIN32) || defined(_WIN64) /*-------------------------------------*/
+#if IS_WINDOWS /*-------------------------------------*/
 
-#ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0601 /* Windows 7 */
-#elif _WIN32_WINNT < 0x0500
-#error At least 'Windows 2000' API is required for libmdbx.
-#endif /* _WIN32_WINNT */
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif /* WIN32_LEAN_AND_MEAN */
 #include <windows.h>
 #include <winnt.h>
 #include <winternl.h>
+#if defined(__CODEGEARC__) && defined(__cplusplus) && defined(DEFINE_ENUM_FLAG_OPERATORS)
+/* Embarcadero: Windows SDK defines DEFINE_ENUM_FLAG_OPERATORS without proper constexpr.
+ * Reset it so mdbx.h can install its own constexpr-correct version. */
+#undef DEFINE_ENUM_FLAG_OPERATORS
+#undef CONSTEXPR_ENUM_FLAGS_OPERATIONS
+#endif /* __CODEGEARC__ */
 
-/* После подгрузки windows.h, чтобы избежать проблем со сборкой MINGW и т.п. */
+/* After including windows.h, to avoid issues with MinGW builds and similar toolchains. */
 #include <excpt.h>
 #include <io.h>
 #include <tlhelp32.h>
+
+#if defined(__CODEGEARC__) && IS_WINDOWS && !defined(YieldProcessor)
+/* Embarcadero intrin.h does not define YieldProcessor; provide it via inline asm */
+#define YieldProcessor() __asm__ __volatile__("pause")
+#endif /* __CODEGEARC__ */
 
 #else /*----------------------------------------------------------------------*/
 
@@ -533,7 +554,7 @@ __extern_C key_t ftok(const char *, int);
     defined(_M_ARM) || defined(_M_ARM64) || defined(__e2k__) || defined(__elbrus_4c__) || defined(__elbrus_8c__) ||    \
     defined(__bfin__) || defined(__BFIN__) || defined(__ia64__) || defined(_IA64) || defined(__IA64__) ||              \
     defined(__ia64) || defined(_M_IA64) || defined(__itanium__) || defined(__ia32__) || defined(__CYGWIN__) ||         \
-    defined(_WIN64) || defined(_WIN32) || defined(__TOS_WIN__) || defined(__WINDOWS__)
+    IS_WINDOWS || defined(__TOS_WIN__) || defined(__WINDOWS__)
 #define __BYTE_ORDER__ __ORDER_LITTLE_ENDIAN__
 
 #elif defined(__BIG_ENDIAN__) || (defined(_BIG_ENDIAN) && !defined(_LITTLE_ENDIAN)) || defined(__ARMEB__) ||           \
@@ -791,7 +812,7 @@ __extern_C key_t ftok(const char *, int);
 #if (defined(__GNUC__) || __has_builtin(__builtin_expect)) && !defined(__COVERITY__)
 #define likely(cond) __builtin_expect(!!(cond), 1)
 #else
-#define likely(x) (!!(x))
+#define likely(cond) (!!(cond))
 #endif
 #endif /* likely */
 
@@ -799,7 +820,7 @@ __extern_C key_t ftok(const char *, int);
 #if (defined(__GNUC__) || __has_builtin(__builtin_expect)) && !defined(__COVERITY__)
 #define unlikely(cond) __builtin_expect(!!(cond), 0)
 #else
-#define unlikely(x) (!!(x))
+#define unlikely(cond) (!!(cond))
 #endif
 #endif /* unlikely */
 
@@ -867,7 +888,8 @@ __extern_C key_t ftok(const char *, int);
 #endif /* MDBX_GOOFY_MSVC_STATIC_ANALYZER */
 
 #ifndef FLEXIBLE_ARRAY_MEMBERS
-#if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) || (!defined(__cplusplus) && defined(_MSC_VER))
+#if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) || (!defined(__cplusplus) && defined(_MSC_VER)) ||      \
+    defined(__CODEGEARC__)
 #define FLEXIBLE_ARRAY_MEMBERS 1
 #else
 #define FLEXIBLE_ARRAY_MEMBERS 0
@@ -964,6 +986,11 @@ template <typename T, size_t N> char (&__ArraySizeHelper(T (&array)[N]))[N];
 
 #define MDBX_TETRAD(a, b, c, d) ((uint32_t)(a) << 24 | (uint32_t)(b) << 16 | (uint32_t)(c) << 8 | (d))
 
+/* Build/integration contract: MDBX_STRINGIFY must be defined by prior project
+ * headers or compile-time configuration before this point. */
+#ifndef MDBX_STRINGIFY
+#error "MDBX_STRINGIFY must be defined by prior headers or build configuration before including this header."
+#endif
 #define FIXME "FIXME: " __FILE__ ", " MDBX_STRINGIFY(__LINE__)
 
 #ifndef STATIC_ASSERT_MSG
@@ -1064,8 +1091,6 @@ template <typename T, size_t N> char (&__ArraySizeHelper(T (&array)[N]))[N];
 #define MDBX_INTERNAL
 #endif /* xMDBX_ALLOY */
 
-#include "mdbx.h"
-
 /*----------------------------------------------------------------------------*/
 /* Basic constants and types */
 
@@ -1137,7 +1162,7 @@ MDBX_MAYBE_UNUSED static inline void osal_memory_barrier(void) {
 #endif
 #elif defined(__clang__) || defined(__GNUC__)
   __sync_synchronize();
-#elif defined(_WIN32) || defined(_WIN64)
+#elif IS_WINDOWS
   MemoryBarrier();
 #elif defined(__INTEL_COMPILER) /* LY: Intel Compiler may mimic GCC and MSC */
 #if defined(__ia32__)
@@ -1159,7 +1184,7 @@ MDBX_MAYBE_UNUSED static inline void osal_memory_barrier(void) {
 /*----------------------------------------------------------------------------*/
 /* system-depended definitions */
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 #define HAVE_SYS_STAT_H
 #define HAVE_SYS_TYPES_H
 typedef HANDLE osal_thread_t;
@@ -1261,7 +1286,7 @@ LIBMDBX_API char *osal_strdup(const char *str);
 /*----------------------------------------------------------------------------*/
 /* OS abstraction layer stuff */
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 typedef wchar_t pathchar_t;
 #define MDBX_PRIsPATH "ls"
 #else
@@ -1445,6 +1470,11 @@ MDBX_MAYBE_UNUSED static inline int osal_ioring_prepare(osal_ioring_t *ior, size
   return osal_ioring_resize(ior, items);
 }
 
+#if defined(_WIN32) || defined(_WIN64)
+MDBX_INTERNAL HANDLE ior_get_event(osal_ioring_t *ior);
+MDBX_INTERNAL void ior_put_event(osal_ioring_t *ior, HANDLE event);
+#endif
+
 /*----------------------------------------------------------------------------*/
 /* libc compatibility stuff */
 
@@ -1468,11 +1498,11 @@ MDBX_MAYBE_UNUSED MDBX_INTERNAL void osal_jitter(bool tiny);
 
 /* max bytes to write in one call */
 #if defined(_WIN64)
-#define MAX_WRITE UINT32_C(0x10000000)
+#define MAX_IO_BYTES UINT32_C(0x10000000)
 #elif defined(_WIN32)
-#define MAX_WRITE UINT32_C(0x04000000)
+#define MAX_IO_BYTES UINT32_C(0x04000000)
 #else
-#define MAX_WRITE UINT32_C(0x3f000000)
+#define MAX_IO_BYTES UINT32_C(0x3f000000)
 
 #if defined(F_GETLK64) && defined(F_SETLK64) && defined(F_SETLKW64) && !defined(__ANDROID_API__)
 #define MDBX_F_SETLK F_SETLK64
@@ -1541,9 +1571,13 @@ MDBX_INTERNAL int osal_fastmutex_release(osal_fastmutex_t *fastmutex);
 MDBX_INTERNAL int osal_fastmutex_destroy(osal_fastmutex_t *fastmutex);
 
 MDBX_INTERNAL int osal_pwritev(mdbx_filehandle_t fd, struct iovec *iov, size_t sgvcnt, uint64_t offset);
-MDBX_INTERNAL int osal_pread(mdbx_filehandle_t fd, void *buf, size_t count, uint64_t offset);
-MDBX_INTERNAL int osal_pwrite(mdbx_filehandle_t fd, const void *buf, size_t count, uint64_t offset);
-MDBX_INTERNAL int osal_write(mdbx_filehandle_t fd, const void *buf, size_t count);
+MDBX_INTERNAL int osal_pread(mdbx_filehandle_t fd, void *buf, size_t bytes, uint64_t offset);
+MDBX_INTERNAL int osal_pwrite(mdbx_filehandle_t fd, const void *buf, size_t bytes, uint64_t offset);
+MDBX_INTERNAL int osal_write(mdbx_filehandle_t fd, const void *buf, size_t bytes);
+#if defined(_WIN32) || defined(_WIN64)
+MDBX_INTERNAL int osal_pwrite_ev(mdbx_filehandle_t fd, HANDLE ev, const void *buf, size_t bytes, uint64_t offset);
+MDBX_INTERNAL int osal_pread_ev(mdbx_filehandle_t fd, HANDLE ev, void *buf, size_t bytes, uint64_t offset);
+#endif
 
 MDBX_INTERNAL int osal_thread_create(osal_thread_t *thread, THREAD_RESULT(THREAD_CALL *start_routine)(void *),
                                      void *arg);
@@ -1722,7 +1756,7 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 
 /** Controls checking PID against reuse DB environment after the fork() */
 #ifndef MDBX_ENV_CHECKPID
-#if defined(MADV_DONTFORK) || defined(_WIN32) || defined(_WIN64)
+#if defined(MADV_DONTFORK) || IS_WINDOWS
 /* PID check could be omitted:
  *  - on Linux when madvise(MADV_DONTFORK) is available, i.e. after the fork()
  *    mapped pages will not be available for child process.
@@ -1794,7 +1828,7 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 /** Controls using Unix' mincore() to determine whether DB-pages
  * are resident in memory. */
 #ifndef MDBX_USE_MINCORE
-#if defined(MINCORE_INCORE) || !(defined(_WIN32) || defined(_WIN64))
+#if defined(MINCORE_INCORE) || !IS_WINDOWS
 #define MDBX_USE_MINCORE 1
 #else
 #define MDBX_USE_MINCORE 0
@@ -1868,7 +1902,7 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
  * persist ones by write(). This may be reasonable for goofy systems (Windows)
  * which low performance of msync() and/or zany LRU tracking. */
 #ifndef MDBX_AVOID_MSYNC
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 #define MDBX_AVOID_MSYNC 1
 #else
 #define MDBX_AVOID_MSYNC 0
@@ -1893,7 +1927,7 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 
 /** Avoid dependence from MSVC CRT and use ntdll.dll instead. */
 #ifndef MDBX_WITHOUT_MSVC_CRT
-#if defined(MDBX_BUILD_CXX) && !MDBX_BUILD_CXX && (defined(_WIN32) || defined(_WIN64))
+#if defined(MDBX_BUILD_CXX) && !MDBX_BUILD_CXX && IS_WINDOWS
 #define MDBX_WITHOUT_MSVC_CRT 1
 #else
 #define MDBX_WITHOUT_MSVC_CRT 0
@@ -2018,7 +2052,7 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 #define MDBX_LOCKING_POSIX2008 2008
 
 /** Advanced: Choices the locking implementation (autodetection by default). */
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 #define MDBX_LOCKING MDBX_LOCKING_WIN32FILES
 #else
 #ifndef MDBX_LOCKING
@@ -2342,6 +2376,23 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
     !defined(__STDC_NO_ATOMICS__) &&                                                                                   \
     (__GNUC_PREREQ(4, 9) || __CLANG_PREREQ(3, 8) || !(defined(__GNUC__) || defined(__clang__)))
 #include <stdatomic.h>
+#if defined(__CODEGEARC__)
+/* Embarcadero Clang falls back to Dinkumware stdatomic.h on x86.
+ * Fix incompatible atomic_* expansions for volatile _Atomic objects:
+ * Dinkumware macros do (pobj)->_Atom which breaks on scalar _Atomic.
+ * Use Clang __c11_atomic_* builtins directly instead. */
+#undef atomic_is_lock_free
+#define atomic_is_lock_free(obj) __c11_atomic_is_lock_free(sizeof(*(obj)))
+#undef atomic_store_explicit
+#define atomic_store_explicit(obj, val, ord) __c11_atomic_store((obj), (val), (ord))
+#undef atomic_load_explicit
+#define atomic_load_explicit(obj, ord) __c11_atomic_load((obj), (ord))
+#undef atomic_compare_exchange_strong
+#define atomic_compare_exchange_strong(obj, exp, val)                                                                  \
+  __c11_atomic_compare_exchange_strong((obj), (exp), (val), __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
+#undef atomic_fetch_add
+#define atomic_fetch_add(obj, val) __c11_atomic_fetch_add((obj), (val), __ATOMIC_SEQ_CST)
+#endif /* __CODEGEARC__ */
 #define MDBX_HAVE_C11ATOMICS
 #elif defined(__GNUC__) || defined(__clang__)
 #elif defined(_MSC_VER)
@@ -2369,14 +2420,22 @@ typedef enum mdbx_memory_order {
 typedef union {
   volatile uint32_t weak;
 #ifdef MDBX_HAVE_C11ATOMICS
+#if defined(__CODEGEARC__) && defined(__clang__)
+  volatile atomic_uint32_t c11a;
+#else
   volatile _Atomic uint32_t c11a;
+#endif
 #endif /* MDBX_HAVE_C11ATOMICS */
 } mdbx_atomic_uint32_t;
 
 typedef union {
   volatile uint64_t weak;
 #if defined(MDBX_HAVE_C11ATOMICS) && (MDBX_64BIT_CAS || MDBX_64BIT_ATOMIC)
+#if defined(__CODEGEARC__) && defined(__clang__)
+  volatile atomic_uint64_t c11a;
+#else
   volatile _Atomic uint64_t c11a;
+#endif
 #endif
 #if !defined(MDBX_HAVE_C11ATOMICS) || !MDBX_64BIT_CAS || !MDBX_64BIT_ATOMIC
   __anonymous_struct_extension__ struct {
@@ -2397,6 +2456,10 @@ typedef union {
 #if defined(__e2k__) && defined(__LCC__) && __LCC__ < /* FIXME */ 127
 #define MDBX_c11a_ro(type, ptr) (&(ptr)->weak)
 #define MDBX_c11a_rw(type, ptr) (&(ptr)->weak)
+#elif defined(__CODEGEARC__)
+/* Embarcadero Clang: cast to _Atomic(type)* so __c11_atomic_* builtins accept the pointer. */
+#define MDBX_c11a_ro(type, ptr) ((volatile _Atomic(type) *)&(ptr)->c11a)
+#define MDBX_c11a_rw(type, ptr) ((volatile _Atomic(type) *)&(ptr)->c11a)
 #elif defined(__clang__) && __clang__ < 8
 #define MDBX_c11a_ro(type, ptr) ((volatile _Atomic(type) *)&(ptr)->c11a)
 #define MDBX_c11a_rw(type, ptr) (&(ptr)->c11a)
@@ -2983,7 +3046,7 @@ typedef struct shared_lck {
 #define MDBX_READERS_LIMIT 32767
 
 #define MIN_MAPSIZE (MDBX_MIN_PAGESIZE * MIN_PAGENO)
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 #define MAX_MAPSIZE32 UINT32_C(0x38000000)
 #else
 #define MAX_MAPSIZE32 UINT32_C(0x7f000000)
@@ -3018,7 +3081,7 @@ struct libmdbx_globals {
   uint8_t sys_pagesize_ln2;
   uint8_t runtime_flags;
   uint8_t loglevel;
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
   bool running_under_Wine;
 #elif defined(__linux__) || defined(__gnu_linux__)
   bool running_on_WSL1 /* Windows Subsystem 1 for Linux */;
@@ -3036,7 +3099,7 @@ extern "C" {
 #endif /* __cplusplus */
 
 extern struct libmdbx_globals globals;
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 extern struct libmdbx_imports imports;
 #endif /* Windows */
 

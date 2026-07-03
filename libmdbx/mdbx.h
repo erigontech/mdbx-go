@@ -1,4 +1,4 @@
-/** This file is part of the libmdbx amalgamated source code (v0.14.2-0-g530d0265 at 2026-05-14T21:14:59+03:00).
+/** This file is part of the libmdbx amalgamated source code (v0.14.2-246-ga9370ce8 at 2026-07-01T10:29:41+03:00).
 
 \file mdbx.h
 \brief The libmdbx C API header file.
@@ -30,7 +30,7 @@ The _libmdbx_ project has been completely relocated to the jurisdiction of the R
 
 \section copyright LICENSE & COPYRIGHT
 \copyright SPDX-License-Identifier: Apache-2.0
-Please refer to the COPYRIGHT file for explanations license change, credits and acknowledgments.
+Please refer to the COPYRIGHT file for explanation of license change, credits and acknowledgments.
 \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2026
 
 *******************************************************************************/
@@ -979,54 +979,83 @@ typedef enum MDBX_debug_flags {
 } MDBX_debug_flags_t;
 DEFINE_ENUM_FLAG_OPERATORS(MDBX_debug_flags)
 
-/** \brief A debug-logger callback function,
- * called before printing the message and aborting.
+/** \brief A log callback function that accepts a format string and arguments passed through the `va_list` pointer.
  * \see mdbx_setup_debug()
  *
- * \param [in] loglevel  The severity of message.
- * \param [in] function  The function name which emits message,
- *                       may be NULL.
- * \param [in] line      The source code line number which emits message,
- *                       may be zero.
- * \param [in] fmt       The printf-like format string with message.
- * \param [in] args      The variable argument list respectively for the
- *                       format-message string passed by `fmt` argument.
- *                       Maybe NULL or invalid if the format-message string
- *                       don't contain `%`-specification of arguments. */
-typedef void (*MDBX_debug_func)(MDBX_log_level_t loglevel, const char *function, int line, const char *fmt,
+ * \param [in] log_level  The severity of message.
+ * \param [in] function   The function name which emits message, may be NULL.
+ * \param [in] line       The source code line number which emits message, may be zero.
+ * \param [in] fmt        The printf-like format string with message.
+ * \param [in] args       The variable argument list respectively for the
+ *                        format-message string passed by `fmt` argument.
+ *                        Maybe NULL or invalid if the format-message string
+ *                        don't contain `%`-specification of arguments. */
+typedef void (*MDBX_debug_func)(MDBX_log_level_t log_level, const char *function, int line, const char *fmt,
                                 va_list args) MDBX_CXX17_NOEXCEPT;
 
 /** \brief The "don't change `logger`" value for mdbx_setup_debug() */
 #define MDBX_LOGGER_DONTCHANGE ((MDBX_debug_func)(intptr_t)-1)
-#define MDBX_LOGGER_NOFMT_DONTCHANGE ((MDBX_debug_func_nofmt)(intptr_t)-1)
 
-/** \brief Setup global log-level, debug options and debug logger.
- * \returns The previously `debug_flags` in the 0-15 bits
- *          and `log_level` in the 16-31 bits.
+/** \brief Setups global log-level, debug options and logger for format string and `va_list`.
+ *
+ * \param [in] log_level     New global log-level or \ref MDBX_LOG_DONTCHANGE.
+ * \param [in] debug_flags   New global debug flags or \ref MDBX_DBG_DONTCHANGE.
+ * \param [in] logger        New global logger callback function with \ref MDBX_debug_func signature
+ *                           or \ref MDBX_LOGGER_DONTCHANGE.
+ *
+ * \returns A non-negative value on success, in which the previous value `debug_flags` is in 0-15 bits,
+ *          and `log_level` is in 16-31 bits.
+ *          Otherwise, a negative value will be returned, indicating that some parameters are invalid.
  *
  * \see MDBX_log_level_t \see MDBX_debug_flags_t */
 LIBMDBX_API int mdbx_setup_debug(MDBX_log_level_t log_level, MDBX_debug_flags_t debug_flags, MDBX_debug_func logger);
 
-typedef void (*MDBX_debug_func_nofmt)(MDBX_log_level_t loglevel, const char *function, int line, const char *msg,
+/** \brief A log callback function that accepts a formatted message with length.
+ * \see mdbx_setup_debug()
+ *
+ * \param [in] log_level  The severity of message.
+ * \param [in] function   The function name which emits message, may be NULL.
+ * \param [in] line       The source code line number which emits message, may be zero.
+ * \param [in] msg        Pointer to the static buffer with formatted message for log.
+ * \param [in] length     Length of formatted message in a chars. */
+typedef void (*MDBX_debug_func_nofmt)(MDBX_log_level_t log_level, const char *function, int line, const char *msg,
                                       unsigned length) MDBX_CXX17_NOEXCEPT;
 
+/** \brief The "don't change `logger`" value for mdbx_setup_debug_nofmt() */
+#define MDBX_LOGGER_NOFMT_DONTCHANGE ((MDBX_debug_func_nofmt)(intptr_t)-1)
+
+/** \brief Setups global log-level, debug options, buffer and logger for plain preformatted messages.
+ *
+ * \param [in] log_level           New global log-level or \ref MDBX_LOG_DONTCHANGE.
+ * \param [in] debug_flags         New global debug flags or \ref MDBX_DBG_DONTCHANGE.
+ * \param [in] logger              New global logger callback function with \ref mdbx_setup_debug_nofmt signature
+ *                                 or \ref MDBX_LOGGER_NOFMT_DONTCHANGE.
+ * \param [in] logger_buffer       A pointer to a static shared buffer that libmdbx will use internally
+ *                                 to format log messages,
+ *                                 either NULL if `logger` is `MDBX_LOGGER_NOFMT_DONTCHANGE` or NULL.
+ * \param [in] logger_buffer_size  The size of passed static shared buffer,
+ *                                 either zero if `logger` is `MDBX_LOGGER_NOFMT_DONTCHANGE` or NULL.
+ *
+ * \returns A non-negative value on success, in which the previous value `debug_flags` is in 0-15 bits,
+ *          and `log_level` is in 16-31 bits.
+ *          Otherwise, a negative value will be returned, indicating that some parameters are invalid.
+ *
+ * \see MDBX_log_level_t \see MDBX_debug_flags_t */
 LIBMDBX_API int mdbx_setup_debug_nofmt(MDBX_log_level_t log_level, MDBX_debug_flags_t debug_flags,
                                        MDBX_debug_func_nofmt logger, char *logger_buffer, size_t logger_buffer_size);
 
-/** \brief A callback function for most assertion failures,
- * called before printing the message and aborting.
+/** \brief A callback function for most assertion failures, that called before printing the message and aborting.
  * \see mdbx_env_set_panic()
  *
- * \param [in] msg       The assertion message, not including newline.
- * \param [in] function  The function name where the assertion check failed,
- *                       may be NULL.
- * \param [in] line      The line number in the source file
- *                       where the assertion check failed, may be zero.
- * \param [in] obj       A handle of object associated with the assertion,
- *                       it could be MDBX_env, MDBX_txn,
- *                       MDBX_cursor or an internal page structure.
- * \param [in] obj_class A value corresponding to the object type:
- *                       `env`, `txn`, `cursor`, etc. */
+ * \param [in] msg        The assertion message, not including newline.
+ * \param [in] function   The function name where the assertion check failed,
+ *                        may be NULL.
+ * \param [in] line       The line number in the source file
+ *                        where the assertion check failed, may be zero.
+ * \param [in] obj        A handle of object associated with the assertion,
+ *                        it could be MDBX_env, MDBX_txn,
+ *                        MDBX_cursor or an internal page structure.
+ * \param [in] obj_class  A value corresponding to the object type: `env`, `txn`, `cursor`, etc. */
 typedef void (*MDBX_panic_func)(const char *msg, const char *function, unsigned line, const void *obj,
                                 const char *obj_class) MDBX_CXX17_NOEXCEPT;
 
@@ -1227,9 +1256,6 @@ typedef enum MDBX_env_flags {
    * This flag takes effect when the environment is opened and cannot be changed after. */
   MDBX_NOSTICKYTHREADS = UINT32_C(0x200000),
 
-  /** \deprecated Please use \ref MDBX_NOSTICKYTHREADS instead. */
-  MDBX_NOTLS MDBX_DEPRECATED_ENUM = MDBX_NOSTICKYTHREADS,
-
   /** Don't do readahead.
    *
    * Turn off readahead. Most operating systems perform readahead on read
@@ -1273,19 +1299,6 @@ typedef enum MDBX_env_flags {
    *
    * This flag may be changed at any time using `mdbx_env_set_flags()`. */
   MDBX_NOMEMINIT = UINT32_C(0x1000000),
-
-  /** Aims to coalesce a Garbage Collection items.
-   * \deprecated Always enabled since v0.12 and deprecated since v0.13.
-   *
-   * With `MDBX_COALESCE` flag MDBX will aims to coalesce items while recycling
-   * a Garbage Collection. Technically, when possible short lists of pages
-   * will be combined into longer ones, but to fit on one database page. As a
-   * result, there will be fewer items in Garbage Collection and a page lists
-   * are longer, which slightly increases the likelihood of returning pages to
-   * Unallocated space and reducing the database file.
-   *
-   * This flag may be changed at any time using mdbx_env_set_flags(). */
-  MDBX_COALESCE MDBX_DEPRECATED_ENUM = UINT32_C(0x2000000),
 
   /** LIFO policy for recycling a Garbage Collection items.
    *
@@ -1436,13 +1449,6 @@ typedef enum MDBX_env_flags {
    * \ref mdbx_env_set_flags() or by passing to \ref mdbx_txn_begin() for
    * particular write transaction. */
   MDBX_SAFE_NOSYNC = UINT32_C(0x10000),
-
-  /** \deprecated Please use \ref MDBX_SAFE_NOSYNC instead of `MDBX_MAPASYNC`.
-   *
-   * Since version 0.9.x the `MDBX_MAPASYNC` is deprecated and has the same
-   * effect as \ref MDBX_SAFE_NOSYNC with \ref MDBX_WRITEMAP. This just API
-   * simplification is for convenience and clarity. */
-  MDBX_MAPASYNC = MDBX_SAFE_NOSYNC,
 
   /** Don't sync anything and wipe previous steady commits.
    *
@@ -2047,13 +2053,6 @@ typedef enum MDBX_error {
   MDBX_EDEADLK = EDEADLK
 #endif /* !Windows */
 } MDBX_error_t;
-
-/** MDBX_MAP_RESIZED
- * \ingroup c_err
- * \deprecated Please review your code to use MDBX_UNABLE_EXTEND_MAPSIZE
- * instead. */
-MDBX_DEPRECATED static __inline int MDBX_MAP_RESIZED_is_deprecated(void) { return MDBX_UNABLE_EXTEND_MAPSIZE; }
-#define MDBX_MAP_RESIZED MDBX_MAP_RESIZED_is_deprecated()
 
 /** \brief Return a string describing a given error code.
  * \ingroup c_err
@@ -2663,8 +2662,7 @@ LIBMDBX_API int mdbx_env_deleteW(const wchar_t *pathname, MDBX_env_delete_mode_t
  * \returns A non-zero error value on failure and 0 on success. */
 LIBMDBX_API int mdbx_env_copy(MDBX_env *env, const char *dest, MDBX_copy_flags_t flags);
 
-/** \brief Copy an MDBX environment by given read transaction to the specified
- * path, with options.
+/** \brief Copy an MDBX environment by given read transaction to the specified path, with options.
  * \ingroup c_extra
  *
  * This function may be used to make a backup of an existing environment.
@@ -2737,8 +2735,7 @@ LIBMDBX_API int mdbx_txn_copy2pathnameW(MDBX_txn *txn, const wchar_t *dest, MDBX
 #define mdbx_txn_copy2pathnameT(txn, dest, flags) mdbx_txn_copy2pathname(txn, dest, path)
 #endif /* Windows */
 
-/** \brief Copy an environment to the specified file descriptor, with
- * options.
+/** \brief Copy an environment to the specified file descriptor, with options.
  * \ingroup c_extra
  *
  * This function may be used to make a backup of an existing environment.
@@ -2763,8 +2760,7 @@ LIBMDBX_API int mdbx_txn_copy2pathnameW(MDBX_txn *txn, const wchar_t *dest, MDBX
  * \returns A non-zero error value on failure and 0 on success. */
 LIBMDBX_API int mdbx_env_copy2fd(MDBX_env *env, mdbx_filehandle_t fd, MDBX_copy_flags_t flags);
 
-/** \brief Copy an environment by given read transaction to the specified file
- * descriptor, with options.
+/** \brief Copy an environment by given read transaction to the specified file descriptor, with options.
  * \ingroup c_extra
  *
  * This function may be used to make a backup of an existing environment.
@@ -6271,8 +6267,9 @@ LIBMDBX_API int mdbx_cursor_put(MDBX_cursor *cursor, const MDBX_val *key, MDBX_v
  * return the same record after this operation.
  *
  * \param [in] cursor  A cursor handle returned by mdbx_cursor_open().
+ *
  * \param [in] flags   Options for this operation. This parameter must be set
- * to one of the values described here.
+ *                     to one of the values described here.
  *
  *  - \ref MDBX_CURRENT Delete only single entry at current cursor position.
  *  - \ref MDBX_ALLDUPS
@@ -6336,10 +6333,10 @@ LIBMDBX_API int mdbx_cursor_delete_range(MDBX_cursor *begin, MDBX_cursor *end, b
  * kinds of "dupsort" tables. If in doubt, use a deliberately large value such as `INT_MAX` or just the `42`.
  *
  * \param [in] first             Cursor pointing to the first element or NULL to using the begin of a table.
- *                               Either the `first` or the `last` must not be NULL.
+ *                               Either the "first" or the "last" can be NULL, but not both at once.
  *
  * \param [in] last              Cursor pointing to the end of the range or NULL to using the end of a table.
- *                               Either the `first` or the `last` must not be NULL.
+ *                               Either the "first" or the "last" can be NULL, but not both at once.
  *
  * \param [out] distance         The address for storing the result calculated distance.
  *
@@ -6391,6 +6388,10 @@ LIBMDBX_API int mdbx_cursor_scroll(MDBX_cursor *cursor, intptr_t amount, unsigne
 
 /** \brief Distributes cursors for multithreaded range scanning.
  * \ingroup c_cursors
+ *
+ * Places a given set of cursors as evenly as possible for subsequent scanning or parallel processing of data range by
+ * several threads. The function can accept cursors bound to different read transactions, provided that they use the
+ * same MVCC-snapshot of data.
  *
  * The value of the `deepness` parameter has a fundamental effect on the result, since it determines the level of the
  * B-tree at which the cursors distribution are performed, where zero corresponds to the root of the B-tree and

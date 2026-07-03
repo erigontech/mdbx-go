@@ -241,8 +241,7 @@ _libmdbx_ is superior to legendary _[LMDB](https://symas.com/lmdb/)_ in terms of
 
 ## Other fixes and specifics
 
-* Fixed more than 10 significant errors, in particular: page leaks, wrong table/sub-database statistics, segfault in several conditions,
-nonoptimal page merge strategy, updating an existing record with a change in data size (including for multimap), etc.
+* Fixed more than a dozen bugs, many of which are still present in LMDB, in particular: page leaks, wrong table/sub-database statistics, segfaults in several conditions, nonoptimal page merge strategy, updating an existing item with resizing data (including for a multimap), etc.
 
 * All cursors can be reused and should be closed explicitly, regardless ones were opened within a write or read transaction.
 
@@ -270,7 +269,7 @@ Since 2017 _libmdbx_ is used in [Fast Positive Tables](https://sourcecraft.dev/d
 On 2022-04-15 the Github administration, without any warning nor explanation, deleted _libmdbx_ along with a lot of other projects, simultaneously blocking access for many developers. Therefore on 2022-04-21 I have migrated to a reliable trusted infrastructure.
 The origin for now is at [SourceCraft](https://sourcecraft.dev/dqdkfa/libmdbx) and ~~Github~~ is blacklisted forever to play this role.
 
-Since May 2024 and version 0.13 _libmdbx_ was re-licensed under Apache-2.0 license. Please refer to the [`COPYRIGHT` file](https://sourcecraft.dev/dqdkfa/libmdbx/blob/raw?file=COPYRIGHT) for license change explanations.
+Since May 2024 and version 0.13 _libmdbx_ was re-licensed under Apache-2.0 license. Please refer to the [`COPYRIGHT` file](https://sourcecraft.dev/dqdkfa/libmdbx/blob/raw?file=COPYRIGHT) for license change explanation.
 
 ## Acknowledgments
 Howard Chu <hyc@openldap.org> and Hallvard Furuseth <hallvard@openldap.org> are the authors of _LMDB_, from which _libmdbx_ was forked in 2015.
