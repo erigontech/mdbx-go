@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -2436,5 +2437,39 @@ func TestCursor_RangeDel_EmptyTable_DeleteWhole(t *testing.T) {
 
 	if affected != 0 {
 		t.Fatalf("affected=%d, want 0", affected)
+	}
+}
+
+// GET_CURRENT on a cursor that was never positioned (hollow) returns
+// MDBX_ENODATA, not MDBX_NOTFOUND. operrno must surface it as ErrNoData so
+// callers can tell "cursor not positioned" apart from "key not found".
+func TestCursor_GetCurrent_Hollow(t *testing.T) {
+	env, _ := setup(t)
+
+	if err := env.Update(func(txn *Txn) error {
+		db, err := txn.OpenDBISimple("db", Create)
+		if err != nil {
+			return err
+		}
+		if err := txn.Put(db, []byte("k"), []byte("v"), 0); err != nil {
+			return err
+		}
+
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		_, _, err = cur.Get(nil, nil, GetCurrent)
+		if !IsNoData(err) {
+			t.Errorf("IsNoData(err)=false, err=%v", err)
+		}
+		if !errors.Is(err, ErrNoData) {
+			t.Errorf("errors.Is(err, ErrNoData)=false, err=%v", err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

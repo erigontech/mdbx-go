@@ -84,6 +84,12 @@ const minErrno, maxErrno C.int = C.MDBX_KEYEXIST, C.MDBX_LAST_ADDED_ERRCODE
 
 var ErrNotFound = errors.New("key not found")
 
+// ErrNoData is returned when a cursor operation reads the current position of a
+// cursor that is not positioned to any data (a "hollow" cursor), e.g.
+// MDBX_GET_CURRENT on a cursor that was never moved. Distinct from ErrNotFound,
+// which reports that a searched-for key/value does not exist.
+var ErrNoData = errors.New("cursor is not positioned to data")
+
 // App can re-define this messages from init() func
 var CorruptErrorHardwareRecommendations = "Maybe free space is over on disk. Otherwise it's hardware failure. Before creating issue please use tools like https://www.memtest86.com to test RAM and tools like https://www.smartmontools.org to test Disk. To handle hardware risks: use ECC RAM, use RAID of disks, run multiple application instances (or do backups). If hardware checks passed - check FS settings - 'fsync' and 'flock' must be enabled. "
 var CorruptErrorBacktraceRecommendations = "Otherwise - please create issue in Application repo." // with backtrace or coredump. To create coredump set compile option 'MDBX_FORCE_ASSERTIONS=1' and env variable 'GOTRACEBACK=crash'."
@@ -113,6 +119,10 @@ func _operrno(op string, ret int) error {
 // not exist or if the Cursor reached the end of the database without locating
 // a value (EOF).
 func IsNotFound(err error) bool { return err == ErrNotFound } //nolint
+
+// IsNoData returns true if a cursor read (e.g. Cursor.Get with MDBX_GET_CURRENT)
+// hit a cursor that is not positioned to any data. See ErrNoData.
+func IsNoData(err error) bool { return err == ErrNoData } //nolint
 
 func IsKeyExists(err error) bool {
 	return IsErrno(err, KeyExist)
