@@ -437,6 +437,34 @@ func (env *Env) Sync(force bool, nonblock bool) error {
 	return operrno("mdbx_env_sync_ex", ret)
 }
 
+// SyncForce forces a synchronous flush of the data buffers to disk, ignoring
+// any NoMetaSync/SafeNoSync/UtterlyNoSync flag on the environment. It blocks
+// if a write transaction is running on another thread.
+//
+// It is the shortcut to calling Sync(force=true, nonblock=false).
+//
+// See mdbx_env_sync.
+func (env *Env) SyncForce() error {
+	ret := C.mdbx_env_sync(env._env)
+	return operrno("mdbx_env_sync", ret)
+}
+
+// SyncPoll runs the lazy/asynchronous sync in polling mode: it checks the
+// thresholds set by SetSyncBytes and/or SetSyncPeriod and flushes unsynced data
+// to disk only when at least one threshold is reached. It does not wait if a
+// write transaction is running on another thread (returns MDBX_BUSY instead).
+//
+// A nil error is returned both when a flush happened and when there was nothing
+// pending to flush (MDBX_RESULT_TRUE).
+//
+// It is the shortcut to calling Sync(force=false, nonblock=true).
+//
+// See mdbx_env_sync_poll.
+func (env *Env) SyncPoll() error {
+	ret := C.mdbx_env_sync_poll(env._env)
+	return operrno("mdbx_env_sync_poll", ret)
+}
+
 // SetFlags sets flags in the environment.
 //
 // See mdbx_env_set_flags.
