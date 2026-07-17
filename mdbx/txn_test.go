@@ -2014,3 +2014,82 @@ func TestTxn_CloneInto_Reuse(t *testing.T) {
 		t.Errorf("target saw %q, want %q", got, "v")
 	}
 }
+
+// TestTxn_Unpark_OustedPaths exercises the two ousted outcomes of Unpark. A
+// writer only ousts parked readers when it wants to recycle their snapshot,
+// so the test churns updates to provoke it and skips if that never happens.
+func TestTxn_Unpark_OustedPaths(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		return txn.Put(db, []byte("k"), []byte("v"), 0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	begin := func() *Txn {
+		txn, err := env.BeginTxn(nil, Readonly)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := txn.Get(db, []byte("k")); err != nil {
+			txn.Abort()
+			t.Fatal(err)
+		}
+		return txn
+	}
+
+	noRestart := begin()
+	defer noRestart.Abort()
+	withRestart := begin()
+	defer withRestart.Abort()
+	for _, txn := range []*Txn{noRestart, withRestart} {
+		if err := txn.Park(false); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Churn updates so the writer needs pages pinned by the parked snapshot.
+	val := make([]byte, 4096)
+	for i := 0; i < 512; i++ {
+		if err := env.Update(func(txn *Txn) error {
+			return txn.Put(db, []byte{byte(i), byte(i >> 8)}, val, 0)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	restarted, err := noRestart.Unpark(false)
+	if err != nil && !IsErrno(err, Ousted) {
+		t.Fatalf("Unpark(false): %v", err)
+	}
+	if restarted {
+		t.Error("Unpark(false) must never report restarted")
+	}
+	ousted := err != nil
+
+	restarted, err = withRestart.Unpark(true)
+	if err != nil {
+		t.Fatalf("Unpark(true): %v", err)
+	}
+	if ousted {
+		if !restarted {
+			t.Error("Unpark(true) after oust: restarted = false, want true")
+		}
+		// The no-restart handle is in the reset state; prove it is reusable.
+		if err := noRestart.Renew(); err != nil {
+			t.Errorf("Renew after Ousted: %v", err)
+		}
+	} else if restarted {
+		t.Error("Unpark(true) without oust: restarted = true, want false")
+	}
+
+	if !ousted && !restarted {
+		t.Skip("write churn did not oust the parked readers; ousted paths not exercised")
+	}
+}
