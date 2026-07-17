@@ -159,8 +159,9 @@ if err := env.View(func(txn *mdbx.Txn) error {
     if err != nil {
         return err
     }
-    // val aliases the DB file; copy it if it must survive a later
-    // Put/Del in this txn or the end of the txn.
+    // val aliases the DB file and is valid until this View txn ends;
+    // copy it to keep it longer. (In a write txn, a later Put/Del also
+    // invalidates it.)
     doSomethingWith(val)
     return nil
 }); err != nil {
