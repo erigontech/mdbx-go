@@ -351,7 +351,7 @@ func (txn *Txn) Park(autounpark bool) error {
 	txn.env.closeLock.RLock()
 	defer txn.env.closeLock.RUnlock()
 	if txn.env._env == nil {
-		return nil
+		return errNotOpen
 	}
 	ret := C.mdbx_txn_park(txn._txn, C.bool(autounpark))
 	if ret != success {
@@ -377,12 +377,19 @@ func (txn *Txn) Unpark(restartIfOusted bool) (restarted bool, err error) {
 	txn.env.closeLock.RLock()
 	defer txn.env.closeLock.RUnlock()
 	if txn.env._env == nil {
-		return false, nil
+		// Reporting success here would invite dereferencing views whose
+		// mmap Env.Close already unmapped.
+		return false, errNotOpen
 	}
 	ret := C.mdbx_txn_unpark(txn._txn, C.bool(restartIfOusted))
 	if ret == C.MDBX_RESULT_TRUE {
 		txn.resetID() // restarted on a fresh snapshot
 		return true, nil
+	}
+	if ret == C.MDBX_OUSTED {
+		// libmdbx reset the txn (as after mdbx_txn_reset); the cached
+		// snapshot ID is stale.
+		txn.resetID()
 	}
 	if ret != success {
 		return false, operrno("mdbx_txn_unpark", ret)
