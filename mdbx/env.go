@@ -176,7 +176,7 @@ func (env *Env) SetStrictThreadMode(mode bool) {
 	env.strictThreadCheck = mode
 }
 
-var errNotOpen = errors.New("enivornment is not open")
+var errNotOpen = errors.New("environment is not open")
 
 // ReaderList dumps the contents of the reader lock table as text.  Readers
 // start on the second line as space-delimited fields described by the first
