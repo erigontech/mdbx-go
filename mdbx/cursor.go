@@ -147,11 +147,9 @@ func (c *Cursor) Unbind() error {
 	return nil
 }
 
-// Close the cursor handle and clear the finalizer on c.  Cursors belonging to
-// write transactions are closed automatically when the transaction is
-// terminated.
+// Close the cursor handle.
 //
-// See mdb_cursor_close.
+// See mdbx_cursor_close.
 func (c *Cursor) Close() {
 	if c._c != nil {
 		if c.txn._txn == nil && !c.txn.readonly {
