@@ -465,9 +465,9 @@ func (txn *Txn) Refresh() (atTip bool, err error) {
 //
 // WARNING: A successful Checkpoint internally tears down and restarts the
 // underlying libmdbx transaction. All cursors opened against this Txn become
-// invalid C handles after Checkpoint returns. Close all cursors (or stop
-// using them) before calling Checkpoint — libmdbx does not currently support
-// cursor transfer across the restart.
+// unusable after Checkpoint returns — libmdbx does not currently support
+// cursor transfer across the restart. Close them (before or after the call;
+// Close stays safe and required) to free their allocations.
 //
 // On a non-RESULT_TRUE error the libmdbx commit path terminates the handle
 // internally; the wrapper clears it so a deferred Abort/Commit is a no-op.
@@ -516,8 +516,9 @@ func (txn *Txn) Checkpoint(weakeningDurability uint) (lat CommitLatency, noChang
 // MDBX_NOSUCCESS_PURE_COMMIT enabled — under the default build a no-op
 // commit succeeds normally.
 //
-// WARNING: All cursors opened against this Txn become invalid C handles
-// after CommitEmbarkRead returns. Close them before calling.
+// WARNING: All cursors opened against this Txn become unusable after
+// CommitEmbarkRead returns. Close them (before or after the call) to free
+// their allocations.
 //
 // See mdbx_txn_commit_embark_read.
 //
@@ -569,9 +570,10 @@ func (txn *Txn) CommitEmbarkRead() (lat CommitLatency, noChanges bool, err error
 // current libmdbx code does not return it for rollback, but the public docs
 // list it as a possible return.
 //
-// WARNING: All cursors opened against this Txn become invalid C handles
-// after a successful Rollback. libmdbx tears them down via
-// txn_done_cursors() before the restart. Close cursors before calling.
+// WARNING: All cursors opened against this Txn become unusable after a
+// successful Rollback (libmdbx deactivates them via txn_done_cursors before
+// the restart). Close them (before or after the call) to free their
+// allocations.
 //
 // See mdbx_txn_rollback.
 func (txn *Txn) Rollback() error {
@@ -1186,6 +1188,12 @@ func (txn *Txn) CHandle() unsafe.Pointer {
 	return unsafe.Pointer(txn._txn)
 }
 
+// ReleaseAllCursors unbinds (unbind=true) or closes (unbind=false) all
+// cursors of the transaction.
+//
+// WARNING: with unbind=false libmdbx frees the C cursors; every Go Cursor
+// bound to this Txn is left holding a dangling handle and must be discarded
+// WITHOUT calling Close (Close would touch freed memory).
 func (txn *Txn) ReleaseAllCursors(unbind bool) error {
 	ret := C.mdbx_txn_release_all_cursors(txn._txn, C.bool(unbind))
 	if ret != success {

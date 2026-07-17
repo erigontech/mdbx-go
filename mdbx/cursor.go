@@ -138,7 +138,7 @@ func (c *Cursor) Bind(txn *Txn, db DBI) error {
 
 // Unbind Unbinded cursor is disassociated with any transactions but still holds
 // the original DBI-handle internally. Thus, it could be renewed with any running
-// transaction or closed.
+// transaction or closed. After Unbind, Txn() reports nil.
 func (c *Cursor) Unbind() error {
 	ret := C.mdbx_cursor_unbind(c._c)
 	if ret != success {
@@ -150,8 +150,9 @@ func (c *Cursor) Unbind() error {
 
 // Close the cursor handle and free its underlying libmdbx cursor. Unlike
 // LMDB, libmdbx never frees cursors at transaction end, so Close is required
-// for every cursor and is safe before or after its txn ends. No-op if
-// already closed.
+// for every cursor; it may be called before or after the txn ends (a live
+// write-txn cursor must be closed from the txn's own thread). No-op if
+// already closed. Do not Close after ReleaseAllCursors(false) — see there.
 //
 // See mdbx_cursor_close.
 func (c *Cursor) Close() {
@@ -554,7 +555,11 @@ var cursorPool = sync.Pool{
 }
 
 func CursorFromPool() *Cursor { return cursorPool.Get().(*Cursor) }
-func CursorToPool(c *Cursor)  { cursorPool.Put(c) }
+
+// CursorToPool returns c for reuse. Do not pool a closed cursor (its handle
+// is gone; Bind/Renew on it will fail). Note cursors evicted from the pool
+// by GC leak their C allocation — Close cursors you do not re-pool.
+func CursorToPool(c *Cursor) { cursorPool.Put(c) }
 
 func CreateCursor() *Cursor {
 	c := &Cursor{_c: C.mdbx_cursor_create(nil)}
