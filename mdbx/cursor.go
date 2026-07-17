@@ -208,8 +208,9 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 		return nil, nil, operrno("mdbx_cursor_get", r.err)
 	}
 
-	// For MDBX_SET the key is returned unchanged and points at setkey's own
-	// memory; return setkey itself.
+	// For MDBX_SET mdbx makes no promise about the returned key, so as an
+	// implementation choice we hand back setkey itself instead of deriving a
+	// slice from the C result.
 	if op == Set {
 		key = setkey
 	} else if op != LastDup && op != FirstDup {
