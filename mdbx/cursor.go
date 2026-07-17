@@ -144,21 +144,19 @@ func (c *Cursor) Unbind() error {
 	if ret != success {
 		return operrno("mdbx_cursor_unbind", ret)
 	}
+	c.txn = nil
 	return nil
 }
 
-// Close the cursor handle and clear the finalizer on c.  Cursors belonging to
-// write transactions are closed automatically when the transaction is
-// terminated.
+// Close the cursor handle and free its underlying libmdbx cursor. Unlike
+// LMDB, libmdbx never frees cursors at transaction end, so Close is required
+// for every cursor and is safe before or after its txn ends. No-op if
+// already closed.
 //
-// See mdb_cursor_close.
+// See mdbx_cursor_close.
 func (c *Cursor) Close() {
 	if c._c != nil {
-		if c.txn._txn == nil && !c.txn.readonly {
-			// the cursor has already been released by MDBX.
-		} else {
-			C.mdbx_cursor_close(c._c)
-		}
+		C.mdbx_cursor_close(c._c)
 		c.txn = nil
 		c._c = nil
 	}
@@ -198,6 +196,10 @@ func (c *Cursor) DBI() DBI {
 //
 // See mdb_cursor_get.
 func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error) {
+	if c._c == nil || c.txn == nil {
+		// closed or not yet bound to a transaction
+		return nil, nil, operrno("mdbx_cursor_get", C.MDBX_EINVAL)
+	}
 	if len(setkey) != 0 || len(setval) != 0 {
 		err = c.getVal(setkey, setval, op)
 	} else {
@@ -298,6 +300,9 @@ func (c *Cursor) Put(key, val []byte, flags uint) error {
 //
 //nolint:gocritic // false positive on dupSubExpr
 func (c *Cursor) PutReserve(key []byte, n int, flags uint) ([]byte, error) {
+	if c._c == nil || c.txn == nil {
+		return nil, operrno("mdbx_cursor_put", C.MDBX_EINVAL)
+	}
 	var k *C.char
 	if len(key) > 0 {
 		k = (*C.char)(unsafe.Pointer(&key[0]))
