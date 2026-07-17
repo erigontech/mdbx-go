@@ -16,8 +16,8 @@ import (
 //
 // The zero-value of UpdateHandling causes a TxnPool to ignore all updates;
 // clearing stale readers is then the application's responsibility (pulling
-// an mdbx.Readonly transaction out of the pool releases its stale pages;
-// mdbx installs no Txn finalizers).
+// an mdbx.Readonly transaction out of the pool renews it, which should
+// release its stale pages; mdbx installs no Txn finalizers).
 type UpdateHandling uint
 
 const (

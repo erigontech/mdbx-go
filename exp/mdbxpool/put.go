@@ -2,9 +2,9 @@
 
 package mdbxpool
 
-// In general we want Txn objects to be returned to the sync.Pool.  But the
-// default behavior of Pool.Put under race detection is to drop everything on
-// the floor; dropped Txns are never terminated and benchmarks issuing
-// repeated reads would quickly blow the environment's reader limit.  So under
-// race detection Txns are aborted eagerly instead of pooled.
+// Normal (non-race) configuration: Txn objects are returned to the sync.Pool
+// for reuse.  Under -race, putrace.go flips this constant to false: there
+// Pool.Put drops everything on the floor, dropped Txns are never terminated,
+// and repeated reads would blow the environment's reader limit, so Txns are
+// aborted eagerly instead of pooled.
 const returnTxnToPool = true
