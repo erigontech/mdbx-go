@@ -28,10 +28,15 @@ func TestCursor_Get_NoAllocs(t *testing.T) {
 		defer cur.Close()
 
 		setkey := []byte("k1")
-		assertNoAllocs(t, "Cursor.Get(nil, nil, First)", func() { _, _, _ = cur.Get(nil, nil, First) })
-		assertNoAllocs(t, "Cursor.Get(nil, nil, Next)", func() { _, _, _ = cur.Get(nil, nil, First); _, _, _ = cur.Get(nil, nil, Next) })
-		assertNoAllocs(t, "Cursor.Get(k, nil, SetRange)", func() { _, _, _ = cur.Get(setkey, nil, SetRange) })
-		assertNoAllocs(t, "Cursor.Get(k, nil, Set)", func() { _, _, _ = cur.Get(setkey, nil, Set) })
+		mustGet := func(setkey, setval []byte, op uint) {
+			if _, _, err := cur.Get(setkey, setval, op); err != nil {
+				panic(err)
+			}
+		}
+		assertNoAllocs(t, "Cursor.Get(nil, nil, First)", func() { mustGet(nil, nil, First) })
+		assertNoAllocs(t, "Cursor.Get(nil, nil, Next)", func() { mustGet(nil, nil, First); mustGet(nil, nil, Next) })
+		assertNoAllocs(t, "Cursor.Get(k, nil, SetRange)", func() { mustGet(setkey, nil, SetRange) })
+		assertNoAllocs(t, "Cursor.Get(k, nil, Set)", func() { mustGet(setkey, nil, Set) })
 		return nil
 	})
 	if err != nil {

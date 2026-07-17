@@ -112,12 +112,14 @@ func wrapVal(b []byte) *C.MDBX_val {
 }
 
 func castToBytes(val *C.MDBX_val) []byte {
-	return castToBytesRaw(val.iov_base, int(val.iov_len))
+	return castToBytesRaw(val.iov_base, val.iov_len)
 }
 
 // castToBytesRaw builds a []byte view over C memory; read-only, valid until
-// the transaction ends.
-func castToBytesRaw(base unsafe.Pointer, n int) []byte {
+// the transaction ends. The length stays C.size_t end to end: a value that
+// exceeded valMaxSize would panic on the slice bound instead of silently
+// truncating on a conversion to int.
+func castToBytesRaw(base unsafe.Pointer, n C.size_t) []byte {
 	if n == 0 {
 		return []byte{}
 	}

@@ -213,9 +213,9 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 	if op == Set {
 		key = setkey
 	} else if op != LastDup && op != FirstDup {
-		key = castToBytesRaw(unsafe.Pointer(r.kbase), int(r.klen))
+		key = castToBytesRaw(unsafe.Pointer(r.kbase), r.klen)
 	}
-	val = castToBytesRaw(unsafe.Pointer(r.vbase), int(r.vlen))
+	val = castToBytesRaw(unsafe.Pointer(r.vbase), r.vlen)
 
 	return key, val, nil
 }
