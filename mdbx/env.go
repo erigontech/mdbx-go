@@ -355,6 +355,9 @@ type EnvInfo struct {
 //
 // txn may be nil: mdbx_env_info_ex accepts a NULL transaction and reports
 // the last committed snapshot. Passing a txn pins the report to its snapshot.
+// On an Env that was created but not yet opened, the C API reports success
+// with only geometry/pagesize/maxreaders populated (earlier versions failed
+// because they could not begin the temporary read txn).
 //
 // See mdbx_env_info_ex.
 func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
