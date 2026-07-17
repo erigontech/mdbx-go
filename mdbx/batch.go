@@ -77,7 +77,7 @@ func (b *GetBatchBuffer) Val(i int) []byte { return castToBytes(b.at(2*i + 1)) }
 // n is the number of pairs stored (read via buf.Key/Val). The first n pairs
 // are valid even when err != nil (the error came from the step after them).
 // eof is true when iteration was exhausted before the buffer filled;
-// otherwise continue with GetBatch(buf, opNext, opNext).
+// otherwise continue with c.GetBatch(buf, opNext, opNext).
 //
 //	buf := mdbx.NewGetBatchBuffer(256)
 //	defer buf.Close()
@@ -94,6 +94,11 @@ func (b *GetBatchBuffer) Val(i int) []byte { return castToBytes(b.at(2*i + 1)) }
 //		}
 //	}
 func (c *Cursor) GetBatch(buf *GetBatchBuffer, opFirst, opNext uint) (n int, eof bool, err error) {
+	if buf != nil {
+		// An errored call must not leave the buffer reporting entries from a
+		// previous fill (possibly views of an already-ended transaction).
+		buf.n = 0
+	}
 	if c._c == nil || buf == nil || buf.ptr == nil || buf.size <= 0 {
 		return 0, false, operrno("mdbx_cursor_get", C.MDBX_EINVAL)
 	}
