@@ -152,11 +152,15 @@ All reads are zero-copy: `Txn.Get` and `Cursor.Get` return read-only views into 
 which become invalid when the transaction terminates. Copy the bytes if they must outlive the transaction.
 (There is no `RawRead` switch as in bmatsuo/lmdb-go — reads are always raw.)
 
-```
-err := mdbx.View(func(txn *mdbx.Txn) error {
+```go
+err := env.View(func(txn *mdbx.Txn) error {
     val, err := txn.Get(dbi, []byte("largevalue"))
-    // val aliases the DB file; copy it if used after this function returns
-    // ...
+    if err != nil {
+        return err
+    }
+    // val aliases the DB file; copy it if it must outlive the transaction.
+    doSomethingWith(val)
+    return nil
 })
 ```
 
