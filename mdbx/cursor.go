@@ -191,7 +191,8 @@ func (c *Cursor) DBI() DBI {
 // until the transaction ends.  Copy them if they must live longer.
 //
 // The Set op returns a key sharing memory with setkey (the caller's own
-// buffer, not the database file); it stays valid after the txn ends.
+// buffer, not the database file); it stays valid after the txn ends. For
+// FirstDup and LastDup only val is returned; key is nil.
 //
 // setkey/setval are forwarded to mdbx_cursor_get as the op requires; ops
 // that take no input value ignore setval.
