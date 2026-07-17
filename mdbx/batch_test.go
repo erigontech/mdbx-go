@@ -144,6 +144,7 @@ func BenchmarkCursorScan(b *testing.B) {
 	defer cur.Close()
 
 	b.Run("Get_Next", func(b *testing.B) {
+		b.ResetTimer()
 		var total int
 		for i := 0; i < b.N; i++ {
 			count := 0
@@ -162,6 +163,7 @@ func BenchmarkCursorScan(b *testing.B) {
 		b.Run(fmt.Sprintf("GetBatch_%d", batch), func(b *testing.B) {
 			buf := NewGetBatchBuffer(batch)
 			defer buf.Close()
+			b.ResetTimer()
 			var total int
 			for i := 0; i < b.N; i++ {
 				count := 0

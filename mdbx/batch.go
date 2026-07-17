@@ -16,11 +16,15 @@ type GetBatchBuffer struct {
 	size int
 }
 
+// maxBatchPairs bounds GetBatchBuffer sizes; it keeps 2*numPairs and the
+// calloc byte count far from integer overflow on any platform.
+const maxBatchPairs = 1 << 28
+
 // NewGetBatchBuffer allocates a buffer holding numPairs key/value pairs
 // (64-512 is a reasonable range).
 func NewGetBatchBuffer(numPairs int) *GetBatchBuffer {
-	if numPairs < 1 {
-		panic("mdbx: NewGetBatchBuffer requires a positive number of pairs")
+	if numPairs < 1 || numPairs > maxBatchPairs {
+		panic("mdbx: NewGetBatchBuffer: number of pairs out of range")
 	}
 	p := C.calloc(C.size_t(2*numPairs), C.size_t(unsafe.Sizeof(C.MDBX_val{})))
 	if p == nil {
@@ -42,6 +46,9 @@ func (b *GetBatchBuffer) Close() {
 func (b *GetBatchBuffer) Cap() int { return b.size }
 
 func (b *GetBatchBuffer) at(i int) *C.MDBX_val {
+	if b.ptr == nil || i < 0 || i >= 2*b.size {
+		panic("mdbx: GetBatchBuffer: index out of range or buffer closed")
+	}
 	return (*C.MDBX_val)(unsafe.Add(unsafe.Pointer(b.ptr), uintptr(i)*unsafe.Sizeof(C.MDBX_val{})))
 }
 
@@ -56,6 +63,10 @@ func (b *GetBatchBuffer) Val(i int) []byte { return castToBytes(b.at(2*i + 1)) }
 // GetBatch fetches up to buf.Cap() key/value pairs in one cgo call: the first
 // record with opFirst, the rest with opNext. It amortizes cgo overhead over
 // large scans.
+//
+// There is no way to pass a search key or value, so ops that need one (Set,
+// SetRange, GetBoth, ...) cannot be used. For a ranged scan, position the
+// cursor with Get first and batch with (GetCurrent, Next).
 //
 // n is the number of pairs stored (read via buf.Key/Val). eof is true when
 // iteration was exhausted before the buffer filled; otherwise continue with
@@ -76,7 +87,7 @@ func (b *GetBatchBuffer) Val(i int) []byte { return castToBytes(b.at(2*i + 1)) }
 //		}
 //	}
 func (c *Cursor) GetBatch(buf *GetBatchBuffer, opFirst, opNext uint) (n int, eof bool, err error) {
-	if c._c == nil || buf == nil || buf.ptr == nil {
+	if c._c == nil || buf == nil || buf.ptr == nil || buf.size <= 0 {
 		return 0, false, operrno("mdbx_cursor_get", C.MDBX_EINVAL)
 	}
 	r := C.mdbxgo_cursor_get_batch(
