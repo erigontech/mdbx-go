@@ -99,8 +99,6 @@ func beginTxn(env *Env, parent *Txn, flags uint) (*Txn, error) {
 
 	var ptxn *C.MDBX_txn
 	if parent != nil {
-		// Because parent Txn objects cannot be used while a sub-Txn is active
-		// it is OK for them to share their C.MDBX_val objects.
 		ptxn = parent._txn
 	}
 	ret := C.mdbx_txn_begin(env._env, ptxn, C.MDBX_txn_flags_t(flags), &txn._txn)
@@ -935,10 +933,6 @@ func (txn *Txn) subFlag(flags uint, fn TxnOp) error {
 	}
 	_, err = sub.commit()
 	return err
-}
-
-func (txn *Txn) bytes(val *C.MDBX_val) []byte {
-	return castToBytes(val)
 }
 
 // Get retrieves items from database dbi.  If txn.RawRead is true the slice

@@ -133,6 +133,10 @@ package mdbx
 #cgo windows LDFLAGS: -lntdll
 #cgo !android,linux LDFLAGS: -lrt
 
+// NOTE: -ffast-math mirrors upstream libmdbx flags and is compile-only here.
+// Do not move it into LDFLAGS: gcc would link crtfastmath.o and flip FTZ/DAZ
+// process-wide.
+
 #define MDBX_BUILD_FLAGS "${CFLAGS}"
 #include "../libmdbx/mdbx.c"
 */
