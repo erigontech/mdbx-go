@@ -40,7 +40,9 @@ func TestTxn_ID(t *testing.T) {
 	if txnCached.getID() != txnCached.ID() {
 		t.Errorf("unexpected readonly id (before update): %v (!= %v)", txnCached.ID(), txnCached.getID())
 	}
-	txnCached.Reset()
+	if err := txnCached.Reset(); err != nil {
+		t.Fatal(err)
+	}
 	if txnCached.getID() != txnCached.ID() {
 		t.Errorf("unexpected reset id: %v (!= %v)", txnCached.ID(), txnCached.getID())
 	}
@@ -486,7 +488,7 @@ func TestTxn_Commit_managed(t *testing.T) {
 				t.Errorf("expected panic: %v", err)
 			}
 		}()
-		txn.Reset()
+		_ = txn.Reset()
 		return errors.New("reset")
 	})
 	if err != nil {
@@ -688,7 +690,9 @@ func TestTxn_Renew(t *testing.T) {
 	if !IsNotFound(err) {
 		t.Errorf("get: %v", err)
 	}
-	txn.Reset()
+	if err := txn.Reset(); err != nil {
+		t.Fatal(err)
+	}
 
 	err = txn.Renew()
 	if err != nil {
@@ -713,8 +717,8 @@ func TestTxn_Reset_doubleReset(t *testing.T) {
 	}
 	defer txn.Abort()
 
-	txn.Reset()
-	txn.Reset()
+	_ = txn.Reset()
+	_ = txn.Reset()
 }
 
 func TestTxn_ParkUnpark(t *testing.T) {
@@ -762,7 +766,7 @@ func TestTxn_Reset_writeTxn(t *testing.T) {
 	}
 
 	// Reset is a noop and Renew will always error out.
-	txn.Reset()
+	_ = txn.Reset()
 	err = txn.Renew()
 	if runtime.GOOS == "windows" {
 		// todo
@@ -1173,7 +1177,7 @@ func BenchmarkTxn_renew(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		txn.Reset()
+		_ = txn.Reset()
 		err = txn.Renew()
 		if err != nil {
 			b.Error(err)
@@ -2009,5 +2013,36 @@ func TestTxn_CloneInto_Reuse(t *testing.T) {
 	}
 	if string(got) != "v" {
 		t.Errorf("target saw %q, want %q", got, "v")
+	}
+}
+
+func TestTxn_Reset_ReturnsError(t *testing.T) {
+	env, _ := setup(t)
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// mdbx_txn_reset is only valid for read-only transactions.
+	wtxn, err := env.BeginTxn(nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wtxn.Abort()
+	// The exact errno is platform-dependent (EINVAL on POSIX,
+	// ERROR_INVALID_PARAMETER on Windows); pin only that Reset fails.
+	if err := wtxn.Reset(); err == nil {
+		t.Error("Reset on a write txn: expected error, got nil")
+	}
+
+	rtxn, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rtxn.Abort()
+	if err := rtxn.Reset(); err != nil {
+		t.Errorf("Reset on a read txn: %v", err)
+	}
+	if err := rtxn.Renew(); err != nil {
+		t.Errorf("Renew after Reset: %v", err)
 	}
 }

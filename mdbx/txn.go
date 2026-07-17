@@ -387,18 +387,22 @@ func (txn *Txn) resetID() {
 // be called to release its slot in the lock table and free its memory.  Reset
 // panics if txn is managed by Update, View, etc.
 //
+// Reset returns the error reported by mdbx_txn_reset, e.g. EINVAL on POSIX
+// (check with IsErrnoSys(err, syscall.EINVAL)) when txn is not read-only.
+//
 // See mdbx_txn_reset.
-func (txn *Txn) Reset() {
+func (txn *Txn) Reset() error {
 	if txn.managed {
 		panic("managed transaction cannot be reset directly")
 	}
 
-	txn.reset()
+	return txn.reset()
 }
 
-func (txn *Txn) reset() {
-	C.mdbx_txn_reset(txn._txn)
+func (txn *Txn) reset() error {
+	ret := C.mdbx_txn_reset(txn._txn)
 	txn.resetID()
+	return operrno("mdbx_txn_reset", ret)
 }
 
 // Renew reuses a transaction that was previously reset by calling txn.Reset().
