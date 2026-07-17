@@ -68,7 +68,7 @@ func TestIsNotFound_WrappedError(t *testing.T) {
 	if !IsNotFound(fmt.Errorf("lookup failed: %w", ErrNotFound)) {
 		t.Error("IsNotFound does not recognize a wrapped ErrNotFound")
 	}
-	if IsNotFound(fmt.Errorf("some other error")) {
+	if IsNotFound(errors.New("some other error")) {
 		t.Error("IsNotFound matched an unrelated error")
 	}
 }
