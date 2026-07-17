@@ -138,8 +138,8 @@ type Env struct {
 	_env  *C.MDBX_env
 	label Label
 
-	// closeLock is used to allow the Txn finalizer to check if the Env has
-	// been closed, so that it may know if it must abort.
+	// closeLock allows Txn.abort to check whether the Env has already been
+	// closed, so that it does not touch a freed MDBX_env.
 	closeLock sync.RWMutex
 
 	strictThreadCheck bool

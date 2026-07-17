@@ -67,10 +67,9 @@ type Txn struct {
 
 	errLogf func(format string, v ...any)
 
-	// Pooled may be set to true while a Txn is stored in a sync.Pool, after
-	// Txn.Reset reset has been called and before Txn.Renew.  This will keep
-	// the Txn finalizer from unnecessarily warning the application about
-	// finalizations.
+	// Pooled may be set to true while a Txn is stored in a sync.Pool.  Kept
+	// for lmdb-go/mdbxpool compatibility; this package has no Txn finalizer,
+	// so the flag has no effect.
 	Pooled bool
 
 	managed  bool
@@ -183,8 +182,8 @@ func (txn *Txn) runOp(fn TxnOp) error {
 	return fn(txn)
 }
 
-// Commit persists all transaction operations to the database and clears the
-// finalizer on txn.  A Txn cannot be used again after Commit is called.
+// Commit persists all transaction operations to the database.  A Txn cannot
+// be used again after Commit is called.
 //
 // See mdbx_txn_commit.
 func (txn *Txn) Commit() (CommitLatency, error) {
@@ -295,8 +294,8 @@ func buildCommitLatency(lat *C.MDBX_commit_latency) CommitLatency {
 	}
 }
 
-// Abort discards pending writes in the transaction and clears the finalizer on
-// txn.  A Txn cannot be used again after Abort is called.
+// Abort discards pending writes in the transaction.  A Txn cannot be used
+// again after Abort is called.
 //
 // See mdbx_txn_abort.
 func (txn *Txn) Abort() {

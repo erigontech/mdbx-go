@@ -14,10 +14,10 @@ import (
 // rate of large updates may need to choose non-default settings to reduce
 // their storage requirements at the cost of read throughput.
 //
-// The zero-value of UpdateHandling causes a TxnPool to ignore all updates and
-// defers to the application and the mdbx.Txn finalizers clear stale readers
-// (pulling an mdbx.Readonly transaction out of the pool is enough to release
-// its stale pages).
+// The zero-value of UpdateHandling causes a TxnPool to ignore all updates;
+// clearing stale readers is then the application's responsibility (pulling
+// an mdbx.Readonly transaction out of the pool releases its stale pages;
+// mdbx installs no Txn finalizers).
 type UpdateHandling uint
 
 const (
