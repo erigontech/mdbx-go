@@ -102,7 +102,7 @@ good idea to periodically call Env.ReaderCheck during application execution.
 However, note that Env.ReaderCheck cannot find readers opened by the
 application itself which have since leaked.  This package installs no Txn
 finalizers: a leaked Txn keeps its reader slot and pins its MVCC snapshot
-until the process exits, so every transaction must be terminated (Env.View
+for the life of the Env, so every transaction must be terminated (Env.View
 and Env.Update do this automatically).
 
 # Caveats

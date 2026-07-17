@@ -216,8 +216,7 @@ func (env *Env) ReaderCheck() (int, error) {
 	return int(r.val), nil
 }
 
-// Close shuts down the environment, releases the memory map, and clears the
-// finalizer on env.
+// Close shuts down the environment and releases the memory map.
 //
 // See mdbx_env_close.
 func (env *Env) Close() {

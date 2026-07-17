@@ -118,26 +118,22 @@ func (p *TxnPool) beginReadonly() (*mdbx.Txn, error) {
 		return p.env.BeginTxn(nil, mdbx.Readonly)
 	}
 
-	// Clear txn.Pooled to let a warning be emitted from the Txn finalizer
-	// again.  And, make sure to clear RawRead to make the Txn appear like it
-	// was just allocated.
+	// Clear txn.Pooled so the Txn appears like it was just allocated.
 	txn.Pooled = false
 
 	return txn, nil
 }
 
 func (p *TxnPool) renewError(err error) {
-	// TODO:
-	// When this is integrated directly in the mdbx package this can use
-	// the same logging functionality that the Txn finalizer uses.
+	// TODO: route this through the mdbx package's logging once integrated
+	// there.
 	log.Printf("mdbxpool: failed to renew transaction: %v", err)
 }
 
 func (p *TxnPool) abortReadonly(txn *mdbx.Txn) {
 	if !returnTxnToPool {
-		// If the pool is disabled from race detection then we just abort the
-		// Txn instead of waiting for the finalizer.  See the files put.go and
-		// putrace.go for more information.
+		// The pool is disabled under race detection; just abort the Txn.
+		// See put.go and putrace.go for more information.
 		txn.Abort()
 		return
 	}
@@ -158,9 +154,7 @@ func (p *TxnPool) abortReadonly(txn *mdbx.Txn) {
 		}
 	}
 
-	// Don't waste cycles resetting RawRead here -- the cost be paid when the
-	// Txn is reused (if at all).  All we need to do is set txn.Pooled to avoid
-	// any warning emitted from the Txn finalizer.
+	// All we need to do is set txn.Pooled before parking the Txn in the pool.
 	txn.Pooled = true
 	txn.Reset()
 	p.pool.Put(txn)
