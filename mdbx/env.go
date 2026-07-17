@@ -216,19 +216,23 @@ func (env *Env) ReaderCheck() (int, error) {
 	return int(r.val), nil
 }
 
-// Close shuts down the environment, releases the memory map, and clears the
-// finalizer on env.
+// Close shuts down the environment and releases the memory map. On failure
+// (e.g. MDBX_BUSY) libmdbx keeps the handle alive: Close returns the error
+// and leaves env open so the caller can retry. Nil if already closed.
 //
 // See mdbx_env_close.
-func (env *Env) Close() {
+func (env *Env) Close() error {
 	if env._env == nil {
-		return
+		return nil
 	}
 
 	env.closeLock.Lock()
-	C.mdbx_env_close(env._env)
-	env._env = nil
+	ret := C.mdbx_env_close(env._env)
+	if ret == success {
+		env._env = nil
+	}
 	env.closeLock.Unlock()
+	return operrno("mdbx_env_close", ret)
 }
 
 // CopyFD copies env to the the file descriptor fd.
