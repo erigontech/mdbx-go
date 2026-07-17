@@ -2011,3 +2011,32 @@ func TestTxn_CloneInto_Reuse(t *testing.T) {
 		t.Errorf("target saw %q, want %q", got, "v")
 	}
 }
+
+func TestTxn_Reset_ReturnsError(t *testing.T) {
+	env, _ := setup(t)
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// mdbx_txn_reset is only valid for read-only transactions.
+	wtxn, err := env.BeginTxn(nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wtxn.Abort()
+	if err := wtxn.Reset(); !IsErrnoSys(err, syscall.EINVAL) {
+		t.Errorf("Reset on a write txn: got %v, want EINVAL", err)
+	}
+
+	rtxn, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rtxn.Abort()
+	if err := rtxn.Reset(); err != nil {
+		t.Errorf("Reset on a read txn: %v", err)
+	}
+	if err := rtxn.Renew(); err != nil {
+		t.Errorf("Renew after Reset: %v", err)
+	}
+}
