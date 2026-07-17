@@ -1,0 +1,40 @@
+name: Erigon
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: erigon-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  test-short:
+    name: erigon make test-short
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout mdbx-go
+        uses: actions/checkout@v4
+        with:
+          path: mdbx-go
+
+      - name: Checkout erigon (main)
+        uses: actions/checkout@v4
+        with:
+          repository: erigontech/erigon
+          ref: main
+          path: erigon
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: erigon/go.mod
+          cache-dependency-path: erigon/go.sum
+
+      - name: Point erigon at this mdbx-go
+        working-directory: erigon
+        run: go mod edit -replace github.com/erigontech/mdbx-go=../mdbx-go
+
+      - name: make test-short
+        working-directory: erigon
+        run: make test-short
