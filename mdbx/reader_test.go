@@ -124,7 +124,7 @@ func TestEnv_ReaderListParked(t *testing.T) {
 		t.Fatalf("begin reader: %v", err)
 	}
 	defer func() {
-		_ = txn.Unpark(true)
+		_, _ = txn.Unpark(true)
 		txn.Abort()
 	}()
 	if _, err = txn.Get(dbi, []byte("key-0000")); err != nil {

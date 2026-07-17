@@ -731,7 +731,7 @@ func TestTxn_ParkUnpark(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	err = txn.Unpark(true)
+	_, err = txn.Unpark(true)
 	if err != nil {
 		t.Error(err)
 		return

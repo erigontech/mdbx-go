@@ -337,32 +337,56 @@ func (txn *Txn) abort() {
 	txn.clearTxn()
 }
 
+// Park puts a read-only transaction in the "parked" state so it does not
+// block recycling of old MVCC snapshots. Data pointers obtained before
+// parking must not be dereferenced until unparked.
+//
+// See mdbx_txn_park.
 func (txn *Txn) Park(autounpark bool) error {
 	if txn._txn == nil {
 		return nil
 	}
 
-	if txn.env._env != nil {
-		ret := C.mdbx_txn_park(txn._txn, C.bool(autounpark))
-		if ret != success {
-			return operrno("mdbx_txn_park", ret)
-		}
+	// hold the close guard like abort() so Env.Close can't free the env mid-call
+	txn.env.closeLock.RLock()
+	defer txn.env.closeLock.RUnlock()
+	if txn.env._env == nil {
+		return nil
+	}
+	ret := C.mdbx_txn_park(txn._txn, C.bool(autounpark))
+	if ret != success {
+		return operrno("mdbx_txn_park", ret)
 	}
 	return nil
 }
 
-func (txn *Txn) Unpark(restartIfOusted bool) error {
+// Unpark restores a transaction parked with Park.
+//
+// restarted is true when the txn was ousted and restarted on the most recent
+// MVCC snapshot (requires restartIfOusted=true): earlier pointers are invalid
+// and the cached ID is refreshed. If ousted with restartIfOusted=false,
+// Unpark returns MDBX_OUSTED and the handle stays reusable via Renew/Abort.
+//
+// See mdbx_txn_unpark.
+func (txn *Txn) Unpark(restartIfOusted bool) (restarted bool, err error) {
 	if txn._txn == nil {
-		return nil
+		return false, nil
 	}
 
-	if txn.env._env != nil {
-		ret := C.mdbx_txn_unpark(txn._txn, C.bool(restartIfOusted))
-		if ret != success {
-			return operrno("mdbx_txn_park", ret)
-		}
+	txn.env.closeLock.RLock()
+	defer txn.env.closeLock.RUnlock()
+	if txn.env._env == nil {
+		return false, nil
 	}
-	return nil
+	ret := C.mdbx_txn_unpark(txn._txn, C.bool(restartIfOusted))
+	if ret == C.MDBX_RESULT_TRUE {
+		txn.resetID() // restarted on a fresh snapshot
+		return true, nil
+	}
+	if ret != success {
+		return false, operrno("mdbx_txn_unpark", ret)
+	}
+	return false, nil
 }
 
 func (txn *Txn) clearTxn() {
