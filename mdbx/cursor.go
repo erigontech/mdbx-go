@@ -185,18 +185,16 @@ func (c *Cursor) DBI() DBI {
 	return DBI(C.mdbx_cursor_dbi(c._c))
 }
 
-// Get retrieves items from the database. If c.Txn().RawRead is true the slices
-// returned by Get reference readonly sections of memory that must not be
-// accessed after the transaction has terminated.
+// Get retrieves items from the database.  Returned key/val are zero-copy
+// views into the memory-mapped file: read-only and invalid after the
+// transaction ends; copy them if they must outlive it.
 //
-// In a Txn with RawRead set to true the Set op causes the returned key to
-// share its memory with setkey (making it writable memory). In a Txn with
-// RawRead set to false the Set op returns key values with memory distinct from
-// setkey, as is always the case when using RawRead.
+// The Set op returns a key sharing memory with setkey (the caller's own
+// buffer) rather than referencing the database file.
 //
 // Get ignores setval if setkey is empty.
 //
-// See mdb_cursor_get.
+// See mdbx_cursor_get.
 func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error) {
 	if len(setkey) != 0 || len(setval) != 0 {
 		err = c.getVal(setkey, setval, op)

@@ -941,9 +941,9 @@ func (txn *Txn) bytes(val *C.MDBX_val) []byte {
 	return castToBytes(val)
 }
 
-// Get retrieves items from database dbi.  If txn.RawRead is true the slice
-// returned by Get references a readonly section of memory that must not be
-// accessed after txn has terminated.
+// Get retrieves items from database dbi.  The returned slice is a zero-copy
+// view into the memory-mapped file: read-only and invalid after txn ends.
+// Copy it if it must outlive the transaction.
 //
 // See mdbx_get.
 //

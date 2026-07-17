@@ -118,9 +118,7 @@ func (p *TxnPool) beginReadonly() (*mdbx.Txn, error) {
 		return p.env.BeginTxn(nil, mdbx.Readonly)
 	}
 
-	// Clear txn.Pooled to let a warning be emitted from the Txn finalizer
-	// again.  And, make sure to clear RawRead to make the Txn appear like it
-	// was just allocated.
+	// Clear txn.Pooled so the Txn appears like it was just allocated.
 	txn.Pooled = false
 
 	return txn, nil
@@ -158,9 +156,7 @@ func (p *TxnPool) abortReadonly(txn *mdbx.Txn) {
 		}
 	}
 
-	// Don't waste cycles resetting RawRead here -- the cost be paid when the
-	// Txn is reused (if at all).  All we need to do is set txn.Pooled to avoid
-	// any warning emitted from the Txn finalizer.
+	// All we need to do is set txn.Pooled before parking the Txn in the pool.
 	txn.Pooled = true
 	txn.Reset()
 	p.pool.Put(txn)
