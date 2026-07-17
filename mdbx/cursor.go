@@ -190,7 +190,7 @@ func (c *Cursor) DBI() DBI {
 // transaction ends; copy them if they must outlive it.
 //
 // The Set op returns a key sharing memory with setkey (the caller's own
-// buffer) rather than referencing the database file.
+// buffer, not the database file); it stays valid after the txn ends.
 //
 // Get ignores setval if setkey is empty.
 //

@@ -148,16 +148,14 @@ better if read through [mdbx.h](https://sourcecraft.dev/dqdkfa/libmdbx/blob?file
 
 ### High-Performance notices
 
-Applications with high-performance requirements can opt-in to fast, zero-copy reads at the cost of runtime safety.
-Zero-copy behavior is specified at the transaction level to reduce instrumentation overhead.
+All reads are zero-copy: `Txn.Get` and `Cursor.Get` return read-only views into the memory-mapped database file
+which become invalid when the transaction terminates. Copy the bytes if they must outlive the transaction.
+(There is no `RawRead` switch as in bmatsuo/lmdb-go — reads are always raw.)
 
 ```
 err := mdbx.View(func(txn *mdbx.Txn) error {
-    // RawRead enables zero-copy behavior with some serious caveats.
-    // Read the documentation carefully before using.
-    txn.RawRead = true
-
-    val, err := txn.Get(dbi, []byte("largevalue"), 0)
+    val, err := txn.Get(dbi, []byte("largevalue"))
+    // val aliases the DB file; copy it if used after this function returns
     // ...
 })
 ```
