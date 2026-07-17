@@ -327,21 +327,23 @@ type EnvInfo struct {
 
 // Info returns information about the environment.
 //
-// See mdbx_env_info.
-// txn - can be nil
+// txn may be nil: mdbx_env_info_ex accepts a NULL transaction and reports
+// the last committed snapshot. Passing a txn pins the report to its snapshot.
+// On an Env that was created but not yet opened, the C API reports success
+// with only a subset of fields populated (geometry, page sizes, and other
+// pre-open state; earlier versions failed because they could not begin the
+// temporary read txn).
+//
+// See mdbx_env_info_ex.
 func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
-	if txn == nil {
-		var err error
-		txn, err = env.BeginTxn(nil, Readonly)
-		if err != nil {
-			return nil, err
-		}
-		defer txn.Abort()
+	var ctxn *C.MDBX_txn
+	if txn != nil {
+		ctxn = txn._txn
 	}
 	var _info C.MDBX_envinfo
-	ret := C.mdbx_env_info_ex(env._env, txn._txn, &_info, C.size_t(unsafe.Sizeof(_info)))
+	ret := C.mdbx_env_info_ex(env._env, ctxn, &_info, C.size_t(unsafe.Sizeof(_info)))
 	if ret != success {
-		return nil, operrno("mdbx_env_info", ret)
+		return nil, operrno("mdbx_env_info_ex", ret)
 	}
 	return castEnvInfo(_info), nil
 }
