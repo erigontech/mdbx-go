@@ -94,12 +94,16 @@ const (
 )
 
 const (
-	OptMaxDB                        = C.MDBX_opt_max_db
-	OptMaxReaders                   = C.MDBX_opt_max_readers
-	OptSyncBytes                    = C.MDBX_opt_sync_bytes
-	OptSyncPeriod                   = C.MDBX_opt_sync_period
-	OptRpAugmentLimit               = C.MDBX_opt_rp_augment_limit
-	OptLooseLimit                   = C.MDBX_opt_loose_limit
+	OptMaxDB          = C.MDBX_opt_max_db
+	OptMaxReaders     = C.MDBX_opt_max_readers
+	OptSyncBytes      = C.MDBX_opt_sync_bytes
+	OptSyncPeriod     = C.MDBX_opt_sync_period
+	OptRpAugmentLimit = C.MDBX_opt_rp_augment_limit
+	OptLooseLimit     = C.MDBX_opt_loose_limit
+	// OptDpReserveLimit limits dirty-page instances kept in libmdbx's reserve
+	// pool between write transactions (MDBX_opt_dp_reserve_limit).
+	OptDpReserveLimit = C.MDBX_opt_dp_reserve_limit
+	// Deprecated: misnamed alias of OptDpReserveLimit.
 	OptDpReverseLimit               = C.MDBX_opt_dp_reserve_limit
 	OptTxnDpLimit                   = C.MDBX_opt_txn_dp_limit
 	OptTxnDpInitial                 = C.MDBX_opt_txn_dp_initial
