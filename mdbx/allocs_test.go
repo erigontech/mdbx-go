@@ -208,3 +208,30 @@ func TestCursor_Get_NoAllocs(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestTxn_Get_NoAllocs(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBISimple("txngetnoalloc", Create)
+		if err != nil {
+			return err
+		}
+		return txn.Put(db, []byte("k1"), []byte("v1"), 0)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = env.View(func(txn *Txn) error {
+		key := []byte("k1")
+		missing := []byte("nope")
+		assertNoAllocs(t, "Txn.Get(hit)", func() { _, _ = txn.Get(db, key) })
+		assertNoAllocs(t, "Txn.Get(miss)", func() { _, _ = txn.Get(db, missing) })
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
