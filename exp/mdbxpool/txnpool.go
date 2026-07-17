@@ -154,9 +154,13 @@ func (p *TxnPool) abortReadonly(txn *mdbx.Txn) {
 		}
 	}
 
-	// All we need to do is set txn.Pooled before parking the Txn in the pool.
+	// A Txn that failed to reset is still a live reader; pooling it would
+	// pin its MVCC snapshot indefinitely while idle.
+	if err := txn.Reset(); err != nil {
+		txn.Abort()
+		return
+	}
 	txn.Pooled = true
-	txn.Reset()
 	p.pool.Put(txn)
 }
 
