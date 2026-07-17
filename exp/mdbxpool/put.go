@@ -4,8 +4,8 @@ package mdbxpool
 
 // Normal (non-race) configuration: Txn objects are returned to the sync.Pool
 // for reuse.  putrace.go flips this constant to false under -race, where
-// Pool.Put randomly drops most objects on the floor: pooled Txns would be
-// lost without ever being terminated and repeated reads would blow the
-// environment's reader limit.  With the constant false the pool aborts Txns
-// eagerly instead of pooling them.
+// Pool.Put randomly drops objects on the floor (and pre-go1.13 race builds
+// never reused them at all): a dropped Txn is never terminated, so repeated
+// reads could exhaust the environment's reader limit.  With the constant
+// false the pool aborts Txns eagerly instead of pooling them.
 const returnTxnToPool = true
