@@ -62,8 +62,10 @@ const (
 type Txn struct {
 	env  *Env
 	_txn *C.MDBX_txn
-	key  C.MDBX_val
-	val  C.MDBX_val
+	// val is scratch space for Txn.Get and the PutReserve paths: passing the
+	// address of a local C.MDBX_val into cgo would force a heap escape per
+	// call.
+	val C.MDBX_val
 
 	errLogf func(format string, v ...any)
 
@@ -387,18 +389,22 @@ func (txn *Txn) resetID() {
 // be called to release its slot in the lock table and free its memory.  Reset
 // panics if txn is managed by Update, View, etc.
 //
+// Reset returns the error reported by mdbx_txn_reset, e.g. EINVAL on POSIX
+// (check with IsErrnoSys(err, syscall.EINVAL)) when txn is not read-only.
+//
 // See mdbx_txn_reset.
-func (txn *Txn) Reset() {
+func (txn *Txn) Reset() error {
 	if txn.managed {
 		panic("managed transaction cannot be reset directly")
 	}
 
-	txn.reset()
+	return txn.reset()
 }
 
-func (txn *Txn) reset() {
-	C.mdbx_txn_reset(txn._txn)
+func (txn *Txn) reset() error {
+	ret := C.mdbx_txn_reset(txn._txn)
 	txn.resetID()
+	return operrno("mdbx_txn_reset", ret)
 }
 
 // Renew reuses a transaction that was previously reset by calling txn.Reset().
@@ -936,9 +942,10 @@ func (txn *Txn) subFlag(flags uint, fn TxnOp) error {
 	return err
 }
 
-// Get retrieves items from database dbi.  If txn.RawRead is true the slice
-// returned by Get references a readonly section of memory that must not be
-// accessed after txn has terminated.
+// Get retrieves items from database dbi.  The returned slice is a zero-copy
+// view into the memory-mapped file: read-only and valid only until the next
+// update operation in a write txn or until the transaction ends.  Copy it if
+// it must live longer.
 //
 // See mdbx_get.
 //

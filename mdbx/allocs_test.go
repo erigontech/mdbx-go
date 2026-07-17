@@ -166,3 +166,72 @@ func TestTxn_OpenRoot_NoAllocs(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestCursor_Get_NoAllocs(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBISimple("getnoalloc", Create)
+		if err != nil {
+			return err
+		}
+		if err = txn.Put(db, []byte("k1"), []byte("v1"), 0); err != nil {
+			return err
+		}
+		return txn.Put(db, []byte("k2"), []byte("v2"), 0)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		setkey := []byte("k1")
+		mustGet := func(setkey, setval []byte, op uint) {
+			if _, _, err := cur.Get(setkey, setval, op); err != nil {
+				panic(err)
+			}
+		}
+		assertNoAllocs(t, "Cursor.Get(nil, nil, First)", func() { mustGet(nil, nil, First) })
+		assertNoAllocs(t, "Cursor.Get(nil, nil, Next)", func() { mustGet(nil, nil, First); mustGet(nil, nil, Next) })
+		assertNoAllocs(t, "Cursor.Get(k, nil, SetRange)", func() { mustGet(setkey, nil, SetRange) })
+		assertNoAllocs(t, "Cursor.Get(k, nil, Set)", func() { mustGet(setkey, nil, Set) })
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestTxn_Get_NoAllocs(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBISimple("txngetnoalloc", Create)
+		if err != nil {
+			return err
+		}
+		return txn.Put(db, []byte("k1"), []byte("v1"), 0)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = env.View(func(txn *Txn) error {
+		key := []byte("k1")
+		missing := []byte("nope")
+		assertNoAllocs(t, "Txn.Get(hit)", func() { _, _ = txn.Get(db, key) })
+		assertNoAllocs(t, "Txn.Get(miss)", func() { _, _ = txn.Get(db, missing) })
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
