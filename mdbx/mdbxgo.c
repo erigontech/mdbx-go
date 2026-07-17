@@ -114,6 +114,23 @@ mdbxgo_val_result mdbxgo_cursor_get_val(MDBX_cursor *cur, char *kdata, size_t kn
     return r;
 }
 
+mdbxgo_size_result mdbxgo_cursor_get_batch(MDBX_cursor *cur, MDBX_val *pairs, size_t max_pairs,
+                                           MDBX_cursor_op op_first, MDBX_cursor_op op_next) {
+    mdbxgo_size_result r = {0};
+    MDBX_cursor_op op = op_first;
+    while (r.val < max_pairs) {
+        MDBX_val key = {0}, val = {0};
+        r.err = mdbx_cursor_get(cur, &key, &val, op);
+        if (r.err != MDBX_SUCCESS)
+            break;
+        pairs[2 * r.val] = key;
+        pairs[2 * r.val + 1] = val;
+        r.val++;
+        op = op_next;
+    }
+    return r;
+}
+
 /* Compare two items lexically */
 // static int __hot cmp_lexical(const MDBX_val *a, const MDBX_val *b) {
 //   if (a->iov_len == b->iov_len)
