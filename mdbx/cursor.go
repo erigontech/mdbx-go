@@ -187,8 +187,8 @@ func (c *Cursor) DBI() DBI {
 
 // Get retrieves items from the database.  Returned key/val are zero-copy
 // views into the memory-mapped file (except key for op Set, see below):
-// read-only and invalid after the transaction ends; copy them if they must
-// outlive it.
+// read-only and valid only until the next update operation in a write txn or
+// until the transaction ends.  Copy them if they must live longer.
 //
 // The Set op returns a key sharing memory with setkey (the caller's own
 // buffer, not the database file); it stays valid after the txn ends.

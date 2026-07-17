@@ -942,8 +942,9 @@ func (txn *Txn) bytes(val *C.MDBX_val) []byte {
 }
 
 // Get retrieves items from database dbi.  The returned slice is a zero-copy
-// view into the memory-mapped file: read-only and invalid after txn ends.
-// Copy it if it must outlive the transaction.
+// view into the memory-mapped file: read-only and valid only until the next
+// update operation in a write txn or until the transaction ends.  Copy it if
+// it must live longer.
 //
 // See mdbx_get.
 //

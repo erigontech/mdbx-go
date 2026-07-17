@@ -148,8 +148,9 @@ better if read through [mdbx.h](https://sourcecraft.dev/dqdkfa/libmdbx/blob?file
 
 ### High-Performance notices
 
-All reads are zero-copy: `Txn.Get` and `Cursor.Get` return read-only views into the memory-mapped database file
-which become invalid when the transaction terminates. Copy the bytes if they must outlive the transaction.
+All reads are zero-copy: `Txn.Get` and `Cursor.Get` return read-only views into the memory-mapped database file,
+valid only until the next update operation in a write transaction or until the transaction terminates. Copy the
+bytes if they must live longer.
 (There is no `RawRead` switch as in bmatsuo/lmdb-go — reads are always raw.)
 
 ```go
@@ -158,7 +159,8 @@ err := env.View(func(txn *mdbx.Txn) error {
     if err != nil {
         return err
     }
-    // val aliases the DB file; copy it if it must outlive the transaction.
+    // val aliases the DB file; copy it if it must survive a later
+    // Put/Del in this txn or the end of the txn.
     doSomethingWith(val)
     return nil
 })
