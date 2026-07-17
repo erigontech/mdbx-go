@@ -112,8 +112,19 @@ func wrapVal(b []byte) *C.MDBX_val {
 }
 
 func castToBytes(val *C.MDBX_val) []byte {
-	if val.iov_len == 0 {
+	return castToBytesRaw(val.iov_base, val.iov_len)
+}
+
+// castToBytesRaw builds a []byte view over C memory owned by libmdbx.
+// Mutability and lifetime follow the producing call: read views are
+// read-only and valid until the next update operation in a write txn or
+// until the transaction ends (mdbx.h), MDBX_RESERVE buffers from PutReserve
+// are writable until commit. The length stays C.size_t end to end: a value
+// that exceeded valMaxSize would panic on the slice bound instead of
+// silently truncating on a conversion to int.
+func castToBytesRaw(base unsafe.Pointer, n C.size_t) []byte {
+	if n == 0 {
 		return []byte{}
 	}
-	return (*[valMaxSize]byte)(val.iov_base)[:val.iov_len:val.iov_len]
+	return (*[valMaxSize]byte)(base)[:n:n]
 }

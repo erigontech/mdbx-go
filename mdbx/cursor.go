@@ -197,39 +197,30 @@ func (c *Cursor) DBI() DBI {
 //
 // See mdbx_cursor_get.
 func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error) {
+	var r C.mdbxgo_val_result
 	if len(setkey) != 0 || len(setval) != 0 {
-		err = c.getVal(setkey, setval, op)
+		r = c.getVal(setkey, setval, op)
 	} else {
-		err = c.getValEmpty(op)
+		r = c.getValEmpty(op)
 	}
-	if err != nil {
-		c.txn.key, c.txn.val = C.MDBX_val{}, C.MDBX_val{}
+	// operrno, not a bare success check: mdbx_cursor_get returns
+	// MDBX_RESULT_TRUE (found a greater key/pair) for SetLowerBound and
+	// SetUpperBound, which is success-with-data, not an error.
+	if err := operrno("mdbx_cursor_get", r.err); err != nil {
 		return nil, nil, err
 	}
 
-	// When MDB_SET is passed to mdb_cursor_get its first argument will be
-	// returned unchanged.  Unfortunately, the normal slice copy/extraction
-	// routines will be bad for the Go runtime when operating on Go memory
-	// (panic or potentially garbage memory reference).
+	// For MDBX_SET mdbx makes no promise about the returned key, so as an
+	// implementation choice we hand back setkey itself instead of deriving a
+	// slice from the C result.
 	if op == Set {
 		key = setkey
 	} else if op != LastDup && op != FirstDup {
-		key = castToBytes(&c.txn.key)
+		key = castToBytesRaw(unsafe.Pointer(r.kbase), r.klen)
 	}
-	val = castToBytes(&c.txn.val)
-
-	// Clear transaction storage record storage area for future use and to
-	// prevent dangling references.
-	c.txn.key, c.txn.val = C.MDBX_val{}, C.MDBX_val{}
+	val = castToBytesRaw(unsafe.Pointer(r.vbase), r.vlen)
 
 	return key, val, nil
-}
-
-func (c *Cursor) storeValResult(r C.mdbxgo_val_result) {
-	c.txn.key.iov_base = unsafe.Pointer(r.kbase)
-	c.txn.key.iov_len = r.klen
-	c.txn.val.iov_base = unsafe.Pointer(r.vbase)
-	c.txn.val.iov_len = r.vlen
 }
 
 // getValEmpty retrieves items from the database without using given key or value
@@ -238,10 +229,8 @@ func (c *Cursor) storeValResult(r C.mdbxgo_val_result) {
 // See mdb_cursor_get.
 //
 //nolint:gocritic // false positive on dupSubExpr
-func (c *Cursor) getValEmpty(op uint) error {
-	r := C.mdbxgo_cursor_get_empty(c._c, C.MDBX_cursor_op(op))
-	c.storeValResult(r)
-	return operrno("mdbx_cursor_get", r.err)
+func (c *Cursor) getValEmpty(op uint) C.mdbxgo_val_result {
+	return C.mdbxgo_cursor_get_empty(c._c, C.MDBX_cursor_op(op))
 }
 
 // getVal retrieves items from the database using key and value data for
@@ -250,7 +239,7 @@ func (c *Cursor) getValEmpty(op uint) error {
 // See mdb_cursor_get.
 //
 //nolint:gocritic // false positive on dupSubExpr
-func (c *Cursor) getVal(setkey, setval []byte, op uint) error {
+func (c *Cursor) getVal(setkey, setval []byte, op uint) C.mdbxgo_val_result {
 	var k, v *C.char
 	if len(setkey) > 0 {
 		k = (*C.char)(unsafe.Pointer(&setkey[0]))
@@ -258,14 +247,12 @@ func (c *Cursor) getVal(setkey, setval []byte, op uint) error {
 	if len(setval) > 0 {
 		v = (*C.char)(unsafe.Pointer(&setval[0]))
 	}
-	r := C.mdbxgo_cursor_get_val(
+	return C.mdbxgo_cursor_get_val(
 		c._c,
 		k, C.size_t(len(setkey)),
 		v, C.size_t(len(setval)),
 		C.MDBX_cursor_op(op),
 	)
-	c.storeValResult(r)
-	return operrno("mdbx_cursor_get", r.err)
 }
 
 // Put stores an item in the database.

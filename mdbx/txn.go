@@ -62,8 +62,10 @@ const (
 type Txn struct {
 	env  *Env
 	_txn *C.MDBX_txn
-	key  C.MDBX_val
-	val  C.MDBX_val
+	// val is scratch space for Txn.Get and the PutReserve paths: passing the
+	// address of a local C.MDBX_val into cgo would force a heap escape per
+	// call.
+	val C.MDBX_val
 
 	errLogf func(format string, v ...any)
 
