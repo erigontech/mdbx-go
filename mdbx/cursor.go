@@ -204,8 +204,11 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 	} else {
 		r = c.getValEmpty(op)
 	}
-	if r.err != success {
-		return nil, nil, operrno("mdbx_cursor_get", r.err)
+	// operrno, not a bare success check: mdbx_cursor_get returns
+	// MDBX_RESULT_TRUE (found a greater key/pair) for SetLowerBound and
+	// SetUpperBound, which is success-with-data, not an error.
+	if err := operrno("mdbx_cursor_get", r.err); err != nil {
+		return nil, nil, err
 	}
 
 	// For MDBX_SET mdbx makes no promise about the returned key, so as an
