@@ -353,6 +353,7 @@ func (txn *Txn) Park(autounpark bool) error {
 	if txn.env._env == nil {
 		return errNotOpen
 	}
+	txn.strictThreadCheck()
 	ret := C.mdbx_txn_park(txn._txn, C.bool(autounpark))
 	if ret != success {
 		return operrno("mdbx_txn_park", ret)
@@ -381,6 +382,7 @@ func (txn *Txn) Unpark(restartIfOusted bool) (restarted bool, err error) {
 		// mmap Env.Close already unmapped.
 		return false, errNotOpen
 	}
+	txn.strictThreadCheck()
 	ret := C.mdbx_txn_unpark(txn._txn, C.bool(restartIfOusted))
 	if ret == C.MDBX_RESULT_TRUE {
 		txn.resetID() // restarted on a fresh snapshot
