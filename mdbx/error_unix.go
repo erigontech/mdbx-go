@@ -17,6 +17,9 @@ func operrno(op string, ret C.int) error {
 	if ret == C.MDBX_NOTFOUND {
 		return ErrNotFound
 	}
+	if ret == C.MDBX_ENODATA {
+		return ErrNoData
+	}
 	if minErrno <= ret && ret <= maxErrno {
 		return &OpError{Op: op, Errno: Errno(ret)}
 	}

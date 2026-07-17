@@ -130,6 +130,11 @@ const (
 	OptMergeThreshold16dot16Percent = C.MDBX_opt_merge_threshold
 	OptPreferWafInsteadofBalance    = C.MDBX_opt_prefer_waf_insteadof_balance
 	OptGCTimeLimit                  = C.MDBX_opt_gc_time_limit
+	// OptPrefaultWriteEnable controls the prefault-write optimization (mincore() + pwrite()
+	// of each not-in-core page before it is touched via the writemap). It only pays off when
+	// the database is much larger than RAM; when the working set fits in RAM it is pure
+	// overhead. Set to 0 to disable, 1 to force-enable, or use the env default when unset.
+	OptPrefaultWriteEnable = C.MDBX_opt_prefault_write_enable
 )
 
 var (
@@ -450,6 +455,34 @@ func castEnvInfo(_info C.MDBX_envinfo) *EnvInfo {
 func (env *Env) Sync(force bool, nonblock bool) error {
 	ret := C.mdbx_env_sync_ex(env._env, C.bool(force), C.bool(nonblock))
 	return operrno("mdbx_env_sync_ex", ret)
+}
+
+// SyncForce forces a synchronous flush of the data buffers to disk, ignoring
+// any NoMetaSync/SafeNoSync/UtterlyNoSync flag on the environment. It blocks
+// if a write transaction is running on another thread.
+//
+// It is the shortcut to calling Sync(force=true, nonblock=false).
+//
+// See mdbx_env_sync.
+func (env *Env) SyncForce() error {
+	ret := C.mdbx_env_sync(env._env)
+	return operrno("mdbx_env_sync", ret)
+}
+
+// SyncPoll runs the lazy/asynchronous sync in polling mode: it checks the
+// thresholds set by SetSyncBytes and/or SetSyncPeriod and flushes unsynced data
+// to disk only when at least one threshold is reached. It does not wait if a
+// write transaction is running on another thread (returns MDBX_BUSY instead).
+//
+// A nil error is returned both when a flush happened and when there was nothing
+// pending to flush (MDBX_RESULT_TRUE).
+//
+// It is the shortcut to calling Sync(force=false, nonblock=true).
+//
+// See mdbx_env_sync_poll.
+func (env *Env) SyncPoll() error {
+	ret := C.mdbx_env_sync_poll(env._env)
+	return operrno("mdbx_env_sync_poll", ret)
 }
 
 // SetFlags sets flags in the environment.
