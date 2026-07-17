@@ -2,6 +2,7 @@ package mdbx
 
 import (
 	"errors"
+	"fmt"
 	"syscall"
 	"testing"
 )
@@ -57,5 +58,26 @@ func TestIsErrno(t *testing.T) {
 	}
 	if !IsErrno(operr, err) {
 		t.Errorf("expected match: %v", operr)
+	}
+}
+
+func TestIsNotFound_WrappedError(t *testing.T) {
+	if !IsNotFound(ErrNotFound) {
+		t.Error("IsNotFound(ErrNotFound) = false")
+	}
+	if !IsNotFound(fmt.Errorf("lookup failed: %w", ErrNotFound)) {
+		t.Error("IsNotFound does not recognize a wrapped ErrNotFound")
+	}
+	if IsNotFound(fmt.Errorf("some other error")) {
+		t.Error("IsNotFound matched an unrelated error")
+	}
+}
+
+func TestIsNoData_WrappedError(t *testing.T) {
+	if !IsNoData(ErrNoData) {
+		t.Error("IsNoData(ErrNoData) = false")
+	}
+	if !IsNoData(fmt.Errorf("read failed: %w", ErrNoData)) {
+		t.Error("IsNoData does not recognize a wrapped ErrNoData")
 	}
 }

@@ -117,12 +117,13 @@ func _operrno(op string, ret int) error {
 
 // IsNotFound returns true if the key requested in Txn.Get or Cursor.Get does
 // not exist or if the Cursor reached the end of the database without locating
-// a value (EOF).
-func IsNotFound(err error) bool { return err == ErrNotFound } //nolint
+// a value (EOF).  Wrapped errors (fmt.Errorf("...: %w", err)) are recognized.
+func IsNotFound(err error) bool { return errors.Is(err, ErrNotFound) }
 
 // IsNoData returns true if a cursor read (e.g. Cursor.Get with MDBX_GET_CURRENT)
 // hit a cursor that is not positioned to any data. See ErrNoData.
-func IsNoData(err error) bool { return err == ErrNoData } //nolint
+// Wrapped errors (fmt.Errorf("...: %w", err)) are recognized.
+func IsNoData(err error) bool { return errors.Is(err, ErrNoData) }
 
 func IsKeyExists(err error) bool {
 	return IsErrno(err, KeyExist)
