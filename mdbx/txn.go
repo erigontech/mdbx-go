@@ -938,9 +938,10 @@ func (txn *Txn) subFlag(flags uint, fn TxnOp) error {
 	return err
 }
 
-// Get retrieves items from database dbi.  If txn.RawRead is true the slice
-// returned by Get references a readonly section of memory that must not be
-// accessed after txn has terminated.
+// Get retrieves items from database dbi.  The returned slice is a zero-copy
+// view into the memory-mapped file: read-only and valid only until the next
+// update operation in a write txn or until the transaction ends.  Copy it if
+// it must live longer.
 //
 // See mdbx_get.
 //
