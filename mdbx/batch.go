@@ -14,11 +14,12 @@ import "unsafe"
 type GetBatchBuffer struct {
 	ptr  *C.MDBX_val
 	size int
+	n    int // pairs filled by the most recent GetBatch
 }
 
 // maxBatchPairs bounds GetBatchBuffer sizes. It keeps the calloc byte count
-// (2 * numPairs * sizeof(MDBX_val)) below 2^25 even with 32-bit size_t/int,
-// so neither multiplication can overflow on any platform.
+// (2 * numPairs * sizeof(MDBX_val)) at or below 2^25 even with 32-bit
+// size_t/int, so neither multiplication can overflow on any platform.
 const maxBatchPairs = 1 << 20
 
 // NewGetBatchBuffer allocates a buffer holding numPairs key/value pairs
@@ -47,15 +48,17 @@ func (b *GetBatchBuffer) Close() {
 func (b *GetBatchBuffer) Cap() int { return b.size }
 
 func (b *GetBatchBuffer) at(i int) *C.MDBX_val {
-	if b.ptr == nil || i < 0 || i >= 2*b.size {
-		panic("mdbx: GetBatchBuffer: index out of range or buffer closed")
+	// Bound by the last fill count, not the capacity: entries past b.n hold
+	// stale pointers from earlier fills (possibly of an already-ended txn).
+	if b.ptr == nil || i < 0 || i >= 2*b.n {
+		panic("mdbx: GetBatchBuffer: index out of range of the last GetBatch fill")
 	}
 	return (*C.MDBX_val)(unsafe.Add(unsafe.Pointer(b.ptr), uintptr(i)*unsafe.Sizeof(C.MDBX_val{})))
 }
 
 // Key returns the i-th key of the most recent GetBatch (i < its pair count).
-// Zero-copy view: read-only, invalid after the txn ends or the buffer is
-// refilled.
+// Zero-copy view: read-only, invalid once the txn ends, the buffer is
+// refilled, or (in a write txn) a later Put/Del moves the page.
 func (b *GetBatchBuffer) Key(i int) []byte { return castToBytes(b.at(2 * i)) }
 
 // Val returns the i-th value of the most recent GetBatch. See Key.
@@ -67,7 +70,9 @@ func (b *GetBatchBuffer) Val(i int) []byte { return castToBytes(b.at(2*i + 1)) }
 //
 // There is no way to pass a search key or value, so ops that need one (Set,
 // SetRange, GetBoth, ...) cannot be used. For a ranged scan, position the
-// cursor with Get first and batch with (GetCurrent, Next).
+// cursor with Get first and batch with (GetCurrent, Next). The *_MULTIPLE
+// ops work but have page granularity: each stored pair is (key, packed page
+// of fixed-size values), so n counts pages, not records.
 //
 // n is the number of pairs stored (read via buf.Key/Val). The first n pairs
 // are valid even when err != nil (the error came from the step after them).
@@ -78,11 +83,11 @@ func (b *GetBatchBuffer) Val(i int) []byte { return castToBytes(b.at(2*i + 1)) }
 //	defer buf.Close()
 //	for opFirst := uint(mdbx.First); ; opFirst = mdbx.Next {
 //		n, eof, err := cur.GetBatch(buf, opFirst, mdbx.Next)
-//		if err != nil {
-//			return err
-//		}
 //		for i := 0; i < n; i++ {
 //			handle(buf.Key(i), buf.Val(i))
+//		}
+//		if err != nil {
+//			return err
 //		}
 //		if eof {
 //			break
@@ -97,6 +102,7 @@ func (c *Cursor) GetBatch(buf *GetBatchBuffer, opFirst, opNext uint) (n int, eof
 		C.MDBX_cursor_op(opFirst), C.MDBX_cursor_op(opNext),
 	)
 	n = int(r.val)
+	buf.n = n
 	if r.err == C.MDBX_NOTFOUND {
 		return n, true, nil
 	}

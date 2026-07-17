@@ -186,3 +186,78 @@ func BenchmarkCursorScan(b *testing.B) {
 		})
 	}
 }
+
+// Exact-fill boundary: the batch that fills completely on the table's last
+// record reports eof=false; the follow-up call must return (0, true, nil).
+func TestCursor_GetBatch_ExactFill(t *testing.T) {
+	env, _ := setup(t)
+	db := fillBatchDB(t, env, "testbatchexact", 128)
+
+	buf := NewGetBatchBuffer(64)
+	defer buf.Close()
+
+	err := env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		for i, want := range []struct {
+			n   int
+			eof bool
+		}{{64, false}, {64, false}, {0, true}} {
+			op := uint(Next)
+			if i == 0 {
+				op = First
+			}
+			n, eof, err := cur.GetBatch(buf, op, Next)
+			if err != nil {
+				return err
+			}
+			if n != want.n || eof != want.eof {
+				t.Errorf("batch %d: n=%d eof=%v, want n=%d eof=%v", i, n, eof, want.n, want.eof)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+// A failing step mid-batch must leave the pairs fetched before it valid.
+func TestCursor_GetBatch_PartialOnError(t *testing.T) {
+	env, _ := setup(t)
+	db := fillBatchDB(t, env, "testbatchpartial", 10)
+
+	buf := NewGetBatchBuffer(8)
+	defer buf.Close()
+
+	err := env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		// First succeeds; Set without a search key fails on the second step.
+		n, eof, err := cur.GetBatch(buf, First, Set)
+		if err == nil {
+			t.Fatal("GetBatch(First, Set): expected error, got nil")
+		}
+		if eof {
+			t.Error("eof must be false on error")
+		}
+		if n != 1 {
+			t.Fatalf("n = %d, want 1 pair fetched before the failing step", n)
+		}
+		if got := string(buf.Key(0)); got != "key-00000000" {
+			t.Errorf("Key(0) = %q, want key-00000000", got)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
