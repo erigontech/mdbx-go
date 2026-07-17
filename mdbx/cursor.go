@@ -557,10 +557,18 @@ var cursorPool = sync.Pool{
 
 func CursorFromPool() *Cursor { return cursorPool.Get().(*Cursor) }
 
-// CursorToPool returns c for reuse. Do not pool a closed cursor (its handle
-// is gone; Bind/Renew on it will fail). Note cursors evicted from the pool
-// by GC leak their C allocation — Close cursors you do not re-pool.
-func CursorToPool(c *Cursor) { cursorPool.Put(c) }
+// CursorToPool returns c for reuse. Closed cursors are dropped (their handle
+// is gone; Bind/Renew would always fail). The cursor's Go txn reference is
+// cleared so a pooled cursor cannot operate on — or keep alive — an ended
+// transaction; callers must Bind/Renew before use. Note cursors evicted from
+// the pool by GC leak their C allocation — Close cursors you do not re-pool.
+func CursorToPool(c *Cursor) {
+	if c._c == nil {
+		return
+	}
+	c.txn = nil
+	cursorPool.Put(c)
+}
 
 func CreateCursor() *Cursor {
 	c := &Cursor{_c: C.mdbx_cursor_create(nil)}
