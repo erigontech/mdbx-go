@@ -2473,3 +2473,41 @@ func TestCursor_GetCurrent_Hollow(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Regression: mdbx_cursor_get returns MDBX_RESULT_TRUE (success with data)
+// for SetLowerBound/SetUpperBound inexact matches; Get must not swallow the
+// result as an empty success.
+func TestCursor_Get_SetLowerBound_Inexact(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		return txn.Put(db, []byte("k5"), []byte("v5"), 0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		key, val, err := cur.Get([]byte("k1"), nil, SetLowerBound)
+		if err != nil {
+			return err
+		}
+		if string(key) != "k5" || string(val) != "v5" {
+			t.Errorf("Get(k1, SetLowerBound) = %q/%q, want k5/v5", key, val)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
