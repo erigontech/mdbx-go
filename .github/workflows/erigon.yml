@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: erigon-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  group: erigon-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -15,18 +15,18 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout mdbx-go
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: mdbx-go
 
       - name: Checkout erigon (main)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: erigontech/erigon
           ref: main
           path: erigon
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: erigon/go.mod
           cache-dependency-path: erigon/go.sum
