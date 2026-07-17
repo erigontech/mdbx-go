@@ -24,12 +24,6 @@ int mdbxgo_put2(MDBX_txn *txn, MDBX_dbi dbi, char *kdata, size_t kn, char *vdata
 int mdbxgo_cursor_put1(MDBX_cursor *cur, char *kdata, size_t kn, MDBX_val *val, MDBX_put_flags_t flags);
 int mdbxgo_cursor_put2(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_put_flags_t flags);
 int mdbxgo_cursor_putmulti(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, size_t vstride, MDBX_put_flags_t flags);
-/* ConstCString wraps a null-terminated (const char *) because Go's type system
- * does not represent the 'cosnt' qualifier directly on a function argument and
- * causes warnings to be emitted during linking.
- * */
-typedef struct { const char *p; } mdbxgo_ConstCString;
-
 /* mdbxgo_reader_list is a proxy for mdbx_reader_list that uses a special
  * callback proxy function to relay structured reader records over the
  * mdbxgoMDBReaderListBridge external Go func.
