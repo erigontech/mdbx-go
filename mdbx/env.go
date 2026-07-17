@@ -46,7 +46,7 @@ const (
 	// NoLock      = C.MDBX_NOLOCK     // Danger zone. MDBX does not use any locks.
 	NoReadahead = C.MDBX_NORDAHEAD // Disable readahead. Requires OS support.
 	NoMemInit   = C.MDBX_NOMEMINIT // Disable MDBX memory initialization.
-	Exclusive   = C.MDBX_EXCLUSIVE // Disable MDBX memory initialization.
+	Exclusive   = C.MDBX_EXCLUSIVE // Open the environment in exclusive/monopolistic mode.
 )
 
 const (
@@ -176,32 +176,7 @@ func (env *Env) SetStrictThreadMode(mode bool) {
 	env.strictThreadCheck = mode
 }
 
-var errNotOpen = errors.New("enivornment is not open")
-
-// ReaderList dumps the contents of the reader lock table as text.  Readers
-// start on the second line as space-delimited fields described by the first
-// line.
-//
-// See mdbx_reader_list.
-// func (env *Env) ReaderList(fn func(string) error) error {
-//	ctx, done := newMsgFunc(fn)
-//	defer done()
-//	if fn == nil {
-//		ctx = 0
-//	}
-//
-//	ret := C.mdbxgo_reader_list(env._env, C.size_t(ctx))
-//	if ret >= 0 {
-//		return nil
-//	}
-//	if ret < 0 && ctx != 0 {
-//		err := ctx.get().err
-//		if err != nil {
-//			return err
-//		}
-//	}
-//	return operrno("mdbx_reader_list", ret)
-//}
+var errNotOpen = errors.New("environment is not open")
 
 // ReaderCheck clears stale entries from the reader lock table and returns the
 // number of entries cleared.
