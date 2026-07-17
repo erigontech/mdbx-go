@@ -101,9 +101,10 @@ If an application gets accessed by multiple programs concurrently it is also a
 good idea to periodically call Env.ReaderCheck during application execution.
 However, note that Env.ReaderCheck cannot find readers opened by the
 application itself which have since leaked.  This package installs no Txn
-finalizers: a leaked Txn keeps its reader slot and pins its MVCC snapshot
-for the life of the Env, so every transaction must be terminated (Env.View
-and Env.Update do this automatically).
+finalizers: a leaked read-only Txn keeps its reader slot and pins its MVCC
+snapshot for the life of the Env, and a leaked write Txn holds the exclusive
+writer lock, blocking all further writes.  Every transaction must therefore
+be terminated (Env.View and Env.Update do this automatically).
 
 # Caveats
 

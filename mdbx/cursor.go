@@ -147,10 +147,7 @@ func (c *Cursor) Unbind() error {
 	return nil
 }
 
-// Close the cursor handle and free its underlying libmdbx cursor. Unlike
-// LMDB, libmdbx never frees cursors at transaction end, so Close is required
-// for every cursor and is safe before or after its txn ends. No-op if
-// already closed.
+// Close the cursor handle.
 //
 // See mdbx_cursor_close.
 func (c *Cursor) Close() {
