@@ -14,10 +14,10 @@ import (
 // rate of large updates may need to choose non-default settings to reduce
 // their storage requirements at the cost of read throughput.
 //
-// The zero-value of UpdateHandling causes a TxnPool to ignore all updates and
-// defers to the application and the mdbx.Txn finalizers clear stale readers
-// (pulling an mdbx.Readonly transaction out of the pool is enough to release
-// its stale pages).
+// The zero-value of UpdateHandling causes a TxnPool to ignore all updates;
+// clearing stale readers is then the application's responsibility (pulling
+// an mdbx.Readonly transaction out of the pool renews it, which should
+// release its stale pages; mdbx installs no Txn finalizers).
 type UpdateHandling uint
 
 const (
@@ -118,26 +118,22 @@ func (p *TxnPool) beginReadonly() (*mdbx.Txn, error) {
 		return p.env.BeginTxn(nil, mdbx.Readonly)
 	}
 
-	// Clear txn.Pooled to let a warning be emitted from the Txn finalizer
-	// again.  And, make sure to clear RawRead to make the Txn appear like it
-	// was just allocated.
+	// Clear txn.Pooled so the Txn appears like it was just allocated.
 	txn.Pooled = false
 
 	return txn, nil
 }
 
 func (p *TxnPool) renewError(err error) {
-	// TODO:
-	// When this is integrated directly in the mdbx package this can use
-	// the same logging functionality that the Txn finalizer uses.
+	// TODO: route this through the mdbx package's logging once integrated
+	// there.
 	log.Printf("mdbxpool: failed to renew transaction: %v", err)
 }
 
 func (p *TxnPool) abortReadonly(txn *mdbx.Txn) {
 	if !returnTxnToPool {
-		// If the pool is disabled from race detection then we just abort the
-		// Txn instead of waiting for the finalizer.  See the files put.go and
-		// putrace.go for more information.
+		// The pool is disabled under race detection; just abort the Txn.
+		// See put.go and putrace.go for more information.
 		txn.Abort()
 		return
 	}
