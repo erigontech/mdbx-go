@@ -241,10 +241,11 @@ func TestCursor_GetBatch_PartialOnError(t *testing.T) {
 		}
 		defer cur.Close()
 
-		// First succeeds; Set without a search key fails on the second step.
-		n, eof, err := cur.GetBatch(buf, First, Set)
+		// First succeeds; GetMultiple on a non-DupFixed table fails with
+		// MDBX_INCOMPATIBLE on the second step.
+		n, eof, err := cur.GetBatch(buf, First, GetMultiple)
 		if err == nil {
-			t.Fatal("GetBatch(First, Set): expected error, got nil")
+			t.Fatal("GetBatch(First, GetMultiple): expected error, got nil")
 		}
 		if eof {
 			t.Error("eof must be false on error")
