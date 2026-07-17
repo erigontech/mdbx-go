@@ -136,9 +136,10 @@ func (c *Cursor) Bind(txn *Txn, db DBI) error {
 	return nil
 }
 
-// Unbind Unbinded cursor is disassociated with any transactions but still holds
-// the original DBI-handle internally. Thus, it could be renewed with any running
-// transaction or closed. After Unbind, Txn() reports nil.
+// Unbind disassociates the cursor from its transaction while keeping the
+// original DBI handle internally, so it can later be renewed against another
+// transaction (Renew/Bind) or closed. While unbound, Txn() reports nil and
+// DBI() reports an invalid DBI.
 func (c *Cursor) Unbind() error {
 	ret := C.mdbx_cursor_unbind(c._c)
 	if ret != success {
