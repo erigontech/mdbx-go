@@ -100,10 +100,11 @@ processes when they start.
 If an application gets accessed by multiple programs concurrently it is also a
 good idea to periodically call Env.ReaderCheck during application execution.
 However, note that Env.ReaderCheck cannot find readers opened by the
-application itself which have since leaked.  Because of this, the lmdb package
-uses a finalizer to abort unreachable Txn objects.  But of course, applications
-must still be careful not to leak unterminated Txn objects in a way such that
-they fail get garbage collected.
+application itself which have since leaked.  This package installs no Txn
+finalizers: a leaked read-only Txn keeps its reader slot and pins its MVCC
+snapshot for the life of the Env, and a leaked write Txn holds the exclusive
+writer lock, blocking all further writes.  Every transaction must therefore
+be terminated (Env.View and Env.Update do this automatically).
 
 # Caveats
 
@@ -132,6 +133,10 @@ package mdbx
 
 #cgo windows LDFLAGS: -lntdll
 #cgo !android,linux LDFLAGS: -lrt
+
+// NOTE: -ffast-math mirrors upstream libmdbx flags and is compile-only here.
+// Do not move it into LDFLAGS: gcc would link crtfastmath.o and flip FTZ/DAZ
+// process-wide.
 
 #define MDBX_BUILD_FLAGS "${CFLAGS}"
 #include "../libmdbx/mdbx.c"

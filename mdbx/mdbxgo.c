@@ -15,13 +15,6 @@
         (r).vbase = (val).iov_base; (r).vlen = (val).iov_len; \
     } while (0)
 
-int mdbxgo_msg_func_proxy(const char *msg, void *ctx) {
-    //  wrap msg and call the bridge function exported from lmdb.go.
-    mdbxgo_ConstCString s;
-    s.p = msg;
-    return mdbxgoMDBMsgFuncBridge(s, (size_t)ctx);
-}
-
 uint64_t mdbxgo_tid_to_u64(mdbx_tid_t tid) {
     return (uint64_t)(uintptr_t)tid;
 }
