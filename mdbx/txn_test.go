@@ -40,7 +40,9 @@ func TestTxn_ID(t *testing.T) {
 	if txnCached.getID() != txnCached.ID() {
 		t.Errorf("unexpected readonly id (before update): %v (!= %v)", txnCached.ID(), txnCached.getID())
 	}
-	txnCached.Reset()
+	if err := txnCached.Reset(); err != nil {
+		t.Fatal(err)
+	}
 	if txnCached.getID() != txnCached.ID() {
 		t.Errorf("unexpected reset id: %v (!= %v)", txnCached.ID(), txnCached.getID())
 	}
@@ -486,7 +488,7 @@ func TestTxn_Commit_managed(t *testing.T) {
 				t.Errorf("expected panic: %v", err)
 			}
 		}()
-		txn.Reset()
+		_ = txn.Reset()
 		return errors.New("reset")
 	})
 	if err != nil {
@@ -688,7 +690,9 @@ func TestTxn_Renew(t *testing.T) {
 	if !IsNotFound(err) {
 		t.Errorf("get: %v", err)
 	}
-	txn.Reset()
+	if err := txn.Reset(); err != nil {
+		t.Fatal(err)
+	}
 
 	err = txn.Renew()
 	if err != nil {
@@ -713,8 +717,8 @@ func TestTxn_Reset_doubleReset(t *testing.T) {
 	}
 	defer txn.Abort()
 
-	txn.Reset()
-	txn.Reset()
+	_ = txn.Reset()
+	_ = txn.Reset()
 }
 
 func TestTxn_ParkUnpark(t *testing.T) {
@@ -2024,8 +2028,10 @@ func TestTxn_Reset_ReturnsError(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer wtxn.Abort()
-	if err := wtxn.Reset(); !IsErrnoSys(err, syscall.EINVAL) {
-		t.Errorf("Reset on a write txn: got %v, want EINVAL", err)
+	// The exact errno is platform-dependent (EINVAL on POSIX,
+	// ERROR_INVALID_PARAMETER on Windows); pin only that Reset fails.
+	if err := wtxn.Reset(); err == nil {
+		t.Error("Reset on a write txn: expected error, got nil")
 	}
 
 	rtxn, err := env.BeginTxn(nil, Readonly)
