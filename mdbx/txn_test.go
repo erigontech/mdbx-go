@@ -731,10 +731,13 @@ func TestTxn_ParkUnpark(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	_, err = txn.Unpark(true)
+	restarted, err := txn.Unpark(true)
 	if err != nil {
 		t.Error(err)
 		return
+	}
+	if restarted {
+		t.Error("Unpark reported restarted for a parked, non-ousted txn")
 	}
 }
 

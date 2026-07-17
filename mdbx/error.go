@@ -74,6 +74,9 @@ const (
 	BadValSize      Errno = C.MDBX_BAD_VALSIZE
 	BadDBI          Errno = C.MDBX_BAD_DBI
 	Perm            Errno = C.MDBX_EPERM
+	// Ousted is returned by Txn.Unpark when the parked reader was ousted
+	// and restartIfOusted was false.
+	Ousted Errno = C.MDBX_OUSTED
 	// TLSFull       Errno = C.MDBX_TLS_FULL
 	// MapResized    Errno = C.MDBX_MAP_RESIZED
 )

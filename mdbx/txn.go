@@ -365,7 +365,8 @@ func (txn *Txn) Park(autounpark bool) error {
 // restarted is true when the txn was ousted and restarted on the most recent
 // MVCC snapshot (requires restartIfOusted=true): earlier pointers are invalid
 // and the cached ID is refreshed. If ousted with restartIfOusted=false,
-// Unpark returns MDBX_OUSTED and the handle stays reusable via Renew/Abort.
+// Unpark returns an Ousted error (IsErrno(err, Ousted)) and the handle stays
+// reusable via Renew/Abort.
 //
 // See mdbx_txn_unpark.
 func (txn *Txn) Unpark(restartIfOusted bool) (restarted bool, err error) {
