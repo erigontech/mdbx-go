@@ -17,10 +17,11 @@ type GetBatchBuffer struct {
 	n    int // pairs filled by the most recent GetBatch
 }
 
-// maxBatchPairs bounds GetBatchBuffer sizes. It keeps the calloc byte count
-// (2 * numPairs * sizeof(MDBX_val)) at or below 2^25 even with 32-bit
-// size_t/int, so neither multiplication can overflow on any platform.
-const maxBatchPairs = 1 << 20
+// maxBatchPairs bounds GetBatchBuffer sizes to 1Mi pairs (a 32MiB buffer on
+// 64-bit). It keeps the calloc byte count (2 * numPairs * sizeof(MDBX_val))
+// at or below 32MiB even with 32-bit size_t/int, so neither multiplication
+// can overflow on any platform.
+const maxBatchPairs = 1024 * 1024
 
 // NewGetBatchBuffer allocates a buffer holding numPairs key/value pairs
 // (64-512 is a reasonable range).
