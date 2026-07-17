@@ -766,7 +766,7 @@ func TestTxn_Reset_writeTxn(t *testing.T) {
 	}
 
 	// Reset is a noop and Renew will always error out.
-	txn.Reset()
+	_ = txn.Reset()
 	err = txn.Renew()
 	if runtime.GOOS == "windows" {
 		// todo
@@ -1177,7 +1177,7 @@ func BenchmarkTxn_renew(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		txn.Reset()
+		_ = txn.Reset()
 		err = txn.Renew()
 		if err != nil {
 			b.Error(err)
