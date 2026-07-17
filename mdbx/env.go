@@ -365,7 +365,7 @@ func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
 	var _info C.MDBX_envinfo
 	ret := C.mdbx_env_info_ex(env._env, ctxn, &_info, C.size_t(unsafe.Sizeof(_info)))
 	if ret != success {
-		return nil, operrno("mdbx_env_info", ret)
+		return nil, operrno("mdbx_env_info_ex", ret)
 	}
 	return castEnvInfo(_info), nil
 }
