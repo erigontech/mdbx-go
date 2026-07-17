@@ -158,11 +158,13 @@ func (p *TxnPool) abortReadonly(txn *mdbx.Txn) {
 		}
 	}
 
-	// Don't waste cycles resetting RawRead here -- the cost be paid when the
-	// Txn is reused (if at all).  All we need to do is set txn.Pooled to avoid
-	// any warning emitted from the Txn finalizer.
+	// A Txn that failed to reset is still a live reader; pooling it would
+	// pin its MVCC snapshot indefinitely while idle.
+	if err := txn.Reset(); err != nil {
+		txn.Abort()
+		return
+	}
 	txn.Pooled = true
-	txn.Reset()
 	p.pool.Put(txn)
 }
 
