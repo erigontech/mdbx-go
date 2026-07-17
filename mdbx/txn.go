@@ -390,8 +390,8 @@ func (txn *Txn) resetID() {
 // be called to release its slot in the lock table and free its memory.  Reset
 // panics if txn is managed by Update, View, etc.
 //
-// Reset returns the error reported by mdbx_txn_reset, e.g. MDBX_BAD_TXN for
-// a write or already-finished transaction.
+// Reset returns the error reported by mdbx_txn_reset, e.g. BadTxn (check
+// with IsErrno(err, BadTxn)) for a write or already-finished transaction.
 //
 // See mdbx_txn_reset.
 func (txn *Txn) Reset() error {
