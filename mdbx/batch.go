@@ -16,9 +16,10 @@ type GetBatchBuffer struct {
 	size int
 }
 
-// maxBatchPairs bounds GetBatchBuffer sizes; it keeps 2*numPairs and the
-// calloc byte count far from integer overflow on any platform.
-const maxBatchPairs = 1 << 28
+// maxBatchPairs bounds GetBatchBuffer sizes. It keeps the calloc byte count
+// (2 * numPairs * sizeof(MDBX_val)) below 2^25 even with 32-bit size_t/int,
+// so neither multiplication can overflow on any platform.
+const maxBatchPairs = 1 << 20
 
 // NewGetBatchBuffer allocates a buffer holding numPairs key/value pairs
 // (64-512 is a reasonable range).
@@ -68,9 +69,10 @@ func (b *GetBatchBuffer) Val(i int) []byte { return castToBytes(b.at(2*i + 1)) }
 // SetRange, GetBoth, ...) cannot be used. For a ranged scan, position the
 // cursor with Get first and batch with (GetCurrent, Next).
 //
-// n is the number of pairs stored (read via buf.Key/Val). eof is true when
-// iteration was exhausted before the buffer filled; otherwise continue with
-// GetBatch(buf, opNext, opNext).
+// n is the number of pairs stored (read via buf.Key/Val). The first n pairs
+// are valid even when err != nil (the error came from the step after them).
+// eof is true when iteration was exhausted before the buffer filled;
+// otherwise continue with GetBatch(buf, opNext, opNext).
 //
 //	buf := mdbx.NewGetBatchBuffer(256)
 //	defer buf.Close()
