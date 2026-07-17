@@ -578,3 +578,37 @@ func TestEnv_CloseDBI(t *testing.T) {
 		t.Errorf("unexpected entries: %d (not %d)", stat.Entries, numdb)
 	}
 }
+
+func TestEnv_Info_NilTxn(t *testing.T) {
+	env, _ := setup(t)
+
+	info, err := env.Info(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.PageSize == 0 {
+		t.Error("PageSize = 0, want nonzero")
+	}
+	if info.MapSize == 0 {
+		t.Error("MapSize = 0, want nonzero")
+	}
+	if info.MaxReaders == 0 {
+		t.Error("MaxReaders = 0, want nonzero")
+	}
+}
+
+func TestEnv_Info_NilTxn_Unopened(t *testing.T) {
+	env, err := NewEnv(Default)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close()
+
+	info, err := env.Info(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info == nil {
+		t.Fatal("Info(nil) on unopened env returned nil info")
+	}
+}
