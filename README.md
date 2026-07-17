@@ -154,7 +154,7 @@ bytes if they must live longer.
 (There is no `RawRead` switch as in bmatsuo/lmdb-go — reads are always raw.)
 
 ```go
-err := env.View(func(txn *mdbx.Txn) error {
+if err := env.View(func(txn *mdbx.Txn) error {
     val, err := txn.Get(dbi, []byte("largevalue"))
     if err != nil {
         return err
@@ -163,7 +163,9 @@ err := env.View(func(txn *mdbx.Txn) error {
     // Put/Del in this txn or the end of the txn.
     doSomethingWith(val)
     return nil
-})
+}); err != nil {
+    log.Fatal(err)
+}
 ```
 
 Use NoReadahead if Data > RAM
