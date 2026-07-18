@@ -98,7 +98,6 @@ func TestEnv_PreOpen(t *testing.T) {
 	}
 
 	fmt.Printf("%#v\n", _info)
-
 }
 
 func TestEnv_FD(t *testing.T) {
@@ -498,34 +497,37 @@ func TestEnv_Sync(t *testing.T) {
 	}
 }
 
-func setup(t testing.TB) (*Env, string) {
-	return setupFlags(t, 0, Default)
+func setup(tb testing.TB) (*Env, string) {
+	tb.Helper()
+	return setupFlags(tb, 0, Default)
 }
 
-func setupWithLabel(t testing.TB, label Label) (*Env, string) {
-	return setupFlags(t, 0, label)
+func setupWithLabel(tb testing.TB, label Label) (*Env, string) {
+	tb.Helper()
+	return setupFlags(tb, 0, label)
 }
 
-func setupFlags(t testing.TB, flags uint, label Label) (env *Env, path string) {
+func setupFlags(tb testing.TB, flags uint, label Label) (env *Env, path string) {
+	tb.Helper()
 	env, err := NewEnv(label)
 	if err != nil {
-		t.Fatalf("env: %s", err)
+		tb.Fatalf("env: %s", err)
 	}
-	path = t.TempDir()
+	path = tb.TempDir()
 	err = env.SetOption(OptMaxDB, 1024)
 	if err != nil {
-		t.Fatalf("setmaxdbs: %v", err)
+		tb.Fatalf("setmaxdbs: %v", err)
 	}
 	const pageSize = 4096
 	err = env.SetGeometry(-1, -1, 256*64*1024*pageSize, -1, -1, pageSize)
 	if err != nil {
-		t.Fatalf("setmaxdbs: %v", err)
+		tb.Fatalf("setmaxdbs: %v", err)
 	}
 	err = env.Open(path, flags, 0664)
 	if err != nil {
-		t.Fatalf("open: %s", err)
+		tb.Fatalf("open: %s", err)
 	}
-	t.Cleanup(func() {
+	tb.Cleanup(func() {
 		env.Close()
 	})
 	return env, path
