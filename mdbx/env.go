@@ -209,7 +209,7 @@ func (env *Env) Close() {
 	env.closeLock.Unlock()
 }
 
-// CopyFD copies env to the the file descriptor fd.
+// CopyFD copies env to the file descriptor fd.
 //
 // See mdbx_env_copyfd.
 // func (env *Env) CopyFD(fd uintptr) error {

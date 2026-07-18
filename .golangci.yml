@@ -29,12 +29,24 @@ linters:
     - makezero
     - perfsprint
     - gocritic
+    - copyloopvar
+    - intrange
+    - misspell
+    - nolintlint
+    - predeclared
+    - usestdlibvars
+    - mirror
+    - exptostd
+    - dupword
+    - gocheckcompilerdirectives
   disable:
+    # errname would rename the long-established public Errno constants
+    # (NotFound, KeyExist, ...) and the Errno type itself.
+    - errname
     - contextcheck
     - err113
     - errchkjson
     - exhaustive
-    - gocheckcompilerdirectives
     - gosec
     - musttag
     - protogetter
