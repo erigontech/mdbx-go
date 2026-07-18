@@ -502,7 +502,7 @@ func TestCursor_Get_DupFixed(t *testing.T) {
 			return err
 		}
 
-		for i := int64(0); i < int64(numitems); i++ {
+		for i := range int64(numitems) {
 			err = txn.Put(dbi, key, []byte(fmt.Sprintf("%016x", i)), 0)
 			if err != nil {
 				return err
@@ -548,7 +548,7 @@ func TestCursor_Get_DupFixed(t *testing.T) {
 				}
 
 				multi := WrapMulti(v, stride)
-				for i := 0; i < multi.Len(); i++ {
+				for i := range multi.Len() {
 					items = append(items, multi.Val(i))
 				}
 			}
@@ -1683,7 +1683,7 @@ func BenchmarkCursor(b *testing.B) {
 		b.ResetTimer()
 		defer b.StopTimer()
 
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			cur, err := txn.OpenCursor(db)
 			if err != nil {
 				return err
@@ -1718,21 +1718,21 @@ func BenchmarkCursor_Renew(b *testing.B) {
 
 	_ = env.View(func(txn *Txn) (err error) {
 		b.Run("1", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				if err := cur.Renew(txn); err != nil {
 					panic(err)
 				}
 			}
 		})
 		b.Run("2", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				if err := cur.Bind(txn, db); err != nil {
 					panic(err)
 				}
 			}
 		})
 		b.Run("3", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				c, err := txn.OpenCursor(db)
 				if err != nil {
 					panic(err)
@@ -1741,7 +1741,7 @@ func BenchmarkCursor_Renew(b *testing.B) {
 			}
 		})
 		b.Run("4", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				cur := CursorFromPool()
 				if err := cur.Bind(txn, db); err != nil {
 					panic(err)
@@ -1782,7 +1782,7 @@ func BenchmarkCursor_Set_OneKey(b *testing.B) {
 		}
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_, _, err := c.Get(k, nil, Set)
 			if err != nil {
 				return err
@@ -1827,7 +1827,7 @@ func BenchmarkCursor_Set_Sequence(b *testing.B) {
 			return err
 		}
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			_, _, err = c.Get(keys[i], nil, Set)
 			if err != nil {
 				return err
@@ -1873,7 +1873,7 @@ func BenchmarkCursor_Set_Random(b *testing.B) {
 			return err
 		}
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			_, _, err = c.Get(keys[i], nil, Set)
 			if err != nil {
 				return err
@@ -1916,7 +1916,7 @@ func mustOpenDupSortDB(t *testing.T, env *Env, name string) DBI {
 func mustPutUniqueSeq(t *testing.T, env *Env, db DBI, n int) {
 	t.Helper()
 	if err := env.Update(func(txn *Txn) error {
-		for i := 0; i < n; i++ {
+		for i := range n {
 			k := fmt.Sprintf("k%d", i)
 			v := fmt.Sprintf("v%d", i)
 			if err := txn.Put(db, []byte(k), []byte(v), 0); err != nil {

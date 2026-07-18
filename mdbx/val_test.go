@@ -45,7 +45,7 @@ func TestMultiVal_panic(t *testing.T) {
 }
 
 func TestVal(t *testing.T) {
-	orig := []byte("hey hey")
+	orig := []byte("hello mdbx")
 	val := wrapVal(orig)
 
 	p := castToBytes(val)

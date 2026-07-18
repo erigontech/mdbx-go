@@ -65,7 +65,7 @@ func WrapMulti(page []byte, stride int) *Multi {
 func (m *Multi) Vals() [][]byte {
 	n := m.Len()
 	ps := make([][]byte, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ps[i] = m.Val(i)
 	}
 	return ps
