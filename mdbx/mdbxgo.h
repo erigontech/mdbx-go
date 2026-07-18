@@ -72,6 +72,7 @@ mdbxgo_commit_result     mdbxgo_txn_commit_embark_read(MDBX_txn **ptxn);
 typedef struct { int err; char *kbase; size_t klen; char *vbase; size_t vlen; } mdbxgo_val_result;
 mdbxgo_val_result        mdbxgo_cursor_get_empty(MDBX_cursor *cur, MDBX_cursor_op op);
 mdbxgo_val_result        mdbxgo_cursor_get_val(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_cursor_op op);
+mdbxgo_val_result        mdbxgo_cursor_put_reserve(MDBX_cursor *cur, char *kdata, size_t kn, size_t vn, MDBX_put_flags_t flags);
 
 typedef struct {
     int err;

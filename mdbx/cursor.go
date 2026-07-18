@@ -289,28 +289,23 @@ func (c *Cursor) Put(key, val []byte, flags uint) error {
 //
 //nolint:gocritic // false positive on dupSubExpr
 func (c *Cursor) PutReserve(key []byte, n int, flags uint) ([]byte, error) {
-	if c._c == nil || c.txn == nil {
-		return nil, operrno("mdbx_cursor_put", C.MDBX_EINVAL)
-	}
+	// Like Get, no Go-side closed/unbound guard: the reserve helper returns
+	// the buffer by value so c.txn is never touched, and libmdbx's
+	// cursor_check turns a NULL or unbound cursor into EINVAL.
 	var k *C.char
 	if len(key) > 0 {
 		k = (*C.char)(unsafe.Pointer(&key[0]))
 	}
-	c.txn.val.iov_len = C.size_t(n)
-	ret := C.mdbxgo_cursor_put1(
+	r := C.mdbxgo_cursor_put_reserve(
 		c._c,
 		k, C.size_t(len(key)),
-		&c.txn.val,
-		C.MDBX_put_flags_t(flags|C.MDBX_RESERVE),
+		C.size_t(n),
+		C.MDBX_put_flags_t(flags),
 	)
-	err := operrno("mdbx_cursor_put", ret)
-	if err != nil {
-		c.txn.val = C.MDBX_val{}
+	if err := operrno("mdbx_cursor_put", r.err); err != nil {
 		return nil, err
 	}
-	b := castToBytes(&c.txn.val)
-	c.txn.val = C.MDBX_val{}
-	return b, nil
+	return castToBytesRaw(unsafe.Pointer(r.vbase), r.vlen), nil
 }
 
 // PutMulti stores a set of contiguous items with stride size under key.
