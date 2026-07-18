@@ -2060,7 +2060,7 @@ func TestTxn_Unpark_OustedPaths(t *testing.T) {
 
 	// Churn updates so the writer needs pages pinned by the parked snapshot.
 	val := make([]byte, 4096)
-	for i := 0; i < 512; i++ {
+	for i := range 512 {
 		if err := env.Update(func(txn *Txn) error {
 			return txn.Put(db, []byte{byte(i), byte(i >> 8)}, val, 0)
 		}); err != nil {
