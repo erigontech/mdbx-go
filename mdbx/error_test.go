@@ -27,7 +27,6 @@ func BenchmarkErrno_Error(b *testing.B) {
 				b.Fatal("empty message")
 			}
 		}
-
 	}
 }
 func TestErrno(t *testing.T) {

@@ -38,7 +38,7 @@ For deeper DB understanding please read through [mdbx.h](https://sourcecraft.dev
 ## Min Requirements
 
 C language Compilers compatible with GCC or CLANG (mingw 10 on windows)
-Golang: 1.24
+Golang: 1.25
 
 ## Packages
 
