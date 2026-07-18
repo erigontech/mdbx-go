@@ -6,15 +6,15 @@ import (
 	"testing"
 )
 
-func fillBatchDB(t testing.TB, env *Env, name string, numItems int) DBI {
-	t.Helper()
+func fillBatchDB(tb testing.TB, env *Env, name string, numItems int) DBI {
+	tb.Helper()
 	var db DBI
 	err := env.Update(func(txn *Txn) (err error) {
 		db, err = txn.OpenDBISimple(name, Create)
 		if err != nil {
 			return err
 		}
-		for i := 0; i < numItems; i++ {
+		for i := range numItems {
 			k := []byte(fmt.Sprintf("key-%08d", i))
 			v := []byte(fmt.Sprintf("val-%08d", i))
 			if err := txn.Put(db, k, v, Append); err != nil {
@@ -24,7 +24,7 @@ func fillBatchDB(t testing.TB, env *Env, name string, numItems int) DBI {
 		return nil
 	})
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	return db
 }
@@ -50,7 +50,7 @@ func TestCursor_GetBatch(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			for i := 0; i < n; i++ {
+			for i := range n {
 				wantK := fmt.Sprintf("key-%08d", seen)
 				wantV := fmt.Sprintf("val-%08d", seen)
 				if !bytes.Equal(buf.Key(i), []byte(wantK)) {
@@ -146,7 +146,7 @@ func BenchmarkCursorScan(b *testing.B) {
 	b.Run("Get_Next", func(b *testing.B) {
 		b.ResetTimer()
 		var total int
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			count := 0
 			for _, _, err := cur.Get(nil, nil, First); err == nil; _, _, err = cur.Get(nil, nil, Next) {
 				count++
@@ -165,7 +165,7 @@ func BenchmarkCursorScan(b *testing.B) {
 			defer buf.Close()
 			b.ResetTimer()
 			var total int
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				count := 0
 				for opFirst := uint(First); ; opFirst = Next {
 					n, eof, err := cur.GetBatch(buf, opFirst, Next)
