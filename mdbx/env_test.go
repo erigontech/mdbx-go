@@ -552,7 +552,7 @@ func TestEnv_CloseDBI(t *testing.T) {
 	env, _ := setup(t)
 
 	const numdb = 1000
-	for i := 0; i < numdb; i++ {
+	for i := range numdb {
 		dbname := fmt.Sprintf("db%d", i)
 
 		var dbi DBI

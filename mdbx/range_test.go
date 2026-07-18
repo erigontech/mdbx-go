@@ -12,7 +12,7 @@ func mustPutSeqBE(t *testing.T, env *Env, name string, n int) DBI {
 	db := mustOpenUniqueDB(t, env, name)
 	if err := env.Update(func(txn *Txn) error {
 		var kb [4]byte
-		for i := 0; i < n; i++ {
+		for i := range n {
 			binary.BigEndian.PutUint32(kb[:], uint32(i))
 			if err := txn.Put(db, kb[:], kb[:], 0); err != nil {
 				return err
