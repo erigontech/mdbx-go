@@ -55,14 +55,35 @@ const (
 	MaxDbi      = C.MDBX_MAX_DBI
 )
 
-// These flags are exclusively used in the Env.CopyFlags and Env.CopyFDFlags
+// These flags are exclusively used in the Env.CopyFlag and Env.CopyFDFlag
 // methods.
 const (
-	// Flags for Env.CopyFlags
+	// Flags for Env.CopyFlag / Env.CopyFDFlag
 	//
-	// See mdbx_env_copy2
+	// See mdbx_env_copy
 
-	CopyCompact = C.MDBX_CP_COMPACT // Perform compaction while copying
+	CopyDefaults         = C.MDBX_CP_DEFAULTS           // Perform copy as-is, no compaction etc.
+	CopyCompact          = C.MDBX_CP_COMPACT            // Perform compaction while copying: omit free pages and renumber
+	CopyForceDynamicSize = C.MDBX_CP_FORCE_DYNAMIC_SIZE // Force resizable copy (dynamic size instead of fixed)
+	CopyDontFlush        = C.MDBX_CP_DONT_FLUSH         // Don't explicitly flush the written data to output media
+	CopyThrottleMVCC     = C.MDBX_CP_THROTTLE_MVCC      // Use read transaction parking during copying MVCC-snapshot
+	CopyOverwrite        = C.MDBX_CP_OVERWRITE          // Silently overwrite the target file if it exists
+)
+
+// Stopping reasons for Env.Defrag. The DefragResult.StoppingReasons field is a
+// mask OR'ing together any subset of these flags.
+//
+// See MDBX_defrag_stopping_reasons_t.
+const (
+	DefragNoObstacles     = C.MDBX_defrag_noobstacles      // No obstacles
+	DefragStepSize        = C.MDBX_defrag_step_size        // Step transaction size limit reached
+	DefragLargeChunk      = C.MDBX_defrag_large_chunk      // Preliminary movement is necessary
+	DefragDiscontinued    = C.MDBX_defrag_discontinued     // Discontinued by user
+	DefragLaggardReader   = C.MDBX_defrag_laggard_reader   // A reader is preventing further defragmentation
+	DefragEnoughThreshold = C.MDBX_defrag_enough_threshold // User-set goal achieved
+	DefragTimeLimit       = C.MDBX_defrag_time_limit       // Specified time limit reached
+	DefragAborted         = C.MDBX_defrag_aborted          // Aborted by user
+	DefragError           = C.MDBX_defrag_error            // An error occurred during defragmentation
 )
 
 const (
@@ -220,39 +241,38 @@ func (env *Env) Close() error {
 
 // CopyFD copies env to the file descriptor fd.
 //
-// See mdbx_env_copyfd.
-// func (env *Env) CopyFD(fd uintptr) error {
-//	ret := C.mdbx_env_copyfd(env._env, C.mdbx_filehandle_t(fd))
-//	return operrno("mdbx_env_copyfd", ret)
-//}
+// See mdbx_env_copy2fd.
+func (env *Env) CopyFD(fd uintptr) error {
+	return env.CopyFDFlag(fd, 0)
+}
 
-// CopyFDFlag copies env to the file descriptor fd, with options.
+// CopyFDFlag copies env to the file descriptor fd, with options. On Windows
+// fd must be a native HANDLE value (as returned by os.File.Fd); on POSIX it
+// is a regular int file descriptor.
 //
-// See mdbx_env_copyfd2.
-// func (env *Env) CopyFDFlag(fd uintptr, flags uint) error {
-//	ret := C.mdbx_env_copyfd2(env._env, C.mdbx_filehandle_t(fd), C.uint(flags))
-//	return operrno("mdbx_env_copyfd2", ret)
-//}
+// See mdbx_env_copy2fd.
+func (env *Env) CopyFDFlag(fd uintptr, flags uint) error {
+	ret := C.mdbxgo_env_copy2fd(env._env, C.uintptr_t(fd), C.MDBX_copy_flags_t(flags))
+	return operrno("mdbx_env_copy2fd", ret)
+}
 
-// Copy copies the data in env to an environment at path.
+// Copy copies the data in env to an environment at path. The target path must
+// not already exist; pass CopyOverwrite via CopyFlag to overwrite.
 //
 // See mdbx_env_copy.
-// func (env *Env) Copy(path string) error {
-//	cpath := C.CString(path)
-//	defer C.free(unsafe.Pointer(cpath))
-//	ret := C.mdbx_env_copy(env._env, cpath)
-//	return operrno("mdbx_env_copy", ret)
-//}
+func (env *Env) Copy(path string) error {
+	return env.CopyFlag(path, 0)
+}
 
-// CopyFlag copies the data in env to an environment at path created with flags.
+// CopyFlag copies the data in env to an environment at path, with options.
 //
-// See mdbx_env_copy2.
-// func (env *Env) CopyFlag(path string, flags uint) error {
-//	cpath := C.CString(path)
-//	defer C.free(unsafe.Pointer(cpath))
-//	ret := C.mdbx_env_copy2(env._env, cpath, C.uint(flags))
-//	return operrno("mdbx_env_copy2", ret)
-//}
+// See mdbx_env_copy.
+func (env *Env) CopyFlag(path string, flags uint) error {
+	cpath := C.CString(path)
+	defer C.free(unsafe.Pointer(cpath))
+	ret := C.mdbx_env_copy(env._env, cpath, C.MDBX_copy_flags_t(flags))
+	return operrno("mdbx_env_copy", ret)
+}
 
 // Stat contains database status information.
 //
@@ -667,4 +687,95 @@ func (env *Env) CloseDBI(db DBI) {
 
 func (env *Env) CHandle() unsafe.Pointer {
 	return unsafe.Pointer(env._env)
+}
+
+// DefragOptions controls the behavior of Env.Defrag. Zero values mean "no
+// bound" except for AcceptableBacklash where -1 selects autopilot.
+//
+// See mdbx_env_defrag.
+type DefragOptions struct {
+	// DefragAtLeast is the minimum number of pages by which the database
+	// must shrink before defragmentation is considered done. 0 = no lower
+	// bound. Must be <= DefragEnough.
+	DefragAtLeast uint64
+	// TimeAtLeast is the minimum wall-clock time to spend defragmenting,
+	// even after other goals are reached. 0 = no lower bound. Must be <=
+	// TimeLimit.
+	TimeAtLeast time.Duration
+	// DefragEnough is the page-shrink target at which defragmentation may
+	// stop. 0 = no limit. Must be >= DefragAtLeast.
+	DefragEnough uint64
+	// TimeLimit caps total wall-clock time spent defragmenting. 0 = no
+	// limit. Must be >= TimeAtLeast.
+	TimeLimit time.Duration
+	// AcceptableBacklash stops defragmentation once the next cycle is
+	// unable to shrink the database by more than this many pages. -1 means
+	// autopilot.
+	AcceptableBacklash int64
+	// PreferredBatch is the preferred maximum number of pages moved per
+	// defragmentation cycle. 0 = no limit.
+	PreferredBatch int64
+}
+
+// DefragResult holds the metrics returned by Env.Defrag.
+//
+// See MDBX_defrag_result_t.
+type DefragResult struct {
+	PagesShrinked   int64  // Negative if defrag was stopped or db structure prevents shrinking.
+	PagesMoved      uint64 // Total pages moved during defragmentation.
+	PagesScheduled  uint64 // Pages scheduled to move at the next stage of the current cycle.
+	PagesRetained   uint64 // Pages held by other processes via MVCC-snapshots.
+	PagesLeft       uint64 // Estimated remaining defragmentable pages.
+	PagesWhole      uint64 // Total number of pages in the database.
+	ObstructedPgNo  uint64 // Page where defragmentation stumbled.
+	ObstructedSpan  uint64 // Length of the large/overflow-page span where it stumbled.
+	ObstructedTxnID uint64 // Earliest MVCC-snapshot txnid preventing defragmentation.
+	ObstructorTID   uint64 // Native TID of one of the blocking readers.
+	ObstructorPID   int64  // Native PID of one of the blocking readers.
+	CycleProgress   uint   // Rough estimate of current cycle progress in permilles (1000 = 100%).
+	Cycles          uint   // Number of defragmentation cycles performed.
+	StoppingReasons uint   // OR'ed mask of Defrag* stopping reasons.
+	SpentTime       time.Duration
+}
+
+// Defrag performs an in-place database defragmentation: data from pages near
+// the end of the file is moved to free pages closer to the beginning, after
+// which trailing free pages can be cut off, reducing the file size. The
+// operation is ACID and may run in several internal cycles.
+//
+// Defrag returns the metrics gathered during the run. A non-nil result is
+// returned regardless of error. err is nil if defragmentation completed; it
+// may carry MDBX-specific errors such as MDBX_LAGGARD_READER when readers
+// prevented completion. When defragmentation could not fully achieve the
+// requested goals, libmdbx returns MDBX_RESULT_TRUE which is treated as
+// non-error here; inspect result.StoppingReasons to learn why.
+//
+// See mdbx_env_defrag.
+func (env *Env) Defrag(opts DefragOptions) (*DefragResult, error) {
+	r := C.mdbxgo_env_defrag(env._env,
+		C.size_t(opts.DefragAtLeast),
+		C.size_t(NewDuration16dot16(opts.TimeAtLeast)),
+		C.size_t(opts.DefragEnough),
+		C.size_t(NewDuration16dot16(opts.TimeLimit)),
+		C.intptr_t(opts.AcceptableBacklash),
+		C.intptr_t(opts.PreferredBatch),
+	)
+	res := &DefragResult{
+		PagesShrinked:   int64(r.pages_shrinked),
+		PagesMoved:      uint64(r.pages_moved),
+		PagesScheduled:  uint64(r.pages_scheduled),
+		PagesRetained:   uint64(r.pages_retained),
+		PagesLeft:       uint64(r.pages_left),
+		PagesWhole:      uint64(r.pages_whole),
+		ObstructedPgNo:  uint64(r.obstructed_pgno),
+		ObstructedSpan:  uint64(r.obstructed_span),
+		ObstructedTxnID: uint64(r.obstructed_txnid),
+		ObstructorTID:   uint64(r.obstructor_tid),
+		ObstructorPID:   int64(r.obstructor_pid),
+		CycleProgress:   uint(r.rough_estimation_cycle_progress_permille),
+		Cycles:          uint(r.cycles),
+		StoppingReasons: uint(r.stopping_reasons),
+		SpentTime:       toDurationU64(r.spent_time_dot16),
+	}
+	return res, operrno("mdbx_env_defrag", r.err)
 }
