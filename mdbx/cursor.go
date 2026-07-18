@@ -199,10 +199,9 @@ func (c *Cursor) DBI() DBI {
 //
 // See mdbx_cursor_get.
 func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error) {
-	if c._c == nil || c.txn == nil {
-		// closed or not yet bound to a transaction
-		return nil, nil, operrno("mdbx_cursor_get", C.MDBX_EINVAL)
-	}
+	// No Go-side closed/unbound guard: Get no longer touches c.txn, and the C
+	// entry (cursor_check) returns EINVAL for both a NULL and an unbound
+	// cursor, so the check would only duplicate work on the hot path.
 	var r C.mdbxgo_val_result
 	if len(setkey) != 0 || len(setval) != 0 {
 		r = c.getVal(setkey, setval, op)
