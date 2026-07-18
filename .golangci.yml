@@ -39,6 +39,15 @@ linters:
     - exptostd
     - dupword
     - gocheckcompilerdirectives
+    - thelper
+    - tparallel
+    - nilnil
+    - whitespace
+    - sloglint
+    - canonicalheader
+    - iface
+    - recvcheck
+    - unparam
   disable:
     # errname would rename the long-established public Errno constants
     # (NotFound, KeyExist, ...) and the Errno type itself.
@@ -50,8 +59,6 @@ linters:
     - gosec
     - musttag
     - protogetter
-    - recvcheck
-    - unparam
     - wrapcheck
   settings:
     goconst:

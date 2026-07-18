@@ -509,7 +509,6 @@ func (env *Env) GetSyncPeriod() (time.Duration, error) {
 func (env *Env) SetSyncBytes(threshold uint) error {
 	ret := C.mdbx_env_set_syncbytes(env._env, C.size_t(threshold))
 	return operrno("mdbx_env_set_syncbytes", ret)
-
 }
 
 func (env *Env) GetSyncBytes() (uint, error) {

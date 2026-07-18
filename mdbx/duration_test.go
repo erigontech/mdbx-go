@@ -6,6 +6,7 @@ import (
 )
 
 func assertEqualDuration(t *testing.T, actual time.Duration, expected time.Duration) {
+	t.Helper()
 	diff := actual.Nanoseconds() - expected.Nanoseconds()
 	threshold := int64(time.Millisecond)
 	if (diff > threshold) || (diff < -threshold) {
@@ -14,6 +15,7 @@ func assertEqualDuration(t *testing.T, actual time.Duration, expected time.Durat
 }
 
 func assertEqual16dot16(t *testing.T, actual Duration16dot16, expected Duration16dot16) {
+	t.Helper()
 	diff := int64(actual) - int64(expected)
 	threshold := int64(66)
 	if (diff > threshold) || (diff < -threshold) {
