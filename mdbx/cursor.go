@@ -282,8 +282,6 @@ func (c *Cursor) Put(key, val []byte, flags uint) error {
 // PutReserve returns a []byte of length n that can be written to, potentially
 // avoiding a memcopy.  The returned byte slice is only valid in txn's thread,
 // before it has terminated.
-//
-//nolint:gocritic // false positive on dupSubExpr
 func (c *Cursor) PutReserve(key []byte, n int, flags uint) ([]byte, error) {
 	// Like Get, no Go-side closed/unbound guard: the reserve helper returns
 	// the buffer by value so c.txn is never touched, and libmdbx's
