@@ -227,8 +227,6 @@ func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error
 // data for reference (Next, First, Last, etc).
 //
 // See mdb_cursor_get.
-//
-//nolint:gocritic // false positive on dupSubExpr
 func (c *Cursor) getValEmpty(op uint) C.mdbxgo_val_result {
 	return C.mdbxgo_cursor_get_empty(c._c, C.MDBX_cursor_op(op))
 }
@@ -237,8 +235,6 @@ func (c *Cursor) getValEmpty(op uint) C.mdbxgo_val_result {
 // reference (GetBoth, GetBothRange, etc).
 //
 // See mdb_cursor_get.
-//
-//nolint:gocritic // false positive on dupSubExpr
 func (c *Cursor) getVal(setkey, setval []byte, op uint) C.mdbxgo_val_result {
 	var k, v *C.char
 	if len(setkey) > 0 {

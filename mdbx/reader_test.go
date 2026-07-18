@@ -192,7 +192,7 @@ func setupReaderInfoEnv(t *testing.T) (*Env, DBI) {
 		for i := range value {
 			value[i] = byte(i)
 		}
-		for i := 0; i < 2048; i++ {
+		for i := range 2048 {
 			key := []byte(fmt.Sprintf("key-%04d", i))
 			if err = txn.Put(dbi, key, value, 0); err != nil {
 				return err
@@ -212,7 +212,7 @@ func churnReaderInfoPages(env *Env, dbi DBI) error {
 		for i := range value {
 			value[i] = byte(255 - i)
 		}
-		for i := 0; i < 1024; i++ {
+		for i := range 1024 {
 			key := []byte(fmt.Sprintf("key-%04d", i))
 			if err := txn.Put(dbi, key, value, 0); err != nil {
 				return err
