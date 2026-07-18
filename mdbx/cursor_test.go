@@ -401,7 +401,6 @@ func TestLastDup(t *testing.T) {
 			if i == 2 && string(v) != "value3.1" {
 				panic(1)
 			}
-
 		}
 
 		return nil
@@ -409,7 +408,6 @@ func TestLastDup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 }
 
 func TestCursor_Get_op_Set_bytesBuffer(t *testing.T) {
@@ -695,7 +693,6 @@ func TestCursor_Get_reverse(t *testing.T) {
 //}
 
 func TestCursor_Del(t *testing.T) {
-
 	env, _ := setup(t)
 
 	var db DBI
