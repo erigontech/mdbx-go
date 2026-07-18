@@ -218,7 +218,7 @@ func (env *Env) Close() error {
 	return operrno("mdbx_env_close", ret)
 }
 
-// CopyFD copies env to the the file descriptor fd.
+// CopyFD copies env to the file descriptor fd.
 //
 // See mdbx_env_copyfd.
 // func (env *Env) CopyFD(fd uintptr) error {
