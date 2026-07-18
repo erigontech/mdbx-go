@@ -101,7 +101,6 @@ func TestEnv_PreOpen(t *testing.T) {
 	}
 
 	fmt.Printf("%#v\n", _info)
-
 }
 
 func TestEnv_FD(t *testing.T) {
@@ -610,34 +609,37 @@ func TestEnv_Sync(t *testing.T) {
 	}
 }
 
-func setup(t testing.TB) (*Env, string) {
-	return setupFlags(t, 0, Default)
+func setup(tb testing.TB) (*Env, string) {
+	tb.Helper()
+	return setupFlags(tb, 0, Default)
 }
 
-func setupWithLabel(t testing.TB, label Label) (*Env, string) {
-	return setupFlags(t, 0, label)
+func setupWithLabel(tb testing.TB, label Label) (*Env, string) {
+	tb.Helper()
+	return setupFlags(tb, 0, label)
 }
 
-func setupFlags(t testing.TB, flags uint, label Label) (env *Env, path string) {
+func setupFlags(tb testing.TB, flags uint, label Label) (env *Env, path string) {
+	tb.Helper()
 	env, err := NewEnv(label)
 	if err != nil {
-		t.Fatalf("env: %s", err)
+		tb.Fatalf("env: %s", err)
 	}
-	path = t.TempDir()
+	path = tb.TempDir()
 	err = env.SetOption(OptMaxDB, 1024)
 	if err != nil {
-		t.Fatalf("setmaxdbs: %v", err)
+		tb.Fatalf("setmaxdbs: %v", err)
 	}
 	const pageSize = 4096
 	err = env.SetGeometry(-1, -1, 256*64*1024*pageSize, -1, -1, pageSize)
 	if err != nil {
-		t.Fatalf("setmaxdbs: %v", err)
+		tb.Fatalf("setmaxdbs: %v", err)
 	}
 	err = env.Open(path, flags, 0664)
 	if err != nil {
-		t.Fatalf("open: %s", err)
+		tb.Fatalf("open: %s", err)
 	}
-	t.Cleanup(func() {
+	tb.Cleanup(func() {
 		env.Close()
 	})
 	return env, path
@@ -664,7 +666,7 @@ func TestEnv_CloseDBI(t *testing.T) {
 	env, _ := setup(t)
 
 	const numdb = 1000
-	for i := 0; i < numdb; i++ {
+	for i := range numdb {
 		dbname := fmt.Sprintf("db%d", i)
 
 		var dbi DBI
@@ -688,5 +690,39 @@ func TestEnv_CloseDBI(t *testing.T) {
 	//nolint:err113
 	if stat.Entries != numdb {
 		t.Errorf("unexpected entries: %d (not %d)", stat.Entries, numdb)
+	}
+}
+
+func TestEnv_Info_NilTxn(t *testing.T) {
+	env, _ := setup(t)
+
+	info, err := env.Info(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.PageSize == 0 {
+		t.Error("PageSize = 0, want nonzero")
+	}
+	if info.MapSize == 0 {
+		t.Error("MapSize = 0, want nonzero")
+	}
+	if info.MaxReaders == 0 {
+		t.Error("MaxReaders = 0, want nonzero")
+	}
+}
+
+func TestEnv_Info_NilTxn_Unopened(t *testing.T) {
+	env, err := NewEnv(Default)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close()
+
+	info, err := env.Info(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info == nil {
+		t.Fatal("Info(nil) on unopened env returned nil info")
 	}
 }

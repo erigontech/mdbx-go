@@ -62,15 +62,16 @@ const (
 type Txn struct {
 	env  *Env
 	_txn *C.MDBX_txn
-	key  C.MDBX_val
-	val  C.MDBX_val
+	// val is scratch space for Txn.Get and the PutReserve paths: passing the
+	// address of a local C.MDBX_val into cgo would force a heap escape per
+	// call.
+	val C.MDBX_val
 
 	errLogf func(format string, v ...any)
 
-	// Pooled may be set to true while a Txn is stored in a sync.Pool, after
-	// Txn.Reset reset has been called and before Txn.Renew.  This will keep
-	// the Txn finalizer from unnecessarily warning the application about
-	// finalizations.
+	// Pooled may be set to true while a Txn is stored in a sync.Pool.  Kept
+	// for lmdb-go/mdbxpool compatibility; this package has no Txn finalizer,
+	// so the flag has no effect.
 	Pooled bool
 
 	managed  bool
@@ -99,8 +100,6 @@ func beginTxn(env *Env, parent *Txn, flags uint) (*Txn, error) {
 
 	var ptxn *C.MDBX_txn
 	if parent != nil {
-		// Because parent Txn objects cannot be used while a sub-Txn is active
-		// it is OK for them to share their C.MDBX_val objects.
 		ptxn = parent._txn
 	}
 	ret := C.mdbx_txn_begin(env._env, ptxn, C.MDBX_txn_flags_t(flags), &txn._txn)
@@ -183,8 +182,8 @@ func (txn *Txn) runOp(fn TxnOp) error {
 	return fn(txn)
 }
 
-// Commit persists all transaction operations to the database and clears the
-// finalizer on txn.  A Txn cannot be used again after Commit is called.
+// Commit persists all transaction operations to the database.  A Txn cannot
+// be used again after Commit is called.
 //
 // See mdbx_txn_commit.
 func (txn *Txn) Commit() (CommitLatency, error) {
@@ -295,8 +294,8 @@ func buildCommitLatency(lat *C.MDBX_commit_latency) CommitLatency {
 	}
 }
 
-// Abort discards pending writes in the transaction and clears the finalizer on
-// txn.  A Txn cannot be used again after Abort is called.
+// Abort discards pending writes in the transaction.  A Txn cannot be used
+// again after Abort is called.
 //
 // See mdbx_txn_abort.
 func (txn *Txn) Abort() {
@@ -390,18 +389,22 @@ func (txn *Txn) resetID() {
 // be called to release its slot in the lock table and free its memory.  Reset
 // panics if txn is managed by Update, View, etc.
 //
+// Reset returns the error reported by mdbx_txn_reset, e.g. EINVAL on POSIX
+// (check with IsErrnoSys(err, syscall.EINVAL)) when txn is not read-only.
+//
 // See mdbx_txn_reset.
-func (txn *Txn) Reset() {
+func (txn *Txn) Reset() error {
 	if txn.managed {
 		panic("managed transaction cannot be reset directly")
 	}
 
-	txn.reset()
+	return txn.reset()
 }
 
-func (txn *Txn) reset() {
-	C.mdbx_txn_reset(txn._txn)
+func (txn *Txn) reset() error {
+	ret := C.mdbx_txn_reset(txn._txn)
 	txn.resetID()
+	return operrno("mdbx_txn_reset", ret)
 }
 
 // Renew reuses a transaction that was previously reset by calling txn.Reset().
@@ -937,13 +940,10 @@ func (txn *Txn) subFlag(flags uint, fn TxnOp) error {
 	return err
 }
 
-func (txn *Txn) bytes(val *C.MDBX_val) []byte {
-	return castToBytes(val)
-}
-
-// Get retrieves items from database dbi.  If txn.RawRead is true the slice
-// returned by Get references a readonly section of memory that must not be
-// accessed after txn has terminated.
+// Get retrieves items from database dbi.  The returned slice is a zero-copy
+// view into the memory-mapped file: read-only and valid only until the next
+// update operation in a write txn or until the transaction ends.  Copy it if
+// it must live longer.
 //
 // See mdbx_get.
 //

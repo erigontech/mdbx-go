@@ -401,7 +401,6 @@ func TestLastDup(t *testing.T) {
 			if i == 2 && string(v) != "value3.1" {
 				panic(1)
 			}
-
 		}
 
 		return nil
@@ -409,7 +408,6 @@ func TestLastDup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 }
 
 func TestCursor_Get_op_Set_bytesBuffer(t *testing.T) {
@@ -502,7 +500,7 @@ func TestCursor_Get_DupFixed(t *testing.T) {
 			return err
 		}
 
-		for i := int64(0); i < int64(numitems); i++ {
+		for i := range int64(numitems) {
 			err = txn.Put(dbi, key, []byte(fmt.Sprintf("%016x", i)), 0)
 			if err != nil {
 				return err
@@ -548,7 +546,7 @@ func TestCursor_Get_DupFixed(t *testing.T) {
 				}
 
 				multi := WrapMulti(v, stride)
-				for i := 0; i < multi.Len(); i++ {
+				for i := range multi.Len() {
 					items = append(items, multi.Val(i))
 				}
 			}
@@ -695,7 +693,6 @@ func TestCursor_Get_reverse(t *testing.T) {
 //}
 
 func TestCursor_Del(t *testing.T) {
-
 	env, _ := setup(t)
 
 	var db DBI
@@ -1683,7 +1680,7 @@ func BenchmarkCursor(b *testing.B) {
 		b.ResetTimer()
 		defer b.StopTimer()
 
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			cur, err := txn.OpenCursor(db)
 			if err != nil {
 				return err
@@ -1718,21 +1715,21 @@ func BenchmarkCursor_Renew(b *testing.B) {
 
 	_ = env.View(func(txn *Txn) (err error) {
 		b.Run("1", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				if err := cur.Renew(txn); err != nil {
 					panic(err)
 				}
 			}
 		})
 		b.Run("2", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				if err := cur.Bind(txn, db); err != nil {
 					panic(err)
 				}
 			}
 		})
 		b.Run("3", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				c, err := txn.OpenCursor(db)
 				if err != nil {
 					panic(err)
@@ -1741,7 +1738,7 @@ func BenchmarkCursor_Renew(b *testing.B) {
 			}
 		})
 		b.Run("4", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				cur := CursorFromPool()
 				if err := cur.Bind(txn, db); err != nil {
 					panic(err)
@@ -1782,7 +1779,7 @@ func BenchmarkCursor_Set_OneKey(b *testing.B) {
 		}
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_, _, err := c.Get(k, nil, Set)
 			if err != nil {
 				return err
@@ -1827,7 +1824,7 @@ func BenchmarkCursor_Set_Sequence(b *testing.B) {
 			return err
 		}
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			_, _, err = c.Get(keys[i], nil, Set)
 			if err != nil {
 				return err
@@ -1873,7 +1870,7 @@ func BenchmarkCursor_Set_Random(b *testing.B) {
 			return err
 		}
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			_, _, err = c.Get(keys[i], nil, Set)
 			if err != nil {
 				return err
@@ -1916,7 +1913,7 @@ func mustOpenDupSortDB(t *testing.T, env *Env, name string) DBI {
 func mustPutUniqueSeq(t *testing.T, env *Env, db DBI, n int) {
 	t.Helper()
 	if err := env.Update(func(txn *Txn) error {
-		for i := 0; i < n; i++ {
+		for i := range n {
 			k := fmt.Sprintf("k%d", i)
 			v := fmt.Sprintf("v%d", i)
 			if err := txn.Put(db, []byte(k), []byte(v), 0); err != nil {
@@ -2471,5 +2468,43 @@ func TestCursor_GetCurrent_Hollow(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Regression: mdbx_cursor_get returns MDBX_RESULT_TRUE (success with data)
+// for SetLowerBound/SetUpperBound inexact matches; Get must not swallow the
+// result as an empty success.
+func TestCursor_Get_SetLowerBound_Inexact(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		return txn.Put(db, []byte("k5"), []byte("v5"), 0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		key, val, err := cur.Get([]byte("k1"), nil, SetLowerBound)
+		if err != nil {
+			return err
+		}
+		if string(key) != "k5" || string(val) != "v5" {
+			t.Errorf("Get(k1, SetLowerBound) = %q/%q, want k5/v5", key, val)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
 	}
 }

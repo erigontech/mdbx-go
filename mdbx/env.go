@@ -46,7 +46,7 @@ const (
 	// NoLock      = C.MDBX_NOLOCK     // Danger zone. MDBX does not use any locks.
 	NoReadahead = C.MDBX_NORDAHEAD // Disable readahead. Requires OS support.
 	NoMemInit   = C.MDBX_NOMEMINIT // Disable MDBX memory initialization.
-	Exclusive   = C.MDBX_EXCLUSIVE // Disable MDBX memory initialization.
+	Exclusive   = C.MDBX_EXCLUSIVE // Open the environment in exclusive/monopolistic mode.
 )
 
 const (
@@ -115,12 +115,16 @@ const (
 )
 
 const (
-	OptMaxDB                        = C.MDBX_opt_max_db
-	OptMaxReaders                   = C.MDBX_opt_max_readers
-	OptSyncBytes                    = C.MDBX_opt_sync_bytes
-	OptSyncPeriod                   = C.MDBX_opt_sync_period
-	OptRpAugmentLimit               = C.MDBX_opt_rp_augment_limit
-	OptLooseLimit                   = C.MDBX_opt_loose_limit
+	OptMaxDB          = C.MDBX_opt_max_db
+	OptMaxReaders     = C.MDBX_opt_max_readers
+	OptSyncBytes      = C.MDBX_opt_sync_bytes
+	OptSyncPeriod     = C.MDBX_opt_sync_period
+	OptRpAugmentLimit = C.MDBX_opt_rp_augment_limit
+	OptLooseLimit     = C.MDBX_opt_loose_limit
+	// OptDpReserveLimit limits dirty-page instances kept in libmdbx's reserve
+	// pool between write transactions (MDBX_opt_dp_reserve_limit).
+	OptDpReserveLimit = C.MDBX_opt_dp_reserve_limit
+	// Deprecated: misnamed alias of OptDpReserveLimit.
 	OptDpReverseLimit               = C.MDBX_opt_dp_reserve_limit
 	OptTxnDpLimit                   = C.MDBX_opt_txn_dp_limit
 	OptTxnDpInitial                 = C.MDBX_opt_txn_dp_initial
@@ -159,8 +163,8 @@ type Env struct {
 	_env  *C.MDBX_env
 	label Label
 
-	// closeLock is used to allow the Txn finalizer to check if the Env has
-	// been closed, so that it may know if it must abort.
+	// closeLock allows Txn.abort to check whether the Env has already been
+	// closed, so that it does not touch a freed MDBX_env.
 	closeLock sync.RWMutex
 
 	strictThreadCheck bool
@@ -197,32 +201,7 @@ func (env *Env) SetStrictThreadMode(mode bool) {
 	env.strictThreadCheck = mode
 }
 
-var errNotOpen = errors.New("enivornment is not open")
-
-// ReaderList dumps the contents of the reader lock table as text.  Readers
-// start on the second line as space-delimited fields described by the first
-// line.
-//
-// See mdbx_reader_list.
-// func (env *Env) ReaderList(fn func(string) error) error {
-//	ctx, done := newMsgFunc(fn)
-//	defer done()
-//	if fn == nil {
-//		ctx = 0
-//	}
-//
-//	ret := C.mdbxgo_reader_list(env._env, C.size_t(ctx))
-//	if ret >= 0 {
-//		return nil
-//	}
-//	if ret < 0 && ctx != 0 {
-//		err := ctx.get().err
-//		if err != nil {
-//			return err
-//		}
-//	}
-//	return operrno("mdbx_reader_list", ret)
-//}
+var errNotOpen = errors.New("environment is not open")
 
 // ReaderCheck clears stale entries from the reader lock table and returns the
 // number of entries cleared.
@@ -237,19 +216,27 @@ func (env *Env) ReaderCheck() (int, error) {
 	return int(r.val), nil
 }
 
-// Close shuts down the environment, releases the memory map, and clears the
-// finalizer on env.
+// Close shuts down the environment and releases the memory map. On MDBX_BUSY
+// (a write transaction is running in another thread) libmdbx keeps the handle
+// alive: Close returns the error and env stays open so the caller can retry.
+// On any other failure libmdbx has already destroyed the handle ("If any
+// other error code was returned then given MDBX_env instance has been
+// destroyed and released", mdbx.h), so env is marked closed and only the
+// error is reported. Nil if already closed.
 //
 // See mdbx_env_close.
-func (env *Env) Close() {
+func (env *Env) Close() error {
+	env.closeLock.Lock()
+	defer env.closeLock.Unlock()
 	if env._env == nil {
-		return
+		return nil
 	}
 
-	env.closeLock.Lock()
-	C.mdbx_env_close(env._env)
-	env._env = nil
-	env.closeLock.Unlock()
+	ret := C.mdbx_env_close(env._env)
+	if ret != C.MDBX_BUSY {
+		env._env = nil
+	}
+	return operrno("mdbx_env_close", ret)
 }
 
 // CopyFD copies env to the file descriptor fd.
@@ -373,21 +360,23 @@ type EnvInfo struct {
 
 // Info returns information about the environment.
 //
-// See mdbx_env_info.
-// txn - can be nil
+// txn may be nil: mdbx_env_info_ex accepts a NULL transaction and reports
+// the last committed snapshot. Passing a txn pins the report to its snapshot.
+// On an Env that was created but not yet opened, the C API reports success
+// with only a subset of fields populated (geometry, page sizes, and other
+// pre-open state; earlier versions failed because they could not begin the
+// temporary read txn).
+//
+// See mdbx_env_info_ex.
 func (env *Env) Info(txn *Txn) (*EnvInfo, error) {
-	if txn == nil {
-		var err error
-		txn, err = env.BeginTxn(nil, Readonly)
-		if err != nil {
-			return nil, err
-		}
-		defer txn.Abort()
+	var ctxn *C.MDBX_txn
+	if txn != nil {
+		ctxn = txn._txn
 	}
 	var _info C.MDBX_envinfo
-	ret := C.mdbx_env_info_ex(env._env, txn._txn, &_info, C.size_t(unsafe.Sizeof(_info)))
+	ret := C.mdbx_env_info_ex(env._env, ctxn, &_info, C.size_t(unsafe.Sizeof(_info)))
 	if ret != success {
-		return nil, operrno("mdbx_env_info", ret)
+		return nil, operrno("mdbx_env_info_ex", ret)
 	}
 	return castEnvInfo(_info), nil
 }
@@ -540,7 +529,6 @@ func (env *Env) GetSyncPeriod() (time.Duration, error) {
 func (env *Env) SetSyncBytes(threshold uint) error {
 	ret := C.mdbx_env_set_syncbytes(env._env, C.size_t(threshold))
 	return operrno("mdbx_env_set_syncbytes", ret)
-
 }
 
 func (env *Env) GetSyncBytes() (uint, error) {

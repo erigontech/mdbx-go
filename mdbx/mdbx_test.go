@@ -125,7 +125,7 @@ func TestTest1(t *testing.T) {
 	var data = map[string]string{}
 	var key string
 	var val string
-	for i := 0; i < numEntries; i++ {
+	for i := range numEntries {
 		key = fmt.Sprintf("Key-%d", i)
 		val = fmt.Sprintf("Val-%d", i)
 		data[key] = val

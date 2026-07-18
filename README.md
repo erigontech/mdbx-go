@@ -38,7 +38,7 @@ For deeper DB understanding please read through [mdbx.h](https://sourcecraft.dev
 ## Min Requirements
 
 C language Compilers compatible with GCC or CLANG (mingw 10 on windows)
-Golang: 1.24
+Golang: 1.25
 
 ## Packages
 
@@ -148,18 +148,25 @@ better if read through [mdbx.h](https://sourcecraft.dev/dqdkfa/libmdbx/blob?file
 
 ### High-Performance notices
 
-Applications with high-performance requirements can opt-in to fast, zero-copy reads at the cost of runtime safety.
-Zero-copy behavior is specified at the transaction level to reduce instrumentation overhead.
+All reads are zero-copy: `Txn.Get` and `Cursor.Get` return read-only views into the memory-mapped database file,
+valid only until the next update operation in a write transaction or until the transaction terminates. Copy the
+bytes if they must live longer.
+(There is no `RawRead` switch as in bmatsuo/lmdb-go — reads are always raw.)
 
-```
-err := mdbx.View(func(txn *mdbx.Txn) error {
-    // RawRead enables zero-copy behavior with some serious caveats.
-    // Read the documentation carefully before using.
-    txn.RawRead = true
-
-    val, err := txn.Get(dbi, []byte("largevalue"), 0)
-    // ...
-})
+```go
+if err := env.View(func(txn *mdbx.Txn) error {
+    val, err := txn.Get(dbi, []byte("largevalue"))
+    if err != nil {
+        return err
+    }
+    // val aliases the DB file and is valid until this View txn ends;
+    // copy it to keep it longer. (In a write txn, a later Put/Del also
+    // invalidates it.)
+    doSomethingWith(val)
+    return nil
+}); err != nil {
+    log.Fatal(err)
+}
 ```
 
 Use NoReadahead if Data > RAM
