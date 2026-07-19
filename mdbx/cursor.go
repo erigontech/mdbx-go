@@ -290,6 +290,8 @@ func (c *Cursor) PutReserve(key []byte, n int, flags uint) ([]byte, error) {
 	if len(key) > 0 {
 		k = (*C.char)(unsafe.Pointer(&key[0]))
 	}
+	// The helper ORs in MDBX_RESERVE itself — its result is only meaningful
+	// for a reserve put, so the flag is enforced on the C side.
 	r := C.mdbxgo_cursor_put_reserve(
 		c._c,
 		k, C.size_t(len(key)),
