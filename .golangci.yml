@@ -2,90 +2,58 @@ version: "2"
 run:
   tests: true
 linters:
+  # The default set (errcheck, govet, ineffassign, staticcheck, unused) stays
+  # on; everything below is additional. Linters tied to frameworks this module
+  # does not use (SQL, net/http, otel, slog/zerolog, testify, i18n) are left
+  # out on purpose — they can never fire here and only slow the run down.
   enable:
-    - asasalint
-    - asciicheck
-    - bidichk
-    - bodyclose
-    - durationcheck
-    - fatcontext
-    - gochecksumtype
-    - gosmopolitan
-    - loggercheck
-    - nilnesserr
-    - prealloc
-    - reassign
-    - rowserrcheck
-    - spancheck
-    - sqlclosecheck
-    - testifylint
-    - unconvert
-    - wastedassign
-    - zerologlint
-    - errorlint
-    - noctx
-    - nilerr
-    - unused
-    - makezero
-    - perfsprint
-    - gocritic
-    - copyloopvar
-    - intrange
-    - misspell
-    - nolintlint
-    - predeclared
-    - usestdlibvars
-    - mirror
-    - exptostd
-    - dupword
-    - gocheckcompilerdirectives
-    - thelper
-    - tparallel
-    - nilnil
-    - whitespace
-    - sloglint
-    - canonicalheader
-    - iface
-    - recvcheck
-    - unparam
-  disable:
-    # errname would rename the long-established public Errno constants
-    # (NotFound, KeyExist, ...) and the Errno type itself.
-    - errname
-    - contextcheck
-    - err113
-    - errchkjson
-    - exhaustive
-    - gosec
-    - musttag
-    - protogetter
-    - wrapcheck
+    # correctness / real-bug catchers
+    - asasalint # slices passed to variadic ...any
+    - bidichk # dangerous bidi unicode (trojan source)
+    - durationcheck # multiplying two time.Durations
+    - errorlint # wrong errors.Is/As, %w misuse
+    - makezero # append to a make()d slice that has a length
+    - nilerr # returning nil after a non-nil err check
+    - nilnesserr # err that is always nil / non-nil confusion
+    - reassign # reassigning package-level vars of other packages
+    - unconvert # redundant type conversions
+    - usetesting # os.Setenv/context.Background in tests, etc.
+    - wastedassign # assignments never read
+    # style / hygiene
+    - copyloopvar # obsolete Go 1.22 loop-var copies
+    - dupword # duplicated words in comments/strings
+    - gocheckcompilerdirectives # malformed //go: directives
+    - gocritic # broad opinionated correctness/perf/style set
+    - iface # redundant/unused interface methods
+    - intrange # Go 1.22 integer range loops
+    - mirror # wrong bytes/string variant of a stdlib call (allocs)
+    - misspell # misspellings in comments
+    - nilnil # returning (nil, nil)
+    - nolintlint # malformed or unused //nolint directives
+    - perfsprint # fmt.Sprintf that has a cheaper equivalent
+    - predeclared # shadowing predeclared identifiers
+    - prealloc # slices that could be preallocated
+    - recvcheck # mixed value/pointer receivers
+    - thelper # test helpers missing t.Helper()
+    - tparallel # misuse of t.Parallel()
+    - unparam # unused function parameters/results
+    - usestdlibvars # magic strings that have stdlib constants
+    - whitespace # leading/trailing newlines
   settings:
-    goconst:
-      min-len: 3
-      min-occurrences: 6
+    govet:
+      enable:
+        - nilness # nil-pointer derefs and redundant nil checks
   exclusions:
     generated: lax
     presets:
       - comments
       - common-false-positives
-      - legacy
       - std-error-handling
     rules:
       - linters:
-          - gosec
           - unparam
           - unused
         path: _test\.go
-      - linters:
-          - golint
-        text: should be
-      - linters:
-          - err113
-        text: do not define dynamic errors
-      - linters:
-          - staticcheck
-        text: (should be|should have name of the form)
     paths:
       - third_party$
       - builtin$

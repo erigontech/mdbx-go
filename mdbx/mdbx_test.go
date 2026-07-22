@@ -36,8 +36,8 @@ func TestEmptyKeysAndValues(t *testing.T) {
 			panic(err)
 		}
 		err = txn.Put(db, []byte{}, []byte{}, NoOverwrite)
-		if err == nil { // expect err: MDBX_KEYEXIST
-			panic(err)
+		if err == nil {
+			panic("expected MDBX_KEYEXIST for a duplicate empty key, got nil")
 		}
 		err = txn.Put(db, []byte{1}, []byte{}, NoOverwrite)
 		if err != nil {
@@ -249,8 +249,8 @@ func TestGetSysRamInfo(t *testing.T) {
 			panic(err)
 		}
 		err = txn.Put(db, []byte{}, []byte{}, NoOverwrite)
-		if err == nil { // expect err: MDBX_KEYEXIST
-			panic(err)
+		if err == nil {
+			panic("expected MDBX_KEYEXIST for a duplicate empty key, got nil")
 		}
 		err = txn.Put(db, []byte{1}, []byte{}, NoOverwrite)
 		if err != nil {
