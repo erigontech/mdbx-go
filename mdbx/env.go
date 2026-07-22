@@ -166,7 +166,16 @@ func NewEnv(label Label) (*Env, error) {
 }
 
 // Open an environment handle. If this function fails Close() must be called to
-// discard the Env handle.  Open passes flags|NoTLS to mdbx_env_open.
+// discard the Env handle.  Open always ORs in NoStickyThreads (formerly
+// NoTLS), so transactions are not tied to the OS thread that created them.
+//
+// WARNING: because NoStickyThreads is always set, as of libmdbx 0.14.x the
+// env functions that need the writer lock but take no txn — SetFlags,
+// SetOption, SetGeometry, Sync/SyncForce/SyncPoll, Stat/Info(nil) and Close —
+// acquire that lock when the calling goroutine does not own the in-flight
+// write transaction. Calling any of them from a goroutine that the write
+// transaction is itself waiting on will deadlock. Perform such calls from the
+// writer's own goroutine, or while no write transaction is running.
 //
 // See mdbx_env_open.
 func (env *Env) Open(path string, flags uint, mode os.FileMode) error {
