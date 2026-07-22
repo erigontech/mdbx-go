@@ -541,7 +541,8 @@ func CursorFromPool() *Cursor { return cursorPool.Get().(*Cursor) }
 // transaction; callers must Bind/Renew before use. Note cursors evicted from
 // the pool by GC leak their C allocation — Close cursors you do not re-pool.
 func CursorToPool(c *Cursor) {
-	if c._c == nil {
+	if c == nil || c._c == nil {
+		// Tolerate a nil or already-closed cursor, like sync.Pool.Put(nil).
 		return
 	}
 	// Unbind before pooling: Get no longer checks c.txn, so a pooled cursor
