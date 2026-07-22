@@ -59,7 +59,7 @@ func (b *GetBatchBuffer) at(i int) *C.MDBX_val {
 
 // Key returns the i-th key of the most recent GetBatch (i < its pair count).
 // Zero-copy view: read-only, invalid once the txn ends, the buffer is
-// refilled, or (in a write txn) a later Put/Del moves the page.
+// refilled or Closed, or (in a write txn) a later Put/Del moves the page.
 func (b *GetBatchBuffer) Key(i int) []byte { return castToBytes(b.at(2 * i)) }
 
 // Val returns the i-th value of the most recent GetBatch. See Key.
