@@ -340,7 +340,7 @@ func (txn *Txn) abort() {
 // block recycling of old MVCC snapshots. Data pointers obtained before
 // parking must not be dereferenced until unparked.
 //
-// Park returns errNotOpen if the Env has already been closed (older versions
+// Park returns an error if the Env has already been closed (older versions
 // were a silent no-op in that case).
 //
 // See mdbx_txn_park.
@@ -371,7 +371,7 @@ func (txn *Txn) Park(autounpark bool) error {
 // Unpark returns an Ousted error (IsErrno(err, Ousted)) and the handle stays
 // reusable via Renew/Abort.
 //
-// Unpark returns errNotOpen if the Env has already been closed (older
+// Unpark returns an error if the Env has already been closed (older
 // versions were a silent no-op in that case).
 //
 // See mdbx_txn_unpark.
