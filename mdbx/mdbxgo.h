@@ -75,9 +75,12 @@ mdbxgo_val_result        mdbxgo_cursor_get_val(MDBX_cursor *cur, char *kdata, si
 
 /* mdbxgo_cursor_get_batch fills pairs[0..2*max_pairs) with (key, value)
  * result pairs: the first mdbx_cursor_get step uses op_first, the rest
- * op_next. r.val holds the filled pair count; r.err is MDBX_SUCCESS when the
- * buffer was filled, MDBX_NOTFOUND when iteration was exhausted first.
- * Amortizes cgo call overhead: one Go->C call retrieves max_pairs records.
+ * op_next. r.val holds the filled pair count. r.err is MDBX_SUCCESS (or
+ * MDBX_RESULT_TRUE, e.g. a bound reposition) when the buffer filled,
+ * MDBX_NOTFOUND when iteration was exhausted first, or the failing code of a
+ * mid-batch error (in which case r.val still counts the pairs stored before
+ * it). Amortizes cgo call overhead: one Go->C call retrieves max_pairs
+ * records.
  * */
 mdbxgo_size_result       mdbxgo_cursor_get_batch(MDBX_cursor *cur, MDBX_val *pairs, size_t max_pairs, MDBX_cursor_op op_first, MDBX_cursor_op op_next);
 

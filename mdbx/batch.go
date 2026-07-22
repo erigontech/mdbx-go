@@ -109,11 +109,15 @@ func (c *Cursor) GetBatch(buf *GetBatchBuffer, opFirst, opNext uint) (n int, eof
 	)
 	n = int(r.val)
 	buf.n = n
-	if r.err == C.MDBX_NOTFOUND {
+	switch r.err {
+	case success, C.MDBX_RESULT_TRUE:
+		// RESULT_TRUE (e.g. a lower/upper-bound reposition) is success with a
+		// valid last pair, same as SUCCESS: buffer filled, not at EOF.
+		return n, false, nil
+	case C.MDBX_NOTFOUND:
 		return n, true, nil
-	}
-	if r.err != success {
+	default:
+		// A mid-batch error may still have produced the first n valid pairs.
 		return n, false, operrno("mdbx_cursor_get", r.err)
 	}
-	return n, false, nil
 }
