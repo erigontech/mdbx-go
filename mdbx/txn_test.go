@@ -2068,6 +2068,10 @@ func TestTxn_Unpark_OustedPaths(t *testing.T) {
 		}
 	}
 
+	// Readers are ousted individually, so each Unpark's outcome stands on its
+	// own: judge them separately rather than deriving one from the other.
+
+	// Unpark(false) never restarts; an ousted reader surfaces as Ousted.
 	restarted, err := noRestart.Unpark(false)
 	if err != nil && !IsErrno(err, Ousted) {
 		t.Fatalf("Unpark(false): %v", err)
@@ -2075,27 +2079,23 @@ func TestTxn_Unpark_OustedPaths(t *testing.T) {
 	if restarted {
 		t.Error("Unpark(false) must never report restarted")
 	}
-	ousted := err != nil
-
-	restarted, err = withRestart.Unpark(true)
-	if err != nil {
-		t.Fatalf("Unpark(true): %v", err)
-	}
-	if ousted {
-		// Readers are ousted individually; do not fail if only one was hit.
-		if !restarted {
-			t.Log("second parked reader was not ousted alongside the first")
-		}
-		// The no-restart handle is in the reset state; prove it is reusable.
+	oustedNoRestart := IsErrno(err, Ousted)
+	if oustedNoRestart {
+		// The handle is in the reset state; prove it is reusable via Renew.
 		if err := noRestart.Renew(); err != nil {
 			t.Errorf("Renew after Ousted: %v", err)
 		}
-	} else if restarted {
-		t.Error("Unpark(true) without oust: restarted = true, want false")
 	}
 
-	if !ousted && !restarted {
-		t.Skip("write churn did not oust the parked readers; ousted paths not exercised")
+	// Unpark(true) restarts iff this reader was ousted; both outcomes are
+	// valid and err is always nil.
+	oustedWithRestart, err := withRestart.Unpark(true)
+	if err != nil {
+		t.Fatalf("Unpark(true): %v", err)
+	}
+
+	if !oustedNoRestart && !oustedWithRestart {
+		t.Skip("write churn did not oust either parked reader; ousted paths not exercised")
 	}
 }
 
