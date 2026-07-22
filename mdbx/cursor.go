@@ -544,7 +544,16 @@ func CursorToPool(c *Cursor) {
 	if c._c == nil {
 		return
 	}
-	c.txn = nil
+	// Unbind before pooling: Get no longer checks c.txn, so a pooled cursor
+	// must also be unbound in libmdbx or it could keep reading through its
+	// previous C binding (cross-txn/cross-goroutine misuse). An unbound
+	// cursor returns EINVAL from Get until it is Bind/Renew'd. Unbind is a
+	// no-op success once the txn has ended. If it fails the cursor is
+	// unusable, so close it rather than pool a broken handle.
+	if err := c.Unbind(); err != nil {
+		c.Close()
+		return
+	}
 	cursorPool.Put(c)
 }
 
