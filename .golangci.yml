@@ -28,6 +28,7 @@ linters:
     - intrange # Go 1.22 integer range loops
     - mirror # wrong bytes/string variant of a stdlib call (allocs)
     - misspell # misspellings in comments
+    - modernize # newer stdlib idioms (min/max, slices/maps, fmt.Appendf, ...)
     - nilnil # returning (nil, nil)
     - nolintlint # malformed or unused //nolint directives
     - perfsprint # fmt.Sprintf that has a cheaper equivalent

@@ -2,6 +2,7 @@ package mdbx
 
 import (
 	"encoding/binary"
+	"slices"
 	"testing"
 )
 
@@ -484,7 +485,7 @@ func TestDistributeCursors(t *testing.T) {
 
 		var total uint64
 		if err := env.Update(func(txn *Txn) error {
-			for i := len(bounds) - 1; i >= 0; i-- {
+			for i := range slices.Backward(bounds) {
 				affected, err := deleteChunk(txn, i)
 				if err != nil {
 					return err
