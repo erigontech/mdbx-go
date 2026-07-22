@@ -74,6 +74,10 @@ const (
 	BadValSize      Errno = C.MDBX_BAD_VALSIZE
 	BadDBI          Errno = C.MDBX_BAD_DBI
 	Perm            Errno = C.MDBX_EPERM
+	// Ousted reports that a parked reader was ousted by a writer to
+	// recycle old MVCC snapshots (returned e.g. by Txn.Unpark with
+	// restartIfOusted=false, or by reads in a parked-and-ousted txn).
+	Ousted Errno = C.MDBX_OUSTED
 	// TLSFull       Errno = C.MDBX_TLS_FULL
 	// MapResized    Errno = C.MDBX_MAP_RESIZED
 )

@@ -735,10 +735,13 @@ func TestTxn_ParkUnpark(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	err = txn.Unpark(true)
+	restarted, err := txn.Unpark(true)
 	if err != nil {
 		t.Error(err)
 		return
+	}
+	if restarted {
+		t.Error("Unpark reported restarted for a parked, non-ousted txn")
 	}
 }
 
@@ -2013,6 +2016,86 @@ func TestTxn_CloneInto_Reuse(t *testing.T) {
 	}
 	if string(got) != "v" {
 		t.Errorf("target saw %q, want %q", got, "v")
+	}
+}
+
+// TestTxn_Unpark_OustedPaths exercises the two ousted outcomes of Unpark. A
+// writer only ousts parked readers when it wants to recycle their snapshot,
+// so the test churns updates to provoke it and skips if that never happens.
+func TestTxn_Unpark_OustedPaths(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		return txn.Put(db, []byte("k"), []byte("v"), 0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	begin := func() *Txn {
+		txn, err := env.BeginTxn(nil, Readonly)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := txn.Get(db, []byte("k")); err != nil {
+			txn.Abort()
+			t.Fatal(err)
+		}
+		return txn
+	}
+
+	noRestart := begin()
+	defer noRestart.Abort()
+	withRestart := begin()
+	defer withRestart.Abort()
+	for _, txn := range []*Txn{noRestart, withRestart} {
+		if err := txn.Park(false); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Churn updates so the writer needs pages pinned by the parked snapshot.
+	val := make([]byte, 4096)
+	for i := range 512 {
+		if err := env.Update(func(txn *Txn) error {
+			return txn.Put(db, []byte{byte(i), byte(i >> 8)}, val, 0)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Readers are ousted individually, so each Unpark's outcome stands on its
+	// own: judge them separately rather than deriving one from the other.
+
+	// Unpark(false) never restarts; an ousted reader surfaces as Ousted.
+	restarted, err := noRestart.Unpark(false)
+	if err != nil && !IsErrno(err, Ousted) {
+		t.Fatalf("Unpark(false): %v", err)
+	}
+	if restarted {
+		t.Error("Unpark(false) must never report restarted")
+	}
+	oustedNoRestart := IsErrno(err, Ousted)
+	if oustedNoRestart {
+		// The handle is in the reset state; prove it is reusable via Renew.
+		if err := noRestart.Renew(); err != nil {
+			t.Errorf("Renew after Ousted: %v", err)
+		}
+	}
+
+	// Unpark(true) restarts iff this reader was ousted; both outcomes are
+	// valid and err is always nil.
+	oustedWithRestart, err := withRestart.Unpark(true)
+	if err != nil {
+		t.Fatalf("Unpark(true): %v", err)
+	}
+
+	if !oustedNoRestart && !oustedWithRestart {
+		t.Skip("write churn did not oust either parked reader; ousted paths not exercised")
 	}
 }
 
