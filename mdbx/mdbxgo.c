@@ -114,7 +114,9 @@ mdbxgo_size_result mdbxgo_cursor_get_batch(MDBX_cursor *cur, MDBX_val *pairs, si
     while (r.val < max_pairs) {
         MDBX_val key = {0}, val = {0};
         r.err = mdbx_cursor_get(cur, &key, &val, op);
-        if (r.err != MDBX_SUCCESS)
+        /* MDBX_RESULT_TRUE (e.g. a lower/upper-bound reposition) is success
+         * with a valid pair, not a stop condition: store it and continue. */
+        if (r.err != MDBX_SUCCESS && r.err != MDBX_RESULT_TRUE)
             break;
         pairs[2 * r.val] = key;
         pairs[2 * r.val + 1] = val;
