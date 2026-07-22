@@ -43,6 +43,17 @@ linters:
     govet:
       enable:
         - nilness # nil-pointer derefs and redundant nil checks
+    gocritic:
+      # gocritic ships a stable default set; the diagnostic and performance
+      # check groups add real correctness/perf checks (sloppyLen, appendAssign,
+      # rangeValCopy, etc.) without the opinionated style noise.
+      enabled-tags:
+        - diagnostic # real-bug checks: dupArg, badLock, offBy1, sliceClear, ...
+      disabled-checks:
+        - uncheckedInlineErr # false-positive on `if err := f(); err != nil`
+        - sloppyReassign # cosmetic (err = vs err := on an existing var)
+        - commentedOutCode # cosmetic
+        - unnecessaryDefer # cosmetic
   exclusions:
     generated: lax
     presets:

@@ -238,9 +238,11 @@ func TestDistributeCursors(t *testing.T) {
 					return err
 				}
 				cursors := openCursors(t, txn, db, workers)
-				for _, c := range cursors {
-					defer c.Close()
-				}
+				defer func() {
+					for _, c := range cursors {
+						c.Close()
+					}
+				}()
 
 				allSet, err := DistributeCursors(first, nil, cursors, 42)
 				if err != nil {
@@ -313,9 +315,11 @@ func TestDistributeCursors(t *testing.T) {
 			}
 
 			cursors := openCursors(t, txn, db, 3)
-			for _, c := range cursors {
-				defer c.Close()
-			}
+			defer func() {
+				for _, c := range cursors {
+					c.Close()
+				}
+			}()
 			allSet, err := DistributeCursors(first, last, cursors, 42)
 			if err != nil {
 				return err
@@ -364,9 +368,11 @@ func TestDistributeCursors(t *testing.T) {
 				return err
 			}
 			cursors := openCursors(t, txn, db, 8)
-			for _, c := range cursors {
-				defer c.Close()
-			}
+			defer func() {
+				for _, c := range cursors {
+					c.Close()
+				}
+			}()
 
 			allSet, err := DistributeCursors(first, nil, cursors, 42)
 			if err != nil {
@@ -416,9 +422,11 @@ func TestDistributeCursors(t *testing.T) {
 				return err
 			}
 			cursors := openCursors(t, txn, db, workers)
-			for _, c := range cursors {
-				defer c.Close()
-			}
+			defer func() {
+				for _, c := range cursors {
+					c.Close()
+				}
+			}()
 			allSet, err := DistributeCursors(first, nil, cursors, 42)
 			if err != nil {
 				return err
