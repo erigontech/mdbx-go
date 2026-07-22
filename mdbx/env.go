@@ -40,8 +40,10 @@ const (
 	UtterlyNoSync = C.MDBX_UTTERLY_NOSYNC
 	SafeNoSync    = C.MDBX_SAFE_NOSYNC
 	Durable       = C.MDBX_SYNC_DURABLE
-	// Deprecated: use NoStickyThreads instead because now they're sharing the same functionality
-	NoTLS           = C.MDBX_NOTLS           // Danger zone. When unset reader locktable slots are tied to their thread.
+	// Deprecated: use NoStickyThreads instead. libmdbx removed the MDBX_NOTLS
+	// alias (superseded by MDBX_NOSTICKYTHREADS since 0.13), so this now maps
+	// to the same flag value and keeps existing callers compiling.
+	NoTLS           = C.MDBX_NOSTICKYTHREADS // Danger zone. When unset reader locktable slots are tied to their thread.
 	NoStickyThreads = C.MDBX_NOSTICKYTHREADS // Danger zone. Like MDBX_NOTLS. But also allow move RwTx between threads. Still require to call Begin/Rollback in same thread.
 	// NoLock      = C.MDBX_NOLOCK     // Danger zone. MDBX does not use any locks.
 	NoReadahead = C.MDBX_NORDAHEAD // Disable readahead. Requires OS support.
