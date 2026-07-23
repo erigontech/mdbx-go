@@ -147,18 +147,18 @@ func (c *Cursor) Unbind() error {
 	return nil
 }
 
-// Close the cursor handle and clear the finalizer on c.  Cursors belonging to
-// write transactions are closed automatically when the transaction is
-// terminated.
+// Close the cursor handle and free its underlying libmdbx cursor.
 //
-// See mdb_cursor_close.
+// Unlike LMDB, libmdbx never frees a cursor when its transaction ends: the end
+// of a write transaction only marks its cursors reusable, it does not release
+// their memory. Close must therefore always call mdbx_cursor_close (which is
+// safe before or after the transaction ends); the earlier skip-when-write-txn-
+// ended branch leaked the C cursor allocation. No-op if already closed.
+//
+// See mdbx_cursor_close.
 func (c *Cursor) Close() {
 	if c._c != nil {
-		if c.txn._txn == nil && !c.txn.readonly {
-			// the cursor has already been released by MDBX.
-		} else {
-			C.mdbx_cursor_close(c._c)
-		}
+		C.mdbx_cursor_close(c._c)
 		c.txn = nil
 		c._c = nil
 	}
