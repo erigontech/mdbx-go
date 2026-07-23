@@ -118,6 +118,20 @@ mdbxgo_val_result mdbxgo_cursor_get_val(MDBX_cursor *cur, char *kdata, size_t kn
 //   return likely(diff_data) ? diff_data : diff_len;
 // }
 
+/* mdbxgo_cursor_put_reserve performs an MDBX_RESERVE put and returns the
+ * reserved buffer by value, so the Go side needs no MDBX_val out-parameter
+ * (and thus no per-Txn scratch field). */
+mdbxgo_val_result mdbxgo_cursor_put_reserve(MDBX_cursor *cur, char *kdata, size_t kn, size_t vn, MDBX_put_flags_t flags) {
+    mdbxgo_val_result r = {0};
+    MDBX_val key, val;
+    MDBXGO_SET_VAL(&key, kn, kdata);
+    MDBXGO_SET_VAL(&val, vn, 0);
+    r.err = mdbx_cursor_put(cur, &key, &val, flags | MDBX_RESERVE);
+    r.vbase = val.iov_base;
+    r.vlen = val.iov_len;
+    return r;
+}
+
 mdbxgo_size_result mdbxgo_cursor_count(MDBX_cursor *cur) {
     mdbxgo_size_result r = {0};
     r.err = mdbx_cursor_count(cur, &r.val);
