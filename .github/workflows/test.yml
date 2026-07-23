@@ -1,5 +1,10 @@
 name: Test
 on: [ push ]
+
+# Least-privilege token: the test jobs only read the checkout.
+permissions:
+  contents: read
+
 jobs:
 
   test:
@@ -10,6 +15,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version: '1.25'
@@ -36,6 +43,8 @@ jobs:
           choco upgrade mingw -y --no-progress --version 13.2.0 --allow-downgrade
 
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version: '1.25'

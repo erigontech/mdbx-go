@@ -8,6 +8,9 @@ on:
   schedule:
     - cron: "13 14 * * 1"
 
+# Deny by default; the analyze job elevates to exactly what CodeQL needs.
+permissions: {}
+
 jobs:
   analyze:
     name: Analyze
@@ -24,6 +27,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: github/codeql-action/init@v4
         with:
