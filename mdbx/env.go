@@ -40,8 +40,10 @@ const (
 	UtterlyNoSync = C.MDBX_UTTERLY_NOSYNC
 	SafeNoSync    = C.MDBX_SAFE_NOSYNC
 	Durable       = C.MDBX_SYNC_DURABLE
-	// Deprecated: use NoStickyThreads instead because now they're sharing the same functionality
-	NoTLS           = C.MDBX_NOTLS           // Danger zone. When unset reader locktable slots are tied to their thread.
+	// Deprecated: use NoStickyThreads instead. libmdbx removed the MDBX_NOTLS
+	// alias (superseded by MDBX_NOSTICKYTHREADS since 0.13), so this now maps
+	// to the same flag value and keeps existing callers compiling.
+	NoTLS           = C.MDBX_NOSTICKYTHREADS // Danger zone. When unset reader locktable slots are tied to their thread.
 	NoStickyThreads = C.MDBX_NOSTICKYTHREADS // Danger zone. Like MDBX_NOTLS. But also allow move RwTx between threads. Still require to call Begin/Rollback in same thread.
 	// NoLock      = C.MDBX_NOLOCK     // Danger zone. MDBX does not use any locks.
 	NoReadahead = C.MDBX_NORDAHEAD // Disable readahead. Requires OS support.
@@ -164,7 +166,16 @@ func NewEnv(label Label) (*Env, error) {
 }
 
 // Open an environment handle. If this function fails Close() must be called to
-// discard the Env handle.  Open passes flags|NoTLS to mdbx_env_open.
+// discard the Env handle.  Open always ORs in NoStickyThreads (formerly
+// NoTLS), so transactions are not tied to the OS thread that created them.
+//
+// WARNING: because NoStickyThreads is always set, as of libmdbx 0.14.x the
+// env functions that need the writer lock but take no txn — SetFlags,
+// SetOption, SetGeometry, Sync/SyncForce/SyncPoll, Stat/Info(nil) and Close —
+// acquire that lock when the calling goroutine does not own the in-flight
+// write transaction. Calling any of them from a goroutine that the write
+// transaction is itself waiting on will deadlock. Perform such calls from the
+// writer's own goroutine, or while no write transaction is running.
 //
 // See mdbx_env_open.
 func (env *Env) Open(path string, flags uint, mode os.FileMode) error {

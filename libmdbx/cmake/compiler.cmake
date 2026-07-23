@@ -354,8 +354,10 @@ endif()
 
 if(MSVC)
   check_compiler_flag("/WX" CC_HAS_WERROR)
+  check_compiler_flag("/Oy" CC_HAS_Oy_Omit_Frame_Pointers)
   check_compiler_flag("/fsanitize=address" CC_HAS_ASAN)
   check_compiler_flag("/fsanitize=undefined" CC_HAS_UBSAN)
+  check_compiler_flag("/forceInterlockedFunctions" CC_HAS_FORCE_INTERLOCKED_CALL)
 else()
   #
   # GCC started to warn for unused result starting from 4.2, and this is when it introduced -Wno-unused-result GCC can
@@ -659,9 +661,8 @@ if(CMAKE_COMPILER_IS_CLANG)
     endif()
 
     unset(clang_lto_plugin_name)
-    unset(clang_libdir)
-    unset(clang_bindir_valid)
-    unset(clang_bindir)
+    unset(clang_libdirs)
+    unset(clang_bindirs)
     unset(clang_search_dirs)
   endif()
 
@@ -817,7 +818,7 @@ macro(setup_compile_flags)
     # checks for /EHa or /clr options exists, i.e. is enabled structured async WinNT exceptions
     string(REGEX MATCH "^(.* )*[-/]EHc*a( .*)*$" msvc_async_eh_enabled "${CXX_FLAGS}" "${C_FLAGS}")
     string(REGEX MATCH "^(.* )*[-/]clr( .*)*$" msvc_clr_enabled "${CXX_FLAGS}" "${C_FLAGS}")
-    # remote any /EH? options
+    # remove any /EH? options
     string(REGEX REPLACE "( *[-/]-*EH[csa]+ *)+" "" CXX_FLAGS "${CXX_FLAGS}")
     string(REGEX REPLACE "( *[-/]-*EH[csa]+ *)+" "" C_FLAGS "${C_FLAGS}")
     if(msvc_clr_enabled STREQUAL "")
@@ -968,7 +969,7 @@ macro(setup_compile_flags)
 
   if(CMAKE_COMPILER_IS_GNUCC AND LTO_ENABLED)
     add_compile_flags("C;CXX" ${GCC_LTO_CFLAGS})
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5)
+    if(CMAKE_${CMAKE_PRIMARY_LANG}_COMPILER_VERSION VERSION_LESS 5)
       # Pass the same optimization flags to the linker
       set(compile_flags "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE_UPPERCASE}}")
       set(EXE_LINKER_FLAGS "${EXE_LINKER_FLAGS} ${compile_flags}")
@@ -1044,7 +1045,7 @@ macro(setup_compile_flags)
     endif()
     add_compile_flags("C;CXX" ${CLANG_LTO_FLAG})
     if(NOT MSVC)
-      set(EXE_LINKER_FLAGS "${EXE_LINKER_FLAGS} ${CLANG_LTO_FLAG} -fverbose-asm -fwhole-program")
+      set(EXE_LINKER_FLAGS "${EXE_LINKER_FLAGS} ${CLANG_LTO_FLAG} -fverbose-asm")
       set(SHARED_LINKER_FLAGS "${SHARED_LINKER_FLAGS} ${CLANG_LTO_FLAG} -fverbose-asm")
       set(MODULE_LINKER_FLAGS "${MODULE_LINKER_FLAGS} ${CLANG_LTO_FLAG} -fverbose-asm")
     endif()

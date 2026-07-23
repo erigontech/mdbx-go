@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.2-0-g530d0265 at 2026-05-14T21:14:59+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.2-321-gfa8aef44 at 2026-07-18T04:21:04+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -305,7 +305,7 @@ MDBX_MAYBE_UNUSED static inline void poke_pgno(void *const __restrict ptr, const
     memcpy(ptr, &pgno, sizeof(pgno));
 }
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 
 typedef union osal_srwlock {
   __anonymous_struct_extension__ struct {
@@ -540,6 +540,7 @@ enum dbi_state {
   DBI_FRESH = 0x04 /* table handle opened in this txn */,
   DBI_CREAT = 0x08 /* table handle created in this txn */,
   DBI_VALID = 0x10 /* Handle is valid, see also DB_VALID */,
+  DBI_SLAIN = 0x20 /* Handle and corresponding table are dropped but not committed yet */,
   DBI_OLDEN = 0x40 /* Handle was closed/reopened outside txn */,
   DBI_LINDO = 0x80 /* Lazy initialization done for DBI-slot */,
 };
@@ -565,7 +566,7 @@ struct MDBX_txn {
   int32_t signature;
   uint32_t flags; /* Transaction Flags */
   size_t n_dbi;
-  size_t owner; /* thread ID that owns this transaction */
+  uintptr_t owner; /* thread ID that owns this transaction */
 
   MDBX_txn *parent; /* parent of a nested txn */
   MDBX_txn *nested; /* nested txn under this txn,
@@ -756,7 +757,10 @@ enum env_flags {
                          DEPRECATED_COALESCE | MDBX_PAGEPERTURB | MDBX_ACCEDE | MDBX_VALIDATION,
   ENV_CHANGELESS_FLAGS = MDBX_NOSUBDIR | MDBX_RDONLY | MDBX_WRITEMAP | MDBX_NOSTICKYTHREADS | MDBX_NORDAHEAD |
                          MDBX_LIFORECLAIM | MDBX_EXCLUSIVE,
-  ENV_USABLE_FLAGS = ENV_CHANGEABLE_FLAGS | ENV_CHANGELESS_FLAGS
+  ENV_USABLE_FLAGS = ENV_CHANGEABLE_FLAGS | ENV_CHANGELESS_FLAGS,
+  /* A flag for checking any non-synchronous mode. The MDBX_SAFE_NOSYNC bit is sufficient here,
+   * since it is included in MDBX_UTTERLY_NOSYNC. */
+  ENV_UNSYNC = MDBX_SAFE_NOSYNC
 };
 
 /* The database environment. */
@@ -768,7 +772,7 @@ struct MDBX_env {
   osal_mmap_t dxb_mmap; /* The main data file */
 #define lazy_fd dxb_mmap.fd
   mdbx_filehandle_t dsync_fd, fd4meta;
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
   HANDLE dxb_lock_event;
   HANDLE lck_lock_event;
 #endif                  /* Windows */
@@ -817,7 +821,7 @@ struct MDBX_env {
     uint8_t spill_parent4child_denominator;
     uint16_t merge_threshold_dot16;
     uint16_t split_reserve_dot16;
-#if !(defined(_WIN32) || defined(_WIN64))
+#if !IS_WINDOWS
     unsigned writethrough_threshold;
 #endif /* Windows */
     bool prefault_write;
@@ -895,7 +899,7 @@ struct MDBX_env {
 
   osal_ioring_t ioring;
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
   osal_srwlock_t remap_lock;
   /* Workaround for LockFileEx and WriteFile multithread bug */
   CRITICAL_SECTION lck_event_cs;
@@ -1386,7 +1390,7 @@ __cold void error::throw_exception() const {
     CASE_EXCEPTION(thread_mismatch, MDBX_THREAD_MISMATCH);
     CASE_EXCEPTION(transaction_full, MDBX_TXN_FULL);
     CASE_EXCEPTION(transaction_overlapping, MDBX_TXN_OVERLAPPING);
-    CASE_EXCEPTION(duplicated_lck_file, MDBX_DUPLICATED_CLK);
+    CASE_EXCEPTION(duplicated_lck_file, MDBX_DUPLICATED_LCK);
     CASE_EXCEPTION(dangling_map_id, MDBX_DANGLING_DBI);
     CASE_EXCEPTION(transaction_ousted, MDBX_OUSTED);
     CASE_EXCEPTION(mvcc_retarded, MDBX_MVCC_RETARDED);
@@ -1426,7 +1430,7 @@ bool slice::is_printable(bool disable_utf8) const noexcept {
     EE = 3 << LS | r80_BF, // U+00E000..U+00FFFF | EE..EF | 80..BF | 80..BF |
     F0 = 4 << LS | r90_BF, // U+010000..U+03FFFF | F0     | 90..BF | 80..BF |...
     F1 = 4 << LS | r80_BF, // U+040000..U+0FFFFF | F1..F3 | 80..BF | 80..BF |...
-    F4 = 4 << LS | r80_BF, // U+100000..U+10FFFF | F4     | 80..8F | 80..BF |...
+    F4 = 4 << LS | r80_8F, // U+100000..U+10FFFF | F4     | 80..8F | 80..BF |...
   };
 
   static const byte range_from[] = {0x80, 0xA0, 0x80, 0x90, 0x80};
@@ -1483,7 +1487,7 @@ bool slice::is_printable(bool disable_utf8) const noexcept {
       src += 2;
       continue;
     case 3:
-      if (MDBX_UNLIKELY(src + 3 >= end))
+      if (MDBX_UNLIKELY(src + 2 >= end))
         MDBX_CXX20_UNLIKELY return false;
       if (MDBX_UNLIKELY(src[1] < second_from || src[1] > second_to))
         MDBX_CXX20_UNLIKELY return false;
@@ -1492,7 +1496,7 @@ bool slice::is_printable(bool disable_utf8) const noexcept {
       src += 3;
       continue;
     case 4:
-      if (MDBX_UNLIKELY(src + 4 >= end))
+      if (MDBX_UNLIKELY(src + 3 >= end))
         MDBX_CXX20_UNLIKELY return false;
       if (MDBX_UNLIKELY(src[1] < second_from || src[1] > second_to))
         MDBX_CXX20_UNLIKELY return false;
@@ -1575,7 +1579,7 @@ MDBX_I128_TYPE slice::as_int128_adapt() const {
 int64_t slice::as_int64_adapt() const {
   static_assert(sizeof(int64_t) == 8, "WTF?");
   if (size() == 8) {
-    uint64_t r;
+    int64_t r;
     memcpy(&r, data(), sizeof(r));
     return r;
   } else
@@ -1619,7 +1623,7 @@ char *to_hex::write_bytes(char *__restrict const dest, size_t dest_size) const {
 
   auto ptr = dest;
   auto src = source.byte_ptr();
-  const char alpha_shift = (uppercase ? 'A' : 'a') - '9' - 1;
+  const char alpha_offset = (uppercase ? 'A' : 'a') - '9' - 1;
   auto line = ptr;
   for (const auto end = source.end_byte_ptr(); src != end; ++src) {
     if (wrap_width && size_t(ptr - line) >= wrap_width) {
@@ -1628,8 +1632,8 @@ char *to_hex::write_bytes(char *__restrict const dest, size_t dest_size) const {
     }
     const int8_t hi = *src >> 4;
     const int8_t lo = *src & 15;
-    ptr[0] = char('0' + hi + (((9 - hi) >> 7) & alpha_shift));
-    ptr[1] = char('0' + lo + (((9 - lo) >> 7) & alpha_shift));
+    ptr[0] = char('0' + hi + (((9 - hi) >> 7) & alpha_offset));
+    ptr[1] = char('0' + lo + (((9 - lo) >> 7) & alpha_offset));
     ptr += 2;
     ASSERT(ptr <= dest + dest_size);
   }
@@ -1641,7 +1645,7 @@ char *to_hex::write_bytes(char *__restrict const dest, size_t dest_size) const {
     MDBX_CXX20_LIKELY {
       ::std::ostream::sentry sentry(out);
       auto src = source.byte_ptr();
-      const char alpha_shift = (uppercase ? 'A' : 'a') - '9' - 1;
+      const char alpha_offset = (uppercase ? 'A' : 'a') - '9' - 1;
       unsigned width = 0;
       for (const auto end = source.end_byte_ptr(); src != end; ++src) {
         if (wrap_width && width >= wrap_width) {
@@ -1650,8 +1654,8 @@ char *to_hex::write_bytes(char *__restrict const dest, size_t dest_size) const {
         }
         const int8_t hi = *src >> 4;
         const int8_t lo = *src & 15;
-        out.put(char('0' + hi + (((9 - hi) >> 7) & alpha_shift)));
-        out.put(char('0' + lo + (((9 - lo) >> 7) & alpha_shift)));
+        out.put(char('0' + hi + (((9 - hi) >> 7) & alpha_offset)));
+        out.put(char('0' + lo + (((9 - lo) >> 7) & alpha_offset)));
         width += 2;
       }
     }
@@ -1920,12 +1924,11 @@ char *from_base58::write_bytes(char *__restrict const dest, size_t dest_size) co
   auto ptr = dest;
   auto begin = source.byte_ptr();
   auto const end = source.end_byte_ptr();
-  while (begin < end && *begin <= '1') {
+  while (begin < end && *begin <= /* '0' and other chars less are invalid here */ '1') {
     if (MDBX_LIKELY(*begin == '1'))
       MDBX_CXX20_LIKELY *ptr++ = 0;
     else if (MDBX_UNLIKELY(!ignore_spaces || !isspace(*begin)))
-      MDBX_CXX20_UNLIKELY
-    throw std::domain_error("mdbx::from_base58:: invalid base58 string");
+      MDBX_CXX20_UNLIKELY throw std::domain_error("mdbx::from_base58:: invalid base58 string");
     ++begin;
   }
 
@@ -2076,7 +2079,7 @@ char *from_base64::write_bytes(char *__restrict const dest, size_t dest_size) co
       continue;
     }
 
-    if (MDBX_UNLIKELY(left < 3))
+    if (MDBX_UNLIKELY(left < 4))
       MDBX_CXX20_UNLIKELY {
       bailout:
         throw std::domain_error("mdbx::from_base64:: invalid base64 string");
@@ -2116,8 +2119,8 @@ bool from_base64::is_erroneous() const noexcept {
       continue;
     }
 
-    if (MDBX_UNLIKELY(left < 3))
-      MDBX_CXX20_UNLIKELY return false;
+    if (MDBX_UNLIKELY(left < 4))
+      MDBX_CXX20_UNLIKELY return true;
     const signed char a = b64_map[src[0]], b = b64_map[src[1]], c = b64_map[src[2]], d = b64_map[src[3]];
     if (MDBX_UNLIKELY((a | b | c | d) < 0))
       MDBX_CXX20_UNLIKELY {
@@ -2195,8 +2198,6 @@ __cold MDBX_env_flags_t env::operate_parameters::make_flags(bool accede, bool us
   if (mode != readonly) {
     if (options.nested_transactions)
       flags &= ~MDBX_WRITEMAP;
-    if (reclaiming.coalesce)
-      flags |= MDBX_COALESCE;
     if (reclaiming.lifo)
       flags |= MDBX_LIFORECLAIM;
     switch (durability) {
@@ -2208,7 +2209,6 @@ __cold MDBX_env_flags_t env::operate_parameters::make_flags(bool accede, bool us
       flags |= MDBX_NOMETASYNC;
       break;
     case env::durability::lazy_weak_tail:
-      static_assert(MDBX_MAPASYNC == MDBX_SAFE_NOSYNC, "WTF? Obsolete C API?");
       flags |= MDBX_SAFE_NOSYNC;
       break;
     case env::durability::whole_fragile:
@@ -2236,7 +2236,7 @@ env::durability env::operate_parameters::durability_from_flags(MDBX_env_flags_t 
 }
 
 env::reclaiming_options::reclaiming_options(MDBX_env_flags_t flags) noexcept
-    : lifo((flags & MDBX_LIFORECLAIM) ? true : false), coalesce((flags & MDBX_COALESCE) ? true : false) {}
+    : lifo((flags & MDBX_LIFORECLAIM) ? true : false) {}
 
 env::operate_options::operate_options(MDBX_env_flags_t flags) noexcept
     : no_sticky_threads(((flags & (MDBX_NOSTICKYTHREADS | MDBX_EXCLUSIVE)) == MDBX_NOSTICKYTHREADS) ? true : false),
@@ -2266,7 +2266,7 @@ __cold env &env::copy(const ::std::string &destination, bool compactify, bool fo
   return copy(destination.c_str(), compactify, force_dynamic_size);
 }
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 __cold env &env::copy(const wchar_t *destination, bool compactify, bool force_dynamic_size) {
   error::success_or_throw(::mdbx_env_copyW(handle_, destination,
                                            (compactify ? MDBX_CP_COMPACT : MDBX_CP_DEFAULTS) |
@@ -2286,7 +2286,7 @@ __cold env &env::copy(const MDBX_STD_FILESYSTEM_PATH &destination, bool compacti
 #endif /* MDBX_STD_FILESYSTEM_PATH */
 
 __cold const mdbx::path_char *env::get_path() const {
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
   const wchar_t *c_wstr = nullptr;
   error::success_or_throw(::mdbx_env_get_pathW(handle_, &c_wstr));
   static_assert(sizeof(path::value_type) == sizeof(wchar_t), "Oops");
@@ -2307,7 +2307,7 @@ __cold bool env::remove(const ::std::string &pathname, const remove_mode mode) {
   return remove(pathname.c_str(), mode);
 }
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 __cold bool env::remove(const wchar_t *pathname, const remove_mode mode) {
   return !error::boolean_or_throw(::mdbx_env_deleteW(pathname, MDBX_env_delete_mode_t(mode)));
 }
@@ -2332,11 +2332,12 @@ static inline MDBX_env *create_env() {
   return ptr;
 }
 
-env_managed &env_managed::operator=(env_managed &&other) {
+env_managed &env_managed::operator=(env_managed &&other) noexcept {
   if (this != &other) {
     if (MDBX_UNLIKELY(handle_))
       MDBX_CXX20_UNLIKELY {
         assert(handle_ != other.handle_);
+        /* coverity[UNCAUGHT_EXCEPT] */
         close();
       }
     inherited::operator=(std::move(other));
@@ -2398,7 +2399,7 @@ __cold env_managed::env_managed(const ::std::string &pathname, const env_managed
                                 const env::operate_parameters &op, bool accede)
     : env_managed(pathname.c_str(), cp, op, accede) {}
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 __cold env_managed::env_managed(const wchar_t *pathname, const operate_parameters &op, bool accede)
     : env_managed(create_env()) {
   setup(op.max_maps, op.max_readers);
@@ -2450,11 +2451,12 @@ cursor_managed cursor::clone(void *your_context) const {
   return clone;
 }
 
-cursor_managed &cursor_managed::operator=(cursor_managed &&other) {
+cursor_managed &cursor_managed::operator=(cursor_managed &&other) noexcept {
   if (this != &other) {
     if (MDBX_UNLIKELY(handle_))
       MDBX_CXX20_UNLIKELY {
         assert(handle_ != other.handle_);
+        /* coverity[UNCAUGHT_EXCEPT] */
         close();
       }
     inherited::operator=(std::move(other));
@@ -2481,11 +2483,12 @@ txn_managed txn::start_nested(bool readonly) {
   return txn_managed(nested);
 }
 
-txn_managed &txn_managed::operator=(txn_managed &&other) {
+txn_managed &txn_managed::operator=(txn_managed &&other) noexcept {
   if (this != &other) {
     if (MDBX_UNLIKELY(handle_))
       MDBX_CXX20_UNLIKELY {
         assert(handle_ != other.handle_);
+        /* coverity[UNCAUGHT_EXCEPT] */
         abort();
       }
     inherited::operator=(std::move(other));
@@ -2510,6 +2513,7 @@ void txn_managed::commit_embark_read() { commit_embark_read(nullptr); }
 void txn_managed::abort(finalization_latency *latency) {
   const error err = static_cast<MDBX_error_t>(::mdbx_txn_abort_ex(handle_, latency));
   if (MDBX_LIKELY(err.code() != MDBX_THREAD_MISMATCH))
+    /* do not reset the handle in case of errors that do not change the transaction state. */
     MDBX_CXX20_LIKELY handle_ = nullptr;
   if (MDBX_UNLIKELY(err.code() != MDBX_SUCCESS))
     MDBX_CXX20_UNLIKELY err.throw_exception();
@@ -2518,6 +2522,7 @@ void txn_managed::abort(finalization_latency *latency) {
 void txn_managed::commit(finalization_latency *latency) {
   const error err = static_cast<MDBX_error_t>(::mdbx_txn_commit_ex(handle_, latency));
   if (MDBX_LIKELY(err.code() != MDBX_THREAD_MISMATCH))
+    /* do not reset the handle in case of errors that do not change the transaction state. */
     MDBX_CXX20_LIKELY handle_ = nullptr;
   if (MDBX_UNLIKELY(err.code() != MDBX_SUCCESS))
     MDBX_CXX20_UNLIKELY err.throw_exception();
@@ -2527,6 +2532,8 @@ bool txn_managed::checkpoint(finalization_latency *latency) {
   const error err = static_cast<MDBX_error_t>(::mdbx_txn_checkpoint(handle_, MDBX_TXN_NOWEAKING, latency));
   if (MDBX_UNLIKELY(err.is_failure())) {
     if (err.code() != MDBX_THREAD_MISMATCH && err.code() != MDBX_EINVAL)
+      /* do not reset the handle in case of errors that do not change the transaction state,
+       * including MDBX_EINVAL here. */
       handle_ = nullptr;
     MDBX_CXX20_UNLIKELY err.throw_exception();
   }
@@ -2656,7 +2663,7 @@ void cursor::update_current(const slice &value) {
   default_buffer holder;
   auto key = current().key;
   if (error::boolean_or_throw(mdbx_is_dirty(handle_->txn, key.iov_base)))
-    key = holder.assign(key);
+    key = holder.assign(key).slice();
 
   update(key, value);
 }
@@ -2665,7 +2672,7 @@ slice cursor::reverse_current(size_t value_length) {
   default_buffer holder;
   auto key = current().key;
   if (error::boolean_or_throw(mdbx_is_dirty(handle_->txn, key.iov_base)))
-    key = holder.assign(key);
+    key = holder.assign(key).slice();
 
   return update_reserve(key, value_length);
 }
@@ -2791,10 +2798,7 @@ __cold ::std::ostream &operator<<(::std::ostream &out, const env::durability &it
 }
 
 __cold ::std::ostream &operator<<(::std::ostream &out, const env::reclaiming_options &it) {
-  return out << "{"                                            //
-             << "lifo: " << (it.lifo ? "yes" : "no")           //
-             << ", coalesce: " << (it.coalesce ? "yes" : "no") //
-             << "}";
+  return out << "{" << "lifo: " << (it.lifo ? "yes" : "no") << "}";
 }
 
 __cold ::std::ostream &operator<<(::std::ostream &out, const env::operate_options &it) {

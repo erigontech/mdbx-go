@@ -1,4 +1,4 @@
-﻿/// This file is part of the libmdbx amalgamated source code (v0.14.2-0-g530d0265 at 2026-05-14T21:14:59+03:00).
+﻿/// This file is part of the libmdbx amalgamated source code (v0.14.2-320-g5fd57ae5 at 2026-07-18T03:55:39+03:00).
 /// \file mdbx.h++
 /// \brief The libmdbx C++ API header file.
 ///
@@ -54,7 +54,7 @@
 #endif /* MSVC is mad and don't define __cplusplus properly */
 #endif /* __cplusplus < 201103L */
 
-#if (defined(_WIN32) || defined(_WIN64)) && MDBX_WITHOUT_MSVC_CRT
+#if (defined(_WIN32) || defined(_WIN64)) && MDBX_WITHOUT_MSVC_CRT && !defined(__CODEGEARC__)
 #error "CRT is required for C++ API, the MDBX_WITHOUT_MSVC_CRT option must be disabled"
 #endif /* Windows */
 
@@ -847,6 +847,12 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
   }
 #endif /* __cpp_lib_string_view >= 201606L */
 
+  MDBX_CXX20_CONSTEXPR void swap(slice &other) noexcept {
+    auto temp = other;
+    other = *this;
+    *this = temp;
+  }
+
   /// \brief Returns casted to pointer to byte an address of data.
   MDBX_CXX11_CONSTEXPR const byte *byte_ptr() const noexcept;
   MDBX_CXX11_CONSTEXPR byte *byte_ptr() noexcept;
@@ -1066,7 +1072,7 @@ struct pair {
   MDBX_CXX11_CONSTEXPR operator stl_pair() const noexcept { return stl_pair(key, value); }
   pair(const pair &) noexcept = default;
   pair &operator=(const pair &) noexcept = default;
-  pair &operator=(pair &&couple) {
+  pair &operator=(pair &&couple) noexcept {
     key.assign(std::move(couple.key));
     value.assign(std::move(couple.value));
     return *this;
@@ -1411,15 +1417,16 @@ struct move_assign_alloc;
 template <typename T, typename A> struct move_assign_alloc<T, A, false> {
   static constexpr bool is_nothrow() noexcept { return allocator_is_always_equal<A>(); }
   static MDBX_CXX20_CONSTEXPR bool is_moveable(T *target, T &source) noexcept {
-    return allocator_is_always_equal<A>() || target->get_allocator() == source.get_allocator();
+    if MDBX_IF_CONSTEXPR (allocator_is_always_equal<A>())
+      return true;
+    else
+      return target->get_allocator() == source.get_allocator();
   }
   static MDBX_CXX20_CONSTEXPR void propagate(T *, T &) noexcept {}
 };
 
 template <typename T, typename A> struct move_assign_alloc<T, A, true> {
-  static constexpr bool is_nothrow() noexcept {
-    return allocator_is_always_equal<A>() || ::std::is_nothrow_move_assignable<A>::value;
-  }
+  static constexpr bool is_nothrow() noexcept { return ::std::is_nothrow_move_assignable<A>::value; }
   static constexpr bool is_moveable(T *, T &) noexcept { return true; }
   static MDBX_CXX20_CONSTEXPR void propagate(T *target, T &source) noexcept {
     target->get_allocator() = ::std::move(source.get_allocator());
@@ -1479,10 +1486,9 @@ template <typename T, typename A> struct swap_alloc<T, A, true> {
            (::std::is_nothrow_move_constructible<A>::value && ::std::is_nothrow_move_assignable<A>::value);
   }
   static MDBX_CXX20_CONSTEXPR void propagate(T &left, T &right) noexcept(is_nothrow()) {
-    if MDBX_IF_CONSTEXPR (!allocator_is_always_equal<A>()) {
-      if (MDBX_UNLIKELY(left.get_allocator() != right.get_allocator()))
-        MDBX_CXX20_UNLIKELY ::std::swap(left.get_allocator(), right.get_allocator());
-    } else {
+    if MDBX_IF_CONSTEXPR (!allocator_is_always_equal<A>())
+      MDBX_CXX20_UNLIKELY ::std::swap(left.get_allocator(), right.get_allocator());
+    else {
       /* gag for buggy compilers */
       (void)left;
       (void)right;
@@ -1502,7 +1508,6 @@ struct default_capacity_policy {
 
   static MDBX_CXX11_CONSTEXPR size_t round(const size_t value) {
     static_assert((pettiness_threshold & (pettiness_threshold - 1)) == 0, "pettiness_threshold must be a power of 2");
-    static_assert(pettiness_threshold % 2 == 0, "pettiness_threshold must be even");
     static_assert(pettiness_threshold >= sizeof(uint64_t), "pettiness_threshold must be > 7");
     constexpr const auto pettiness_mask = ~size_t(pettiness_threshold - 1);
     return (value + pettiness_threshold - 1) & pettiness_mask;
@@ -1555,6 +1560,9 @@ public:
             : size_t(reservation_policy::inplace_storage_size_rounding),
     pettiness_threshold = reservation_policy::pettiness_threshold
   };
+
+  /// \brief Data storage modality.
+  enum class modality { reference, inplace, allocated };
 
 private:
   friend class txn;
@@ -1632,7 +1640,7 @@ private:
       struct inplace_flag_holder {
         byte buffer_[inplace_size - sizeof(byte)];
         byte lastbyte_;
-        MDBX_CXX11_CONSTEXPR inplace_flag_holder(byte signature) : lastbyte_(signature) {};
+        MDBX_CXX11_CONSTEXPR inplace_flag_holder(byte signature) : buffer_(), lastbyte_(signature) {}
       };
 
       allocator_pointer allocated_ptr_;
@@ -1648,14 +1656,14 @@ private:
         return capacity_bytes <= inplace_capacity();
       }
 
-      constexpr bool is_inplace() const noexcept {
+      MDBX_NOTHROW_PURE_FUNCTION constexpr bool is_inplace() const noexcept {
         static_assert(size_t(inplace_signature_limit) > size_t(max_capacity), "WTF?");
         static_assert(std::numeric_limits<size_t>::max() - (std::numeric_limits<size_t>::max() >> CHAR_BIT) ==
                           inplace_signature_limit,
                       "WTF?");
         return inplace_.lastbyte_ == lastbyte_inplace_signature;
       }
-      constexpr bool is_allocated() const noexcept { return !is_inplace(); }
+      MDBX_NOTHROW_PURE_FUNCTION constexpr bool is_allocated() const noexcept { return !is_inplace(); }
 
       template <bool destroy_ptr> MDBX_CXX17_CONSTEXPR byte *make_inplace() noexcept {
         if (destroy_ptr) {
@@ -1832,46 +1840,44 @@ private:
       }
     }
 
-    MDBX_CXX17_CONSTEXPR bool move(silo &&other) noexcept {
-      if (other.bin_.is_inplace()) {
+    MDBX_CXX17_CONSTEXPR bool move_content(silo &other, const modality other_modality) noexcept {
+      switch (other_modality) {
+      case modality::inplace:
         memcpy(&bin_, &other.bin_, sizeof(bin));
         MDBX_CONSTEXPR_ASSERT(bin_.is_inplace());
         return /* buffer's slice fixup is needed */ true;
+      case modality::allocated:
+        new (&bin_.allocated_ptr_) allocator_pointer(::std::move(other.bin_.allocated_ptr_));
+        bin_.capacity_.bytes_ = other.bin_.capacity_.bytes_;
+        /* properly destroy allocator::pointer.
+         *
+         * CoverityScan issues an erroneous warning here about using an uninitialized object. Which is not true,
+         * since in C++ (unlike Rust) an object remains initialized after a move-assignment operation; Moreover,
+         * a destructor will be called for such an object (this is explicitly stated in all C++ standards, starting
+         * from the 11th). */
+        /* coverity[use_after_move] */
+        other.bin_.allocated_ptr_.~allocator_pointer();
+        other.bin_.inplace_.lastbyte_ = bin::lastbyte_inplace_signature;
+        MDBX_CONSTEXPR_ASSERT(bin_.is_allocated() && other.bin_.is_inplace());
+        return /* buffer's slice fixup is not needed */ false;
+      default:
+        MDBX_CONSTEXPR_ASSERT(other_modality == modality::reference);
+        return /* buffer's slice fixup is not needed */ false;
       }
-      new (&bin_.allocated_ptr_) allocator_pointer(::std::move(other.bin_.allocated_ptr_));
-      bin_.capacity_.bytes_ = other.bin_.capacity_.bytes_;
-      /* properly destroy allocator::pointer.
-       *
-       * CoverityScan issues an erroneous warning here about using an uninitialized object. Which is not true,
-       * since in C++ (unlike Rust) an object remains initialized after a move-assignment operation; Moreover,
-       * a destructor will be called for such an object (this is explicitly stated in all C++ standards, starting
-       * from the 11th). */
-      /* coverity[use_after_move] */
-      other.bin_.allocated_ptr_.~allocator_pointer();
-      other.bin_.inplace_.lastbyte_ = bin::lastbyte_inplace_signature;
-      MDBX_CONSTEXPR_ASSERT(bin_.is_allocated() && other.bin_.is_inplace());
-      return false;
-    }
-
-    MDBX_CXX17_CONSTEXPR bool assign_move(silo &&other, bool is_reference) noexcept {
-      release();
-      if (!allocation_aware_details::move_assign_alloc<silo, allocator_type>::is_moveable(this, other))
-        allocation_aware_details::move_assign_alloc<silo, allocator_type>::propagate(this, other);
-      return is_reference ? false : move(std::move(other));
     }
 
     static MDBX_CXX20_CONSTEXPR std::pair<bool, bool>
-    exchange(silo &left, const bool left_is_reference, silo &right, const bool right_is_reference) noexcept(
+    exchange(silo &left, const modality left_modality, silo &right, const modality right_modality) noexcept(
         allocation_aware_details::swap_alloc<silo, allocator_type>::is_nothrow()) {
       allocation_aware_details::swap_alloc<silo, allocator_type>::propagate(left, right);
       bool left_need_fixup = false, right_need_fixup = false;
-      if (left_is_reference || right_is_reference) {
-        left_need_fixup = !right_is_reference && left.move(std::move(right));
-        right_need_fixup = !left_is_reference && right.move(std::move(left));
+      if (left_modality == modality::reference || right_modality == modality::reference) {
+        left_need_fixup = left.move_content(right, right_modality);
+        right_need_fixup = right.move_content(left, left_modality);
       } else {
         silo temp(std::move(left), false);
-        left_need_fixup = left.move(std::move(right));
-        right_need_fixup = right.move(std::move(temp));
+        left_need_fixup = left.move_content(right, right_modality);
+        right_need_fixup = right.move_content(temp, left_modality);
       }
       return std::make_pair(left_need_fixup, right_need_fixup);
     }
@@ -1913,7 +1919,7 @@ private:
     MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX11_CONSTEXPR void *data(size_t offset = 0) noexcept { return get(offset); }
   };
 
-  MDBX_CXX14_CONSTEXPR void fixup_import(const typename silo::bin &src) noexcept {
+  MDBX_CXX14_CONSTEXPR void fixup_imported_inplace(const typename silo::bin &src) noexcept {
     auto ptr = inherited::byte_ptr();
     if (src.is_inplace(ptr)) {
       MDBX_CONSTEXPR_ASSERT(silo_.bin_.is_inplace());
@@ -1986,23 +1992,25 @@ public:
     return silo_.is_inplace(inherited::data());
   }
 
-  /// \brief Checks whether the buffer just refers to data located outside
-  /// the buffer, rather than stores it.
+  /// \brief Checks whether the buffer just refers to data located outside the buffer, rather than stores it.
   MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX20_CONSTEXPR bool is_reference() const noexcept { return !is_freestanding(); }
+
+         /// \brief Returns current data storage modality.
+  MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX20_CONSTEXPR modality asset() const noexcept {
+    return is_freestanding() ? (is_inplace() ? modality::inplace : modality::allocated) : modality::reference;
+  }
 
   /// \brief Returns the number of bytes that can be held in currently allocated storage.
   MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX20_CONSTEXPR size_t capacity() const noexcept {
     return is_freestanding() ? silo_.capacity() : 0;
   }
 
-  /// \brief Returns the number of bytes that available in currently allocated
-  /// storage ahead the currently beginning of data.
+  /// \brief Returns the number of bytes available in the currently allocated storage in front of the data.
   MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX20_CONSTEXPR size_t headroom() const noexcept {
     return is_freestanding() ? inherited::byte_ptr() - silo_begin() : 0;
   }
 
-  /// \brief Returns the number of bytes that available in currently allocated
-  /// storage after the currently data end.
+  /// \brief Returns the number of bytes that available in currently allocated storage after the data.
   MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX20_CONSTEXPR size_t tailroom() const noexcept {
     return is_freestanding() ? silo_end() - inherited::end_byte_ptr() : 0;
   }
@@ -2160,14 +2168,14 @@ public:
 
   inline buffer(const txn &transaction, const slice &src, const allocator_type &alloc = allocator_type());
 
-  buffer(buffer &&src) noexcept(move_assign_alloc::is_nothrow())
+  buffer(buffer &&src) noexcept(noexcept(::std::is_nothrow_move_constructible<allocator_type>::value))
       : inherited(/* no move here */ src), silo_(::std::move(src.silo_), src.is_reference()) {
     /* CoverityScan issues an erroneous warning here about using an uninitialized object. Which is not true,
      * since in C++ (unlike Rust) an object remains initialized after a move-assignment operation; Moreover,
      * a destructor will be called for such an object (this is explicitly stated in all C++ standards, starting from the
      * 11th). */
     /* coverity[USE_AFTER_MOVE] */
-    fixup_import(src.silo_.bin_);
+    fixup_imported_inplace(src.silo_.bin_);
     src.invalidate();
   }
 
@@ -2307,13 +2315,12 @@ public:
   }
 
   MDBX_CXX20_CONSTEXPR void swap(buffer &other) noexcept(swap_alloc::is_nothrow()) {
-    const auto pair = silo::exchange(silo_, is_reference(), other.silo_, other.is_reference());
-    std::swap(iov_base, other.iov_base);
-    std::swap(iov_len, other.iov_len);
+    const auto pair = silo::exchange(silo_, asset(), other.silo_, other.asset());
+    inherited::swap(other);
     if (pair.first)
-      fixup_import(other.silo_.bin_);
+      fixup_imported_inplace(other.silo_.bin_);
     if (pair.second)
-      other.fixup_import(silo_.bin_);
+      other.fixup_imported_inplace(silo_.bin_);
   }
 
   MDBX_CXX20_CONSTEXPR friend void swap(buffer &left, buffer &right) noexcept(buffer::is_swap_nothrow()) {
@@ -2325,60 +2332,71 @@ public:
   }
 
   MDBX_CXX20_CONSTEXPR buffer make_inplace_or_reference() const {
-    return buffer(slice(), !is_inplace(), allocator_traits::select_on_container_copy_construction(get_allocator()));
+    return buffer(static_cast<const struct slice &>(*this), !is_inplace(),
+                  allocator_traits::select_on_container_copy_construction(get_allocator()));
   }
 
   MDBX_CXX20_CONSTEXPR buffer &assign(size_t headroom, const buffer &src, size_t tailroom) {
     const size_t whole_capacity = check_length(headroom, src.length(), tailroom);
-    if (MDBX_LIKELY(this != &src)) {
-      invalidate();
-      if MDBX_IF_CONSTEXPR (!allocation_aware_details::template allocator_is_always_equal<allocator_type>()) {
-        if (MDBX_UNLIKELY(silo_.get_allocator() != src.silo_.get_allocator()))
-          MDBX_CXX20_UNLIKELY {
-            silo_.release();
-            allocation_aware_details::copy_assign_alloc<silo, allocator_type>::propagate(&silo_, src.silo_);
-          }
-      }
+    if (MDBX_LIKELY(this != &src))
+      MDBX_CXX20_LIKELY {
+        invalidate();
+        if MDBX_IF_CONSTEXPR (!allocation_aware_details::template allocator_is_always_equal<allocator_type>()) {
+          if (MDBX_UNLIKELY(silo_.get_allocator() != src.silo_.get_allocator()))
+            MDBX_CXX20_UNLIKELY {
+              silo_.release();
+              allocation_aware_details::copy_assign_alloc<silo, allocator_type>::propagate(&silo_, src.silo_);
+            }
+        }
 
-      iov_base = silo_.template reshape<true>(whole_capacity, headroom, src.data(), src.length());
-      iov_len = src.length();
-    } else {
+        iov_base = silo_.template reshape<true>(whole_capacity, headroom, src.data(), src.length());
+        iov_len = src.length();
+      }
+    else {
       iov_base = silo_.template reshape<false>(whole_capacity, headroom, src.data(), src.length());
     }
     return *this;
   }
 
   MDBX_CXX20_CONSTEXPR buffer &assign(const buffer &src, bool make_reference = false) {
-    if (MDBX_LIKELY(this != &src)) {
-      invalidate();
-      if MDBX_IF_CONSTEXPR (!allocation_aware_details::template allocator_is_always_equal<allocator_type>()) {
-        if (MDBX_UNLIKELY(silo_.get_allocator() != src.silo_.get_allocator()))
-          MDBX_CXX20_UNLIKELY {
-            silo_.release();
-            allocation_aware_details::copy_assign_alloc<silo, allocator_type>::propagate(&silo_, src.silo_);
-          }
-      }
+    if (MDBX_LIKELY(this != &src))
+      MDBX_CXX20_LIKELY {
+        invalidate();
+        if MDBX_IF_CONSTEXPR (!allocation_aware_details::template allocator_is_always_equal<allocator_type>()) {
+          if (MDBX_UNLIKELY(silo_.get_allocator() != src.silo_.get_allocator()))
+            MDBX_CXX20_UNLIKELY {
+              silo_.release();
+              allocation_aware_details::copy_assign_alloc<silo, allocator_type>::propagate(&silo_, src.silo_);
+            }
+        }
 
-      if (make_reference) {
-        silo_.release();
-        iov_base = src.iov_base;
-      } else {
-        iov_base = silo_.template reshape<true>(src.length(), 0, src.data(), src.length());
+        if (make_reference) {
+          silo_.release();
+          iov_base = src.iov_base;
+        } else {
+          iov_base = silo_.template reshape<true>(src.length(), 0, src.data(), src.length());
+        }
+        iov_len = src.length();
       }
-      iov_len = src.length();
-    } else if (!make_reference && is_reference())
+    else if (!make_reference && is_reference())
       insulate();
     return *this;
   }
 
-  MDBX_CXX20_CONSTEXPR buffer &
-  assign(buffer &&src) noexcept(allocation_aware_details::move_assign_alloc<silo, allocator_type>::is_nothrow()) {
-    if (MDBX_LIKELY(this != &src)) {
-      const bool is_reference = src.is_reference();
-      inherited::assign(std::move(src));
-      if (silo_.assign_move(std::move(src.silo_), is_reference))
-        fixup_import(src.silo_.bin_);
-    }
+  MDBX_CXX20_CONSTEXPR buffer &assign(buffer &&src) noexcept(move_assign_alloc::is_nothrow()) {
+    if (MDBX_LIKELY(this != &src))
+      MDBX_CXX20_LIKELY {
+        const auto kind = src.asset();
+        inherited::assign(std::move(src));
+        if (!move_assign_alloc::is_moveable(&silo_, src.silo_) && kind == modality::allocated) {
+          iov_base = silo_.template reshape<true>(src.silo_.capacity(), src.headroom(), src.data(), src.length());
+          return *this;
+        }
+        silo_.release();
+        move_assign_alloc::propagate(&silo_, src.silo_);
+        if (silo_.move_content(src.silo_, kind))
+          fixup_imported_inplace(src.silo_.bin_);
+      }
     return *this;
   }
 
@@ -2700,9 +2718,9 @@ template <typename ALLOCATOR, typename CAPACITY_POLICY> struct buffer_pair_spec 
   buffer_pair_spec(const pair &pair, bool make_reference, const allocator_type &alloc = allocator_type())
       : buffer_pair_spec(pair.key, pair.value, make_reference, alloc) {}
 
-  buffer_pair_spec(const txn &transacton, const slice &key, const slice &value,
+  buffer_pair_spec(const txn &transaction, const slice &key, const slice &value,
                    const allocator_type &alloc = allocator_type())
-      : key(transacton, key, alloc), value(transacton, value, alloc) {}
+      : key(transaction, key, alloc), value(transaction, value, alloc) {}
   buffer_pair_spec(const txn &transaction, const pair &pair, const allocator_type &alloc = allocator_type())
       : buffer_pair_spec(transaction, pair.key, pair.value, alloc) {}
 
@@ -3100,8 +3118,6 @@ public:
   struct LIBMDBX_API_TYPE reclaiming_options {
     /// \copydoc MDBX_LIFORECLAIM
     bool lifo{false};
-    /// \copydoc MDBX_COALESCE
-    bool coalesce{false};
     MDBX_CXX11_CONSTEXPR reclaiming_options() noexcept {}
     MDBX_CXX11_CONSTEXPR
     reclaiming_options(const reclaiming_options &) noexcept = default;
@@ -3354,7 +3370,7 @@ public:
 
   inline bool is_writemap() const { return (get_flags() & MDBX_WRITEMAP) != 0; }
 
-  inline bool is_readwite() const { return !is_readonly(); }
+  inline bool is_readwrite() const { return !is_readonly(); }
 
   inline bool is_nested_transactions_available() const { return (get_flags() & (MDBX_WRITEMAP | MDBX_RDONLY)) == 0; }
 
@@ -3685,7 +3701,7 @@ public:
   void close(bool dont_sync = false);
 
   env_managed(env_managed &&) = default;
-  env_managed &operator=(env_managed &&other);
+  env_managed &operator=(env_managed &&other) noexcept;
   env_managed(const env_managed &) = delete;
   env_managed &operator=(const env_managed &) = delete;
   virtual ~env_managed();
@@ -4067,7 +4083,7 @@ class LIBMDBX_API_TYPE txn_managed : public txn {
 public:
   MDBX_CXX11_CONSTEXPR txn_managed() noexcept = default;
   txn_managed(txn_managed &&) = default;
-  txn_managed &operator=(txn_managed &&other);
+  txn_managed &operator=(txn_managed &&other) noexcept;
   txn_managed(const txn_managed &) = delete;
   txn_managed &operator=(const txn_managed &) = delete;
   ~txn_managed();
@@ -4281,7 +4297,7 @@ protected:
 
 public:
   template <typename CALLABLE_PREDICATE>
-  bool scan(CALLABLE_PREDICATE predicate, move_operation start = first, move_operation turn = next) {
+  bool scan_until(CALLABLE_PREDICATE predicate, move_operation start = first, move_operation turn = next) {
     struct wrapper : public exception_thunk {
       static int probe(void *context, MDBX_val *key, MDBX_val *value, void *arg) noexcept {
         auto thunk = static_cast<wrapper *>(context);
@@ -4301,12 +4317,12 @@ public:
   }
 
   template <typename CALLABLE_PREDICATE> bool fullscan(CALLABLE_PREDICATE predicate, bool backward = false) {
-    return scan(std::move(predicate), backward ? last : first, backward ? previous : next);
+    return scan_until(std::move(predicate), backward ? last : first, backward ? previous : next);
   }
 
   template <typename CALLABLE_PREDICATE>
-  bool scan_from(CALLABLE_PREDICATE predicate, slice &from, move_operation start = key_greater_or_equal,
-                 move_operation turn = next) {
+  bool scan_until_from(CALLABLE_PREDICATE predicate, slice &from, move_operation start = key_greater_or_equal,
+                       move_operation turn = next) {
     struct wrapper : public exception_thunk {
       static int probe(void *context, MDBX_val *key, MDBX_val *value, void *arg) noexcept {
         auto thunk = static_cast<wrapper *>(context);
@@ -4326,8 +4342,8 @@ public:
   }
 
   template <typename CALLABLE_PREDICATE>
-  bool scan_from(CALLABLE_PREDICATE predicate, pair &from, move_operation start = pair_greater_or_equal,
-                 move_operation turn = next) {
+  bool scan_until_from(CALLABLE_PREDICATE predicate, pair &from, move_operation start = pair_greater_or_equal,
+                       move_operation turn = next) {
     struct wrapper : public exception_thunk {
       static int probe(void *context, MDBX_val *key, MDBX_val *value, void *arg) noexcept {
         auto thunk = static_cast<wrapper *>(context);
@@ -4595,7 +4611,7 @@ public:
   void close();
 
   cursor_managed(cursor_managed &&) = default;
-  cursor_managed &operator=(cursor_managed &&other);
+  cursor_managed &operator=(cursor_managed &&other) noexcept;
 
   inline MDBX_cursor *withdraw_handle() noexcept {
     MDBX_cursor *handle = handle_;
@@ -4619,10 +4635,11 @@ MDBX_CXX11_CONSTEXPR const build_info &get_build() noexcept { return ::mdbx_buil
 static MDBX_CXX17_CONSTEXPR size_t strlen(const char *c_str) noexcept {
 #if defined(__cpp_lib_is_constant_evaluated) && __cpp_lib_is_constant_evaluated >= 201811L
   if (::std::is_constant_evaluated()) {
-    for (size_t i = 0; c_str; ++i)
-      if (!c_str[i])
-        return i;
-    return 0;
+    size_t i = 0;
+    if (c_str)
+      while (c_str[i])
+        ++i;
+    return i;
   }
 #endif /* __cpp_lib_is_constant_evaluated >= 201811 */
 #if defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L
@@ -4697,9 +4714,9 @@ MDBX_CXX11_CONSTEXPR bool operator!=(const error &a, const error &b) noexcept { 
 
 MDBX_CXX11_CONSTEXPR bool error::is_success() const noexcept { return code_ == MDBX_SUCCESS; }
 
-MDBX_CXX11_CONSTEXPR bool error::is_result_true() const noexcept { return code_ == MDBX_RESULT_FALSE; }
+MDBX_CXX11_CONSTEXPR bool error::is_result_true() const noexcept { return code_ == MDBX_RESULT_TRUE; }
 
-MDBX_CXX11_CONSTEXPR bool error::is_result_false() const noexcept { return code_ == MDBX_RESULT_TRUE; }
+MDBX_CXX11_CONSTEXPR bool error::is_result_false() const noexcept { return code_ == MDBX_RESULT_FALSE; }
 
 MDBX_CXX11_CONSTEXPR bool error::is_failure() const noexcept {
   return code_ != MDBX_SUCCESS && code_ != MDBX_RESULT_TRUE;
@@ -4955,7 +4972,7 @@ MDBX_CXX14_CONSTEXPR slice slice::safe_tail(size_t n) const {
 MDBX_CXX14_CONSTEXPR slice slice::safe_middle(size_t from, size_t n) const {
   if (MDBX_UNLIKELY(n > max_length))
     MDBX_CXX20_UNLIKELY throw_max_length_exceeded();
-  if (MDBX_UNLIKELY(from + n > size()))
+  if (MDBX_UNLIKELY(from + n /* no overflow possible here, since size() < max_length */ > size()))
     MDBX_CXX20_UNLIKELY throw_out_range();
   return middle(from, n);
 }
@@ -5004,7 +5021,10 @@ MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX14_CONSTEXPR bool operator!=(const slice &a, 
 
 #if defined(__cpp_impl_three_way_comparison) && __cpp_impl_three_way_comparison >= 201907L
 MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX14_CONSTEXPR auto operator<=>(const slice &a, const slice &b) noexcept {
-  return slice::compare_lexicographically(a, b);
+  const auto cmp = slice::compare_lexicographically(a, b);
+  return (cmp < 0)   ? std::strong_ordering::less
+         : (cmp > 0) ? std::strong_ordering::greater
+                     : std::strong_ordering::equal;
 }
 #endif /* __cpp_impl_three_way_comparison */
 
