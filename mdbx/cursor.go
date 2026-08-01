@@ -136,27 +136,29 @@ func (c *Cursor) Bind(txn *Txn, db DBI) error {
 	return nil
 }
 
-// Unbind Unbinded cursor is disassociated with any transactions but still holds
-// the original DBI-handle internally. Thus, it could be renewed with any running
-// transaction or closed.
+// Unbind disassociates the cursor from its transaction while keeping the
+// original DBI handle internally, so it can later be renewed against another
+// transaction (Renew/Bind) or closed. While unbound, Txn() reports nil and
+// DBI() reports an invalid DBI.
 func (c *Cursor) Unbind() error {
 	ret := C.mdbx_cursor_unbind(c._c)
 	if ret != success {
 		return operrno("mdbx_cursor_unbind", ret)
 	}
+	c.txn = nil
 	return nil
 }
 
-// Close the cursor handle.
+// Close the cursor handle and free its underlying libmdbx cursor. Unlike
+// LMDB, libmdbx never frees cursors at transaction end, so Close is required
+// for every cursor; it may be called before or after the txn ends (a live
+// write-txn cursor must be closed from the txn's own thread). No-op if
+// already closed. Do not Close after ReleaseAllCursors(false) — see there.
 //
 // See mdbx_cursor_close.
 func (c *Cursor) Close() {
 	if c._c != nil {
-		if c.txn._txn == nil && !c.txn.readonly {
-			// the cursor has already been released by MDBX.
-		} else {
-			C.mdbx_cursor_close(c._c)
-		}
+		C.mdbx_cursor_close(c._c)
 		c.txn = nil
 		c._c = nil
 	}
@@ -197,6 +199,9 @@ func (c *Cursor) DBI() DBI {
 //
 // See mdbx_cursor_get.
 func (c *Cursor) Get(setkey, setval []byte, op uint) (key, val []byte, err error) {
+	// No Go-side closed/unbound guard: Get no longer touches c.txn, and the C
+	// entry (cursor_check) returns EINVAL for both a NULL and an unbound
+	// cursor, so the check would only duplicate work on the hot path.
 	var r C.mdbxgo_val_result
 	if len(setkey) != 0 || len(setval) != 0 {
 		r = c.getVal(setkey, setval, op)
@@ -277,28 +282,26 @@ func (c *Cursor) Put(key, val []byte, flags uint) error {
 // PutReserve returns a []byte of length n that can be written to, potentially
 // avoiding a memcopy.  The returned byte slice is only valid in txn's thread,
 // before it has terminated.
-//
-//nolint:gocritic // false positive on dupSubExpr
 func (c *Cursor) PutReserve(key []byte, n int, flags uint) ([]byte, error) {
+	// Like Get, no Go-side closed/unbound guard: the reserve helper returns
+	// the buffer by value so c.txn is never touched, and libmdbx's
+	// cursor_check turns a NULL or unbound cursor into EINVAL.
 	var k *C.char
 	if len(key) > 0 {
 		k = (*C.char)(unsafe.Pointer(&key[0]))
 	}
-	c.txn.val.iov_len = C.size_t(n)
-	ret := C.mdbxgo_cursor_put1(
+	// The helper ORs in MDBX_RESERVE itself — its result is only meaningful
+	// for a reserve put, so the flag is enforced on the C side.
+	r := C.mdbxgo_cursor_put_reserve(
 		c._c,
 		k, C.size_t(len(key)),
-		&c.txn.val,
-		C.MDBX_put_flags_t(flags|C.MDBX_RESERVE),
+		C.size_t(n),
+		C.MDBX_put_flags_t(flags),
 	)
-	err := operrno("mdbx_cursor_put", ret)
-	if err != nil {
-		c.txn.val = C.MDBX_val{}
+	if err := operrno("mdbx_cursor_put", r.err); err != nil {
 		return nil, err
 	}
-	b := castToBytes(&c.txn.val)
-	c.txn.val = C.MDBX_val{}
-	return b, nil
+	return castToBytesRaw(unsafe.Pointer(r.vbase), r.vlen), nil
 }
 
 // PutMulti stores a set of contiguous items with stride size under key.
@@ -531,7 +534,29 @@ var cursorPool = sync.Pool{
 }
 
 func CursorFromPool() *Cursor { return cursorPool.Get().(*Cursor) }
-func CursorToPool(c *Cursor)  { cursorPool.Put(c) }
+
+// CursorToPool returns c for reuse. Closed cursors are dropped (their handle
+// is gone; Bind/Renew would always fail). The cursor's Go txn reference is
+// cleared so a pooled cursor cannot operate on — or keep alive — an ended
+// transaction; callers must Bind/Renew before use. Note cursors evicted from
+// the pool by GC leak their C allocation — Close cursors you do not re-pool.
+func CursorToPool(c *Cursor) {
+	if c == nil || c._c == nil {
+		// Tolerate a nil or already-closed cursor, like sync.Pool.Put(nil).
+		return
+	}
+	// Unbind before pooling: Get no longer checks c.txn, so a pooled cursor
+	// must also be unbound in libmdbx or it could keep reading through its
+	// previous C binding (cross-txn/cross-goroutine misuse). An unbound
+	// cursor returns EINVAL from Get until it is Bind/Renew'd. Unbind is a
+	// no-op success once the txn has ended. If it fails the cursor is
+	// unusable, so close it rather than pool a broken handle.
+	if err := c.Unbind(); err != nil {
+		c.Close()
+		return
+	}
+	cursorPool.Put(c)
+}
 
 func CreateCursor() *Cursor {
 	c := &Cursor{_c: C.mdbx_cursor_create(nil)}
