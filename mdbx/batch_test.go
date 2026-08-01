@@ -3,7 +3,6 @@ package mdbx
 import (
 	"bytes"
 	"fmt"
-	"syscall"
 	"testing"
 )
 
@@ -16,8 +15,8 @@ func fillBatchDB(tb testing.TB, env *Env, name string, numItems int) DBI {
 			return err
 		}
 		for i := range numItems {
-			k := []byte(fmt.Sprintf("key-%08d", i))
-			v := []byte(fmt.Sprintf("val-%08d", i))
+			k := fmt.Appendf(nil, "key-%08d", i)
+			v := fmt.Appendf(nil, "val-%08d", i)
 			if err := txn.Put(db, k, v, Append); err != nil {
 				return err
 			}
@@ -301,12 +300,7 @@ func TestCursor_GetBatch_RejectsInputOps(t *testing.T) {
 			{"out-of-range op", ^uint(0), Next},
 		} {
 			n, eof, err := cur.GetBatch(buf, tc.first, tc.next)
-			if !IsErrnoSys(err, syscall.EINVAL) {
-				t.Errorf("%s: err = %v, want EINVAL", tc.name, err)
-			}
-			if n != 0 || eof {
-				t.Errorf("%s: n=%d eof=%v, want 0/false", tc.name, n, eof)
-			}
+			assertRejected(t, tc.name, n, eof, err)
 		}
 
 		// A rejected call must not leave the previous fill readable.
@@ -467,17 +461,10 @@ func TestGetBatchBuffer_Closed(t *testing.T) {
 		assertPanics(t, "Val(0) after Close", func() { _ = buf.Val(0) })
 
 		n, eof, err := cur.GetBatch(buf, First, Next)
-		if !IsErrnoSys(err, syscall.EINVAL) {
-			t.Errorf("GetBatch on a closed buffer: err = %v, want EINVAL", err)
-		}
-		if n != 0 || eof {
-			t.Errorf("GetBatch on a closed buffer: n=%d eof=%v, want 0/false", n, eof)
-		}
+		assertRejected(t, "GetBatch on a closed buffer", n, eof, err)
 
-		n, _, err = cur.GetBatch(nil, First, Next)
-		if !IsErrnoSys(err, syscall.EINVAL) || n != 0 {
-			t.Errorf("GetBatch(nil): n=%d err=%v, want 0/EINVAL", n, err)
-		}
+		n, eof, err = cur.GetBatch(nil, First, Next)
+		assertRejected(t, "GetBatch(nil)", n, eof, err)
 		return nil
 	})
 	if err != nil {
@@ -514,6 +501,19 @@ func TestGetBatchBuffer_IndexOutOfFill(t *testing.T) {
 	})
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+// assertRejected pins that GetBatch refused the call without moving the
+// cursor. The exact errno is platform-dependent (EINVAL on POSIX,
+// ERROR_INVALID_PARAMETER on Windows), so the code itself is not asserted.
+func assertRejected(t *testing.T, name string, n int, eof bool, err error) {
+	t.Helper()
+	if err == nil {
+		t.Errorf("%s: expected an error, got nil", name)
+	}
+	if n != 0 || eof {
+		t.Errorf("%s: n=%d eof=%v, want 0/false", name, n, eof)
 	}
 }
 
