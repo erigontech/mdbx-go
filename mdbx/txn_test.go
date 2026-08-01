@@ -2089,13 +2089,78 @@ func TestTxn_Unpark_OustedPaths(t *testing.T) {
 
 	// Unpark(true) restarts iff this reader was ousted; both outcomes are
 	// valid and err is always nil.
-	oustedWithRestart, err := withRestart.Unpark(true)
+	restarted, err = withRestart.Unpark(true)
 	if err != nil {
 		t.Fatalf("Unpark(true): %v", err)
 	}
 
-	if !oustedNoRestart && !oustedWithRestart {
+	if !oustedNoRestart && !restarted {
 		t.Skip("write churn did not oust either parked reader; ousted paths not exercised")
+	}
+}
+
+// A parked reader can be ousted with no Go call involved, which resets the
+// txn behind the cached Txn.ID(). While parked, ID() must report what libmdbx
+// actually holds instead of the snapshot the reader started on.
+func TestTxn_Park_IDNotStaleAfterOust(t *testing.T) {
+	env, _ := setup(t)
+
+	var db DBI
+	if err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		return txn.Put(db, []byte("k"), []byte("v"), 0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	txn, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer txn.Abort()
+	if _, err := txn.Get(db, []byte("k")); err != nil {
+		t.Fatal(err)
+	}
+	beforePark := txn.ID() // also caches it
+
+	// autounpark: a read restores the txn, or fails with Ousted if a writer
+	// recycled the snapshot in the meantime.
+	if err := txn.Park(true); err != nil {
+		t.Fatal(err)
+	}
+	if got := txn.ID(); got != beforePark {
+		t.Errorf("ID() while parked = %d, want %d (unchanged until something ousts it)", got, beforePark)
+	}
+
+	val := make([]byte, 4096)
+	for i := range 512 {
+		if err := env.Update(func(txn *Txn) error {
+			return txn.Put(db, []byte{byte(i), byte(i >> 8)}, val, 0)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, getErr := txn.Get(db, []byte("k"))
+	if getErr == nil {
+		t.Skip("write churn did not oust the parked reader; the stale-id path is not exercised")
+	}
+	if !IsErrno(getErr, Ousted) {
+		t.Fatalf("Get on a parked reader: %v, want Ousted", getErr)
+	}
+	if got, live := txn.ID(), txn.getID(); got != live {
+		t.Errorf("ID() after the oust = %d, but libmdbx reports %d", got, live)
+	}
+
+	// Renew puts the handle back to work and restores id caching.
+	if err := txn.Renew(); err != nil {
+		t.Fatalf("Renew after Ousted: %v", err)
+	}
+	if got := txn.ID(); got == beforePark || got != txn.getID() {
+		t.Errorf("ID() after Renew = %d (live %d), want the new snapshot", got, txn.getID())
 	}
 }
 

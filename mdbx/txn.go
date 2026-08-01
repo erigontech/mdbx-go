@@ -82,6 +82,13 @@ type Txn struct {
 	// reset/renewed
 	id uint64
 
+	// parked is true between a successful Park and whatever ends that state
+	// (Unpark, Reset, Renew, or the txn finishing). It is the one window in
+	// which the snapshot can change without a Go call: a writer may oust the
+	// reader, and a read that auto-unparks an ousted txn resets it. ID()
+	// therefore stops trusting the cache while parked.
+	parked bool
+
 	tid uint64
 }
 
@@ -120,6 +127,14 @@ func (txn *Txn) ID() uint64 {
 	// because an application typically must do an initial update to initialize
 	// application dbis.  Even so, calling C.mdbx_txn_id excessively isn't
 	// actually harmful, it is just slow.
+	if txn.parked {
+		// A parked reader can be ousted by a writer at any moment, and an
+		// ousted txn is reset (mdbx_txn_id then reports the invalid id), so
+		// the cached value may already describe a snapshot this txn no longer
+		// holds. Ask libmdbx instead of caching an answer that could go stale
+		// between two calls.
+		return txn.getID()
+	}
 	if txn.id == 0 {
 		txn.id = txn.getID()
 	}
@@ -338,7 +353,14 @@ func (txn *Txn) abort() {
 
 // Park puts a read-only transaction in the "parked" state so it does not
 // block recycling of old MVCC snapshots. Data pointers obtained before
-// parking must not be dereferenced until unparked.
+// parking must not be dereferenced until unparked. Write transactions cannot
+// be parked; libmdbx reports MDBX_TXN_INVALID for them.
+//
+// A parked reader may be ousted by a writer at any point, so while parked
+// ID() queries libmdbx on every call instead of using its cached value.
+// With autounpark, a read that finds the txn ousted fails with an Ousted
+// error and leaves the handle reset — reusable via Renew, like the
+// Unpark(false) outcome.
 //
 // Park returns an error if the Env has already been closed (older versions
 // were a silent no-op in that case).
@@ -360,6 +382,7 @@ func (txn *Txn) Park(autounpark bool) error {
 	if ret != success {
 		return operrno("mdbx_txn_park", ret)
 	}
+	txn.parked = true
 	return nil
 }
 
@@ -389,6 +412,9 @@ func (txn *Txn) Unpark(restartIfOusted bool) (restarted bool, err error) {
 	}
 	txn.strictThreadCheck()
 	ret := C.mdbx_txn_unpark(txn._txn, C.bool(restartIfOusted))
+	// Whatever the outcome, the txn is no longer parked: restored, restarted,
+	// reset by the oust, or never parked to begin with.
+	txn.parked = false
 	if ret == C.MDBX_RESULT_TRUE {
 		txn.resetID() // restarted on a fresh snapshot
 		return true, nil
@@ -408,6 +434,7 @@ func (txn *Txn) clearTxn() {
 	// Clear the C object to prevent any potential future use of the freed
 	// pointer.
 	txn._txn = nil
+	txn.parked = false
 
 	// Clear txn.id because it no longer matches the value of txn._txn (and
 	// future calls to txn.ID() should not see the stale id).  Instead of
@@ -444,6 +471,7 @@ func (txn *Txn) Reset() error {
 func (txn *Txn) reset() error {
 	ret := C.mdbx_txn_reset(txn._txn)
 	txn.resetID()
+	txn.parked = false // a parked txn may be reset directly, which un-parks it
 	return operrno("mdbx_txn_reset", ret)
 }
 
@@ -470,6 +498,7 @@ func (txn *Txn) renew() error {
 	// results in the freeing of stale pages the Txn has been holding, though
 	// this has not been confirmed in any way by bmatsuo as of 2017-02-15.
 	txn.resetID()
+	txn.parked = false // renew restarts the reader, parked or not
 
 	return operrno("mdbx_txn_renew", ret)
 }
