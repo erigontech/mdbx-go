@@ -76,7 +76,10 @@ mdbxgo_val_result        mdbxgo_cursor_put_reserve(MDBX_cursor *cur, char *kdata
 
 /* mdbxgo_cursor_get_batch fills pairs[0..2*max_pairs) with (key, value)
  * result pairs: the first mdbx_cursor_get step uses op_first, the rest
- * op_next. r.val holds the filled pair count. r.err is MDBX_SUCCESS (or
+ * op_next. Both are passed an empty key/value, so the caller must restrict
+ * them to ops that need no input — the start_op/turn_op sets of
+ * mdbx_cursor_scan; Cursor.GetBatch enforces that on the Go side.
+ * r.val holds the filled pair count. r.err is MDBX_SUCCESS (or
  * MDBX_RESULT_TRUE, e.g. a bound reposition) when the buffer filled,
  * MDBX_NOTFOUND when iteration was exhausted first, or the failing code of a
  * mid-batch error (in which case r.val still counts the pairs stored before

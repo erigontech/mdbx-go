@@ -3,6 +3,7 @@ package mdbx
 import (
 	"bytes"
 	"fmt"
+	"syscall"
 	"testing"
 )
 
@@ -241,11 +242,11 @@ func TestCursor_GetBatch_PartialOnError(t *testing.T) {
 		}
 		defer cur.Close()
 
-		// First succeeds; GetMultiple on a non-DupFixed table fails with
+		// First succeeds; NextMultiple on a non-DupFixed table fails with
 		// MDBX_INCOMPATIBLE on the second step.
-		n, eof, err := cur.GetBatch(buf, First, GetMultiple)
+		n, eof, err := cur.GetBatch(buf, First, NextMultiple)
 		if err == nil {
-			t.Fatal("GetBatch(First, GetMultiple): expected error, got nil")
+			t.Fatal("GetBatch(First, NextMultiple): expected error, got nil")
 		}
 		if eof {
 			t.Error("eof must be false on error")
@@ -261,4 +262,267 @@ func TestCursor_GetBatch_PartialOnError(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+// Ops that need an input key/value must be rejected instead of run against an
+// empty one: Set would match nothing and report a clean EOF, SetRange would
+// silently rewind the scan to the first key.
+func TestCursor_GetBatch_RejectsInputOps(t *testing.T) {
+	env, _ := setup(t)
+	db := fillBatchDB(t, env, "testbatchops", 10)
+
+	buf := NewGetBatchBuffer(8)
+	defer buf.Close()
+
+	err := env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		for _, tc := range []struct {
+			name        string
+			first, next uint
+		}{
+			{"Set as opFirst", Set, Next},
+			{"SetKey as opFirst", SetKey, Next},
+			{"SetRange as opFirst", SetRange, Next},
+			{"GetBoth as opFirst", GetBoth, Next},
+			{"GetBothRange as opFirst", GetBothRange, Next},
+			{"SetLowerBound as opFirst", SetLowerBound, Next},
+			{"SetUpperBound as opFirst", SetUpperBound, Next},
+			{"KeyGreaterThan as opFirst", KeyGreaterThan, Next},
+			{"PairLesserThan as opFirst", PairLesserThan, Next},
+			{"Set as opNext", First, Set},
+			{"SetRange as opNext", First, SetRange},
+			{"GetCurrent as opNext", First, GetCurrent},
+			{"GetMultiple as opNext", First, GetMultiple},
+			{"out-of-range op", ^uint(0), Next},
+		} {
+			n, eof, err := cur.GetBatch(buf, tc.first, tc.next)
+			if !IsErrnoSys(err, syscall.EINVAL) {
+				t.Errorf("%s: err = %v, want EINVAL", tc.name, err)
+			}
+			if n != 0 || eof {
+				t.Errorf("%s: n=%d eof=%v, want 0/false", tc.name, n, eof)
+			}
+		}
+
+		// A rejected call must not leave the previous fill readable.
+		if _, _, err := cur.GetBatch(buf, First, Next); err != nil {
+			return err
+		}
+		if _, _, err := cur.GetBatch(buf, Set, Next); err == nil {
+			t.Fatal("GetBatch(Set, Next): expected EINVAL, got nil")
+		}
+		assertPanics(t, "Key(0) after a rejected GetBatch", func() { _ = buf.Key(0) })
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+// Reverse scans use the same machinery via (Last, Prev).
+func TestCursor_GetBatch_Reverse(t *testing.T) {
+	env, _ := setup(t)
+	const numItems = 100
+	db := fillBatchDB(t, env, "testbatchreverse", numItems)
+
+	buf := NewGetBatchBuffer(16)
+	defer buf.Close()
+
+	err := env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		seen := 0
+		for opFirst := uint(Last); ; opFirst = Prev {
+			n, eof, err := cur.GetBatch(buf, opFirst, Prev)
+			if err != nil {
+				return err
+			}
+			for i := range n {
+				want := fmt.Sprintf("key-%08d", numItems-1-seen)
+				if got := string(buf.Key(i)); got != want {
+					t.Fatalf("pair %d: key = %q, want %q", seen, got, want)
+				}
+				seen++
+			}
+			if eof {
+				break
+			}
+		}
+		if seen != numItems {
+			t.Errorf("scanned %d items, want %d", seen, numItems)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+// DupSort: (FirstDup, NextDup) batches the values of the positioned key.
+func TestCursor_GetBatch_DupSort(t *testing.T) {
+	env, _ := setup(t)
+	const numDups = 20
+	var db DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		db, err = txn.OpenDBISimple("testbatchdup", Create|DupSort)
+		if err != nil {
+			return err
+		}
+		for i := range 3 {
+			for j := range numDups {
+				k := fmt.Sprintf("key-%d", i)
+				v := fmt.Sprintf("val-%d-%02d", i, j)
+				if err := txn.Put(db, []byte(k), []byte(v), 0); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buf := NewGetBatchBuffer(8)
+	defer buf.Close()
+
+	err = env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		// Position on the second key, then batch only its values. Key(i) is
+		// unspecified for dup-only ops, so only the values are checked.
+		if _, _, err := cur.Get([]byte("key-1"), nil, Set); err != nil {
+			return err
+		}
+		seen := 0
+		for opFirst := uint(FirstDup); ; opFirst = NextDup {
+			n, eof, err := cur.GetBatch(buf, opFirst, NextDup)
+			if err != nil {
+				return err
+			}
+			for i := range n {
+				want := fmt.Sprintf("val-1-%02d", seen)
+				if got := string(buf.Val(i)); got != want {
+					t.Fatalf("dup %d: val = %q, want %q", seen, got, want)
+				}
+				seen++
+			}
+			if eof {
+				break
+			}
+		}
+		if seen != numDups {
+			t.Errorf("scanned %d dups, want %d", seen, numDups)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestGetBatchBuffer_Closed(t *testing.T) {
+	env, _ := setup(t)
+	db := fillBatchDB(t, env, "testbatchclosed", 10)
+
+	buf := NewGetBatchBuffer(8)
+
+	err := env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		n, _, err := cur.GetBatch(buf, First, Next)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			t.Fatal("GetBatch filled nothing")
+		}
+
+		buf.Close()
+		buf.Close() // idempotent
+
+		if got := buf.Cap(); got != 0 {
+			t.Errorf("Cap() after Close = %d, want 0", got)
+		}
+		// Close must drop the last-fill count as well: Key/Val would otherwise
+		// hand out views of freed memory.
+		assertPanics(t, "Key(0) after Close", func() { _ = buf.Key(0) })
+		assertPanics(t, "Val(0) after Close", func() { _ = buf.Val(0) })
+
+		n, eof, err := cur.GetBatch(buf, First, Next)
+		if !IsErrnoSys(err, syscall.EINVAL) {
+			t.Errorf("GetBatch on a closed buffer: err = %v, want EINVAL", err)
+		}
+		if n != 0 || eof {
+			t.Errorf("GetBatch on a closed buffer: n=%d eof=%v, want 0/false", n, eof)
+		}
+
+		n, _, err = cur.GetBatch(nil, First, Next)
+		if !IsErrnoSys(err, syscall.EINVAL) || n != 0 {
+			t.Errorf("GetBatch(nil): n=%d err=%v, want 0/EINVAL", n, err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+// Reading past the last fill must panic rather than expose stale entries.
+func TestGetBatchBuffer_IndexOutOfFill(t *testing.T) {
+	env, _ := setup(t)
+	db := fillBatchDB(t, env, "testbatchindex", 3)
+
+	buf := NewGetBatchBuffer(8)
+	defer buf.Close()
+
+	err := env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		n, _, err := cur.GetBatch(buf, First, Next)
+		if err != nil {
+			return err
+		}
+		if n != 3 {
+			t.Fatalf("n = %d, want 3", n)
+		}
+		assertPanics(t, "Key(n)", func() { _ = buf.Key(n) })
+		assertPanics(t, "Val(n)", func() { _ = buf.Val(n) })
+		assertPanics(t, "Key(-1)", func() { _ = buf.Key(-1) })
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func assertPanics(t *testing.T, name string, fn func()) {
+	t.Helper()
+	defer func() {
+		if e := recover(); e == nil {
+			t.Errorf("%s: expected panic, got none", name)
+		}
+	}()
+	fn()
 }

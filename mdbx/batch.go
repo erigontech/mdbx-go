@@ -24,7 +24,8 @@ type GetBatchBuffer struct {
 const maxBatchPairs = 1024 * 1024
 
 // NewGetBatchBuffer allocates a buffer holding numPairs key/value pairs
-// (64-512 is a reasonable range).
+// (64-512 is a reasonable range). It panics if numPairs is outside
+// [1, maxBatchPairs] or the allocation fails.
 func NewGetBatchBuffer(numPairs int) *GetBatchBuffer {
 	if numPairs < 1 || numPairs > maxBatchPairs {
 		panic("mdbx: NewGetBatchBuffer: number of pairs out of range")
@@ -36,12 +37,14 @@ func NewGetBatchBuffer(numPairs int) *GetBatchBuffer {
 	return &GetBatchBuffer{ptr: (*C.MDBX_val)(p), size: numPairs}
 }
 
-// Close releases the C allocation. No-op if already closed.
+// Close releases the C allocation. No-op if already closed. Slices handed out
+// by Key/Val point into that allocation's contents and must not be used after.
 func (b *GetBatchBuffer) Close() {
 	if b.ptr != nil {
 		C.free(unsafe.Pointer(b.ptr))
 		b.ptr = nil
 		b.size = 0
+		b.n = 0 // there is no last fill to report anymore
 	}
 }
 
@@ -49,9 +52,12 @@ func (b *GetBatchBuffer) Close() {
 func (b *GetBatchBuffer) Cap() int { return b.size }
 
 func (b *GetBatchBuffer) at(i int) *C.MDBX_val {
+	if b.ptr == nil {
+		panic("mdbx: GetBatchBuffer: use after Close")
+	}
 	// Bound by the last fill count, not the capacity: entries past b.n hold
 	// stale pointers from earlier fills (possibly of an already-ended txn).
-	if b.ptr == nil || i < 0 || i >= 2*b.n {
+	if i < 0 || i >= 2*b.n {
 		panic("mdbx: GetBatchBuffer: index out of range of the last GetBatch fill")
 	}
 	return (*C.MDBX_val)(unsafe.Add(unsafe.Pointer(b.ptr), uintptr(i)*unsafe.Sizeof(C.MDBX_val{})))
@@ -60,20 +66,61 @@ func (b *GetBatchBuffer) at(i int) *C.MDBX_val {
 // Key returns the i-th key of the most recent GetBatch (i < its pair count).
 // Zero-copy view: read-only, invalid once the txn ends, the buffer is
 // refilled or Closed, or (in a write txn) a later Put/Del moves the page.
+//
+// For dup-only ops (FirstDup, LastDup, NextDup, PrevDup) mdbx_cursor_get
+// promises the value only, so treat the key as unspecified — the caller
+// already knows it from the Get that positioned the cursor. Cursor.Get
+// reports nil for it.
 func (b *GetBatchBuffer) Key(i int) []byte { return castToBytes(b.at(2 * i)) }
 
 // Val returns the i-th value of the most recent GetBatch. See Key.
 func (b *GetBatchBuffer) Val(i int) []byte { return castToBytes(b.at(2*i + 1)) }
 
+// batchFirstOpOK and batchNextOpOK report whether an op can be driven without
+// an input key/value, mirroring the start_op/turn_op sets libmdbx accepts for
+// mdbx_cursor_scan (mdbx.h). Allow-lists, so an unknown or out-of-range op
+// value is rejected too. A positioning op is a start op only: GetCurrent as
+// opNext would restream the same record until the buffer filled, First would
+// rewind on every step.
+func batchFirstOpOK(op uint) bool {
+	switch op {
+	case First, FirstDup, Last, LastDup, GetCurrent, GetMultiple:
+		return true
+	default:
+		// Continuing a scan hands the previous call's opNext back as opFirst.
+		return batchNextOpOK(op)
+	}
+}
+
+func batchNextOpOK(op uint) bool {
+	switch op {
+	case Next, NextDup, NextNoDup, NextMultiple, Prev, PrevDup, PrevNoDup, PrevMultiple:
+		return true
+	default:
+		return false
+	}
+}
+
 // GetBatch fetches up to buf.Cap() key/value pairs in one cgo call: the first
 // record with opFirst, the rest with opNext. It amortizes cgo overhead over
 // large scans.
 //
-// There is no way to pass a search key or value, so ops that need one (Set,
-// SetRange, GetBoth, ...) cannot be used. For a ranged scan, position the
-// cursor with Get first and batch with (GetCurrent, Next). The *_MULTIPLE
-// ops work but have page granularity: each stored pair is (key, packed page
-// of fixed-size values), so n counts pages, not records.
+// There is no way to pass a search key or value, so opFirst and opNext are
+// restricted to the ops mdbx_cursor_get answers without one — the same
+// start_op/turn_op sets libmdbx documents for mdbx_cursor_scan:
+//
+//	opFirst: First, FirstDup, Last, LastDup, GetCurrent, GetMultiple — or any
+//	         opNext value, which is how a scan continues past the first batch
+//	opNext:  Next, NextDup, NextNoDup, NextMultiple, Prev, PrevDup, PrevNoDup, PrevMultiple
+//
+// Anything else (Set, SetKey, SetRange, GetBoth, GetBothRange, the bound and
+// KeyTo/PairTo seeks) is rejected with EINVAL rather than searched for with an
+// empty key, which reads as a plausible wrong answer: Set matches nothing and
+// looks like a clean EOF, SetRange silently rewinds to the first key. For a
+// ranged scan, position the cursor with Get and batch with (GetCurrent, Next).
+//
+// The *_MULTIPLE ops work but have page granularity: each stored pair is
+// (key, packed page of fixed-size values), so n counts pages, not records.
 //
 // n is the number of pairs stored (read via buf.Key/Val). The first n pairs
 // are valid even when err != nil (the error came from the step after them).
@@ -101,6 +148,9 @@ func (c *Cursor) GetBatch(buf *GetBatchBuffer, opFirst, opNext uint) (n int, eof
 		buf.n = 0
 	}
 	if c._c == nil || buf == nil || buf.ptr == nil || buf.size <= 0 {
+		return 0, false, operrno("mdbx_cursor_get", C.MDBX_EINVAL)
+	}
+	if !batchFirstOpOK(opFirst) || !batchNextOpOK(opNext) {
 		return 0, false, operrno("mdbx_cursor_get", C.MDBX_EINVAL)
 	}
 	r := C.mdbxgo_cursor_get_batch(
