@@ -2,6 +2,7 @@ package mdbx
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -375,10 +376,6 @@ func TestEnv_ReaderCheck(t *testing.T) {
 // TestEnv_CopyFlag_Compact exercises Env.CopyFlag (path target) with the
 // CopyCompact flag, which produces a self-contained snapshot the test can
 // re-open and verify.
-//
-// All copy round-trip tests use CopyCompact deliberately: a non-compact
-// (CopyDefaults) copy of a freshly-written env does not reproduce the
-// committed data when re-opened here, so it is not asserted.
 func TestEnv_CopyFlag_Compact(t *testing.T) {
 	testEnvCopy(t, CopyCompact, true, false)
 }
@@ -387,6 +384,39 @@ func TestEnv_CopyFlag_Compact(t *testing.T) {
 // with the CopyCompact flag.
 func TestEnv_CopyFDFlag_Compact(t *testing.T) {
 	testEnvCopy(t, CopyCompact, true, true)
+}
+
+// Copy and CopyFD take no flags and compact on their own.
+func TestEnv_Copy(t *testing.T) {
+	testEnvCopy(t, 0, false, false)
+}
+
+func TestEnv_CopyFD(t *testing.T) {
+	testEnvCopy(t, 0, false, true)
+}
+
+// A copy without CopyCompact is refused up front: libmdbx's as-is copy path
+// writes pristine meta-pages, so the target would open as an empty database
+// rather than a copy of env. See ErrCopyNotCompacting.
+func TestEnv_Copy_RejectsNonCompacting(t *testing.T) {
+	env, _ := setup(t)
+
+	dst := filepath.Join(t.TempDir(), "copy.mdbx")
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"CopyFlag(CopyDefaults)", env.CopyFlag(dst, CopyDefaults)},
+		{"CopyFlag(CopyOverwrite)", env.CopyFlag(dst, CopyOverwrite)},
+		{"CopyFDFlag(CopyDefaults)", env.CopyFDFlag(0, CopyDefaults)},
+	} {
+		if !errors.Is(tc.err, ErrCopyNotCompacting) {
+			t.Errorf("%s: err = %v, want ErrCopyNotCompacting", tc.name, tc.err)
+		}
+	}
+	if _, err := os.Stat(dst); !os.IsNotExist(err) {
+		t.Errorf("a rejected copy must not touch the target: stat = %v", err)
+	}
 }
 
 // TestEnv_CopyFlag_Overwrite ensures Copy refuses to clobber an existing target
@@ -446,6 +476,7 @@ func TestEnv_CopyFlag_Overwrite(t *testing.T) {
 }
 
 func testEnvCopy(t *testing.T, flags uint, useflags bool, usefd bool) {
+	t.Helper()
 	tmp := t.TempDir()
 
 	var (
@@ -527,7 +558,11 @@ func testEnvCopy(t *testing.T, flags uint, useflags bool, usefd bool) {
 }
 
 func TestEnv_Defrag(t *testing.T) {
-	env, _ := setup(t)
+	// Exclusive, like libmdbx's own mdbx_defrag tool opens the environment
+	// (MDBX_ENV_DEFAULTS|MDBX_EXCLUSIVE, falling back to MDBX_ACCEDE): shrinking
+	// the datafile needs the whole-file lock, and taking it per-transaction
+	// instead fails on Windows with ERROR_LOCK_VIOLATION.
+	env, _ := setupFlags(t, Exclusive, Default)
 
 	// Make some pages by writing and then deleting data so there's
 	// something for the defragmenter to look at.
@@ -536,8 +571,8 @@ func TestEnv_Defrag(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		for i := 0; i < 256; i++ {
-			k := []byte(fmt.Sprintf("k%04d", i))
+		for i := range 256 {
+			k := fmt.Appendf(nil, "k%04d", i)
 			v := bytes.Repeat([]byte("x"), 1024)
 			if err := txn.Put(db, k, v, 0); err != nil {
 				return err
@@ -552,8 +587,8 @@ func TestEnv_Defrag(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		for i := 0; i < 128; i++ {
-			k := []byte(fmt.Sprintf("k%04d", i))
+		for i := range 128 {
+			k := fmt.Appendf(nil, "k%04d", i)
 			if err := txn.Del(db, k, nil); err != nil {
 				return err
 			}
@@ -583,8 +618,8 @@ func TestEnv_Defrag(t *testing.T) {
 	if res.PagesMoved == 0 {
 		t.Errorf("defrag: PagesMoved = 0, expected defrag to relocate pages")
 	}
-	t.Logf("defrag: cycles=%d shrinked=%d moved=%d whole=%d stopping_reasons=0x%x spent=%s",
-		res.Cycles, res.PagesShrinked, res.PagesMoved, res.PagesWhole, res.StoppingReasons, res.SpentTime)
+	t.Logf("defrag: cycles=%d shrunk=%d moved=%d whole=%d stopping_reasons=0x%x spent=%s",
+		res.Cycles, res.PagesShrunk, res.PagesMoved, res.PagesWhole, res.StoppingReasons, res.SpentTime)
 }
 
 func TestEnv_Sync(t *testing.T) {

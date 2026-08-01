@@ -290,7 +290,7 @@ mdbxgo_defrag_result mdbxgo_env_defrag(MDBX_env *env,
     r.err = mdbx_env_defrag(env, defrag_atleast, time_atleast_dot16, defrag_enough,
                             time_limit_dot16, acceptable_backlash, preferred_batch,
                             NULL, NULL, &res);
-    r.pages_shrinked   = (int64_t)res.pages_shrinked;
+    r.pages_shrunk     = (int64_t)res.pages_shrinked;
     r.pages_moved      = (uint64_t)res.pages_moved;
     r.pages_scheduled  = (uint64_t)res.pages_scheduled;
     r.pages_retained   = (uint64_t)res.pages_retained;

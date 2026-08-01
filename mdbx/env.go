@@ -62,7 +62,7 @@ const (
 	//
 	// See mdbx_env_copy
 
-	CopyDefaults         = C.MDBX_CP_DEFAULTS           // Perform copy as-is, no compaction etc.
+	CopyDefaults         = C.MDBX_CP_DEFAULTS           // Perform copy as-is; unusable on its own, see ErrCopyNotCompacting
 	CopyCompact          = C.MDBX_CP_COMPACT            // Perform compaction while copying: omit free pages and renumber
 	CopyForceDynamicSize = C.MDBX_CP_FORCE_DYNAMIC_SIZE // Force resizable copy (dynamic size instead of fixed)
 	CopyDontFlush        = C.MDBX_CP_DONT_FLUSH         // Don't explicitly flush the written data to output media
@@ -239,35 +239,58 @@ func (env *Env) Close() error {
 	return operrno("mdbx_env_close", ret)
 }
 
-// CopyFD copies env to the file descriptor fd.
+// ErrCopyNotCompacting rejects a copy requested without CopyCompact.
+//
+// libmdbx's as-is (non-compacting) copy rebuilds the destination meta-pages
+// from a pristine model — trees.main.root = P_INVALID, first_unallocated =
+// NUM_METAS — and never writes the source's tree roots or geometry into them
+// (copy_asis in mdbx.c, v0.14.2). The data pages are copied faithfully, so
+// the result opens without complaint and reads as an empty database. A
+// compacting copy walks the tree and fills the meta in, which is why only
+// that mode is offered until libmdbx fixes the as-is path.
+var ErrCopyNotCompacting = errors.New("mdbx: copy without CopyCompact would produce an empty database (libmdbx copy_asis loses the tree roots); pass CopyCompact")
+
+// CopyFD copies env to the file descriptor fd, compacting (see
+// ErrCopyNotCompacting for why the as-is copy is not used).
 //
 // See mdbx_env_copy2fd.
 func (env *Env) CopyFD(fd uintptr) error {
-	return env.CopyFDFlag(fd, 0)
+	return env.CopyFDFlag(fd, CopyCompact)
 }
 
 // CopyFDFlag copies env to the file descriptor fd, with options. On Windows
 // fd must be a native HANDLE value (as returned by os.File.Fd); on POSIX it
 // is a regular int file descriptor.
 //
+// flags must include CopyCompact; see ErrCopyNotCompacting.
+//
 // See mdbx_env_copy2fd.
 func (env *Env) CopyFDFlag(fd uintptr, flags uint) error {
+	if flags&CopyCompact == 0 {
+		return ErrCopyNotCompacting
+	}
 	ret := C.mdbxgo_env_copy2fd(env._env, C.uintptr_t(fd), C.MDBX_copy_flags_t(flags))
 	return operrno("mdbx_env_copy2fd", ret)
 }
 
-// Copy copies the data in env to an environment at path. The target path must
-// not already exist; pass CopyOverwrite via CopyFlag to overwrite.
+// Copy copies the data in env to an environment at path, compacting (see
+// ErrCopyNotCompacting for why the as-is copy is not used). The target path
+// must not already exist; pass CopyOverwrite via CopyFlag to overwrite.
 //
 // See mdbx_env_copy.
 func (env *Env) Copy(path string) error {
-	return env.CopyFlag(path, 0)
+	return env.CopyFlag(path, CopyCompact)
 }
 
 // CopyFlag copies the data in env to an environment at path, with options.
 //
+// flags must include CopyCompact; see ErrCopyNotCompacting.
+//
 // See mdbx_env_copy.
 func (env *Env) CopyFlag(path string, flags uint) error {
+	if flags&CopyCompact == 0 {
+		return ErrCopyNotCompacting
+	}
 	cpath := C.CString(path)
 	defer C.free(unsafe.Pointer(cpath))
 	ret := C.mdbx_env_copy(env._env, cpath, C.MDBX_copy_flags_t(flags))
@@ -721,7 +744,7 @@ type DefragOptions struct {
 //
 // See MDBX_defrag_result_t.
 type DefragResult struct {
-	PagesShrinked   int64  // Negative if defrag was stopped or db structure prevents shrinking.
+	PagesShrunk     int64  // Negative if defrag was stopped or db structure prevents shrinking.
 	PagesMoved      uint64 // Total pages moved during defragmentation.
 	PagesScheduled  uint64 // Pages scheduled to move at the next stage of the current cycle.
 	PagesRetained   uint64 // Pages held by other processes via MVCC-snapshots.
@@ -750,6 +773,13 @@ type DefragResult struct {
 // requested goals, libmdbx returns MDBX_RESULT_TRUE which is treated as
 // non-error here; inspect result.StoppingReasons to learn why.
 //
+// Cutting off the trailing pages needs the whole-file lock, so open the
+// environment with Exclusive when defragmenting — that is what libmdbx's own
+// mdbx_defrag tool does (MDBX_ENV_DEFAULTS|MDBX_EXCLUSIVE, falling back to
+// MDBX_ACCEDE when the database is busy). Without it Windows fails the shrink
+// with ERROR_LOCK_VIOLATION. Parallel readers do not prevent defragmentation
+// but limit it to a single cycle.
+//
 // See mdbx_env_defrag.
 func (env *Env) Defrag(opts DefragOptions) (*DefragResult, error) {
 	r := C.mdbxgo_env_defrag(env._env,
@@ -761,7 +791,7 @@ func (env *Env) Defrag(opts DefragOptions) (*DefragResult, error) {
 		C.intptr_t(opts.PreferredBatch),
 	)
 	res := &DefragResult{
-		PagesShrinked:   int64(r.pages_shrinked),
+		PagesShrunk:     int64(r.pages_shrunk),
 		PagesMoved:      uint64(r.pages_moved),
 		PagesScheduled:  uint64(r.pages_scheduled),
 		PagesRetained:   uint64(r.pages_retained),
