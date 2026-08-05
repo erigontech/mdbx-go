@@ -120,9 +120,10 @@ func (c *Cursor) Open(txn *Txn, db DBI) error {
 	return nil
 }
 
-// IsClosed reports whether the cursor holds no libmdbx cursor, i.e. it was
-// never opened or has already been closed.
-func (c *Cursor) IsClosed() bool { return c._c == nil }
+// IsClosed reports whether the cursor holds no libmdbx cursor, i.e. it is nil,
+// was never opened, or has already been closed. Nil-safe so it fully replaces
+// the nil-*Cursor checks callers used before Open existed.
+func (c *Cursor) IsClosed() bool { return c == nil || c._c == nil }
 
 func openCursor(txn *Txn, db DBI) (*Cursor, error) {
 	c := &Cursor{}
@@ -176,6 +177,9 @@ func (c *Cursor) Unbind() error {
 //
 // See mdbx_cursor_close.
 func (c *Cursor) Close() {
+	if c == nil {
+		return
+	}
 	if c._c != nil {
 		C.mdbx_cursor_close(c._c)
 		c.txn = nil
