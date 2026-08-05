@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.2-321-gfa8aef44 at 2026-07-18T04:21:04+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.2-492-g4ca45169 at 2026-07-31T22:58:19+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -62,6 +62,14 @@ typedef struct bind_reader_slot_result {
   int err;
   reader_slot_t *slot;
 } bsr_t;
+
+#ifndef MDBX_64BIT_ATOMIC
+#error "The MDBX_64BIT_ATOMIC must be defined before"
+#endif /* MDBX_64BIT_ATOMIC */
+
+#ifndef MDBX_64BIT_CAS
+#error "The MDBX_64BIT_CAS must be defined before"
+#endif /* MDBX_64BIT_CAS */
 
 /* Сортированный набор txnid, использующий внутри комбинацию непрерывного интервала и списка.
  * Обеспечивает хранение id записей при переработке, очистку и обновлении GC, включая возврат остатков переработанных
@@ -552,6 +560,7 @@ enum txn_flags {
   txn_ro_begin_flags = MDBX_TXN_RDONLY | MDBX_TXN_RDONLY_PREPARE,
   txn_rw_begin_flags = MDBX_TXN_NOMETASYNC | MDBX_TXN_NOSYNC | MDBX_TXN_TRY,
   txn_rw_already_locked = MDBX_TXN_RDONLY_PREPARE & ~MDBX_TXN_RDONLY,
+  txn_nipped = UINT32_C(0x1000),
   txn_shrink_allowed = UINT32_C(0x40000000),
   txn_parked = MDBX_TXN_PARKED,
   txn_gc_drained = 0x100 /* GC was depleted up to oldest reader */,
@@ -937,7 +946,7 @@ enum db_flags {
   DB_INTERNAL_FLAGS = DB_VALID
 };
 
-#if !defined(__cplusplus) || CONSTEXPR_ENUM_FLAGS_OPERATIONS
+#if !defined(__cplusplus) || MDBX_CONSTEXPR_ENUM_FLAGS_OPERATIONS
 MDBX_MAYBE_UNUSED static void static_checks(void) {
   STATIC_ASSERT(MDBX_WORDBITS == sizeof(void *) * CHAR_BIT);
   STATIC_ASSERT(UINT64_C(0x80000000) == (uint32_t)ENV_FATAL_ERROR);
@@ -2242,7 +2251,8 @@ env::operate_options::operate_options(MDBX_env_flags_t flags) noexcept
     : no_sticky_threads(((flags & (MDBX_NOSTICKYTHREADS | MDBX_EXCLUSIVE)) == MDBX_NOSTICKYTHREADS) ? true : false),
       nested_transactions((flags & (MDBX_WRITEMAP | MDBX_RDONLY)) ? false : true),
       exclusive((flags & MDBX_EXCLUSIVE) ? true : false), disable_readahead((flags & MDBX_NORDAHEAD) ? true : false),
-      disable_clear_memory((flags & MDBX_NOMEMINIT) ? true : false) {}
+      disable_clear_memory((flags & MDBX_NOMEMINIT) ? true : false),
+      enable_validation((flags & MDBX_VALIDATION) ? true : false) {}
 
 bool env::is_pristine() const { return get_stat().ms_mod_txnid == 0 && get_info().mi_recent_txnid == INITIAL_TXNID; }
 
@@ -2815,6 +2825,10 @@ __cold ::std::ostream &operator<<(::std::ostream &out, const env::operate_option
   }
   if (it.exclusive) {
     out << delimiter << "exclusive";
+    delimiter = comma;
+  }
+  if (it.enable_validation) {
+    out << delimiter << "enable_validation";
     delimiter = comma;
   }
   if (it.disable_readahead) {

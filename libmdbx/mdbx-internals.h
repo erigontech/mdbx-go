@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.2-321-gfa8aef44 at 2026-07-18T04:21:04+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.2-492-g4ca45169 at 2026-07-31T22:58:19+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -24,7 +24,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY c48f67763515b15ca37eddc823d0d3b87576fa6fb478220d22cf783792d8ea86_v0_14_2_321_gfa8aef44
+#define MDBX_BUILD_SOURCERY d5bc6bf54108e5711f513b2776ee6543bac4d50ed69b4c1566edbd3fe7639c1b_v0_14_2_492_g4ca45169
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -254,11 +254,11 @@
 #define __has_builtin(x) (0)
 #endif
 
-#if __has_feature(thread_sanitizer)
+#if __has_feature(thread_sanitizer) && !defined(__SANITIZE_THREAD__)
 #define __SANITIZE_THREAD__ 1
 #endif
 
-#if __has_feature(address_sanitizer)
+#if __has_feature(address_sanitizer) && !defined(__SANITIZE_ADDRESS__)
 #define __SANITIZE_ADDRESS__ 1
 #endif
 
@@ -439,12 +439,6 @@ __extern_C key_t ftok(const char *, int);
 #include <windows.h>
 #include <winnt.h>
 #include <winternl.h>
-#if defined(__CODEGEARC__) && defined(__cplusplus) && defined(DEFINE_ENUM_FLAG_OPERATORS)
-/* Embarcadero: Windows SDK defines DEFINE_ENUM_FLAG_OPERATORS without proper constexpr.
- * Reset it so mdbx.h can install its own constexpr-correct version. */
-#undef DEFINE_ENUM_FLAG_OPERATORS
-#undef CONSTEXPR_ENUM_FLAGS_OPERATIONS
-#endif /* __CODEGEARC__ */
 
 /* After including windows.h, to avoid issues with MinGW builds and similar toolchains. */
 #include <excpt.h>
@@ -933,6 +927,15 @@ __extern_C key_t ftok(const char *, int);
 
 #ifndef RUNNING_ON_ASAN
 #define RUNNING_ON_ASAN (0)
+#endif
+
+#define MDBX_NOTHING /* just nothung */
+
+#if defined(__SANITIZE_ADDRESS__) && !defined(MDBX_ATTRIBUTE_NO_SANITIZE_ADDRESS)
+/* Avoid ASAN-trap due the target TLS-variable feed by Darwin's tlv_free() */
+#define MDBX_ATTRIBUTE_NO_SANITIZE_ADDRESS(ELSEWISE) __attribute__((__no_sanitize_address__, __noinline__))
+#else
+#define MDBX_ATTRIBUTE_NO_SANITIZE_ADDRESS(ELSEWISE) ELSEWISE
 #endif
 
 /*----------------------------------------------------------------------------*/
@@ -2396,18 +2399,30 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 #error "The MDBX_64BIT_CAS must be defined before"
 #endif /* MDBX_64BIT_CAS */
 
-#if defined(__cplusplus) && !defined(__STDC_NO_ATOMICS__) && __has_include(<cstdatomic>)
-#include <cstdatomic>
+#if defined(__cplusplus)
 #define MDBX_HAVE_C11ATOMICS
-#elif !defined(__cplusplus) && (__STDC_VERSION__ >= 201112L || __has_extension(c_atomic)) &&                           \
-    !defined(__STDC_NO_ATOMICS__) &&                                                                                   \
-    (__GNUC_PREREQ(4, 9) || __CLANG_PREREQ(3, 8) || !(defined(__GNUC__) || defined(__clang__)))
+#include <atomic>
+#if defined(__CODEGEARC__)
+/* Embarcadero: Clang falls back to a broken Dinkumware <stdatomic.h>/<cstdatomic>
+ * when pulled into a C++ TU (undeclared _Atomic_flag_t/_Bool/memory_order/_Uint1_t).
+ * The bare (non-std::) C11 atomic_* names are never used from C++ in this codebase
+ * (only under "#ifndef __cplusplus" below), so skip the include; std::atomic suffices. */
+#elif !defined(__STDC_NO_ATOMICS__)
+#if defined(__cpp_lib_stdatomic_h)
 #include <stdatomic.h>
+#elif __has_include(<cstdatomic>)
+#include <cstdatomic>
+#endif
+#endif /* ! __STDC_NO_ATOMICS__*/
+
+#else /* __cplusplus */
+
 #if defined(__CODEGEARC__)
 /* Embarcadero Clang falls back to Dinkumware stdatomic.h on x86.
  * Fix incompatible atomic_* expansions for volatile _Atomic objects:
  * Dinkumware macros do (pobj)->_Atom which breaks on scalar _Atomic.
- * Use Clang __c11_atomic_* builtins directly instead. */
+ * Use Clang __c11_atomic_* builtins directly instead.
+ * Provide missing fence and memory-order macros for C mode. */
 #undef atomic_is_lock_free
 #define atomic_is_lock_free(obj) __c11_atomic_is_lock_free(sizeof(*(obj)))
 #undef atomic_store_explicit
@@ -2419,8 +2434,24 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
   __c11_atomic_compare_exchange_strong((obj), (exp), (val), __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
 #undef atomic_fetch_add
 #define atomic_fetch_add(obj, val) __c11_atomic_fetch_add((obj), (val), __ATOMIC_SEQ_CST)
-#endif /* __CODEGEARC__ */
+#undef atomic_thread_fence
+#define atomic_thread_fence(ord) __c11_atomic_thread_fence(ord)
+#ifndef memory_order_relaxed
+#define memory_order_relaxed __ATOMIC_RELAXED
+#define memory_order_acquire __ATOMIC_ACQUIRE
+#define memory_order_release __ATOMIC_RELEASE
+#define memory_order_seq_cst __ATOMIC_SEQ_CST
+#endif
 #define MDBX_HAVE_C11ATOMICS
+/* #endif __CODEGEARC__ */
+
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L || __has_extension(c_atomic)) &&                       \
+    !defined(__STDC_NO_ATOMICS__) &&                                                                                   \
+    (__GNUC_PREREQ(4, 9) || __CLANG_PREREQ(3, 8) || !(defined(__GNUC__) || defined(__clang__)))
+#include <stdatomic.h>
+#define MDBX_HAVE_C11ATOMICS
+/* endif C11 atomics */
+
 #elif defined(__GNUC__) || defined(__clang__)
 #elif defined(_MSC_VER)
 #pragma warning(disable : 4163) /* 'xyz': not available as an intrinsic */
@@ -2432,11 +2463,17 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
                                    'long', possible loss of data */
 #pragma intrinsic(_InterlockedExchangeAdd, _InterlockedCompareExchange)
 #pragma intrinsic(_InterlockedExchangeAdd64, _InterlockedCompareExchange64)
+/* #endif _MSC_VER */
+
 #elif defined(__APPLE__)
 #include <libkern/OSAtomic.h>
+/* #endif __APPLE__ */
+
 #else
 #error FIXME atomic-ops
 #endif
+
+#endif /* !__cplusplus */
 
 typedef enum mdbx_memory_order {
   mo_Relaxed,
@@ -2446,25 +2483,22 @@ typedef enum mdbx_memory_order {
 
 typedef union {
   volatile uint32_t weak;
-#ifdef MDBX_HAVE_C11ATOMICS
-#if defined(__CODEGEARC__) && defined(__clang__)
-  volatile atomic_uint32_t c11a;
-#else
+#if defined(__cplusplus)
+  std::atomic<uint32_t> c11a;
+#elif defined(MDBX_HAVE_C11ATOMICS)
   volatile _Atomic uint32_t c11a;
-#endif
 #endif /* MDBX_HAVE_C11ATOMICS */
 } mdbx_atomic_uint32_t;
 
 typedef union {
-  volatile uint64_t weak;
-#if defined(MDBX_HAVE_C11ATOMICS) && (MDBX_64BIT_CAS || MDBX_64BIT_ATOMIC)
-#if defined(__CODEGEARC__) && defined(__clang__)
-  volatile atomic_uint64_t c11a;
+  MDBX_ALIGNAS(8) volatile uint64_t weak;
+#if defined(__cplusplus)
+  std::atomic<uint64_t> c11a;
 #else
+#if defined(MDBX_HAVE_C11ATOMICS)
   volatile _Atomic uint64_t c11a;
-#endif
-#endif
-#if !defined(MDBX_HAVE_C11ATOMICS) || !MDBX_64BIT_CAS || !MDBX_64BIT_ATOMIC
+#endif                                    /* MDBX_HAVE_C11ATOMICS */
+#if !MDBX_64BIT_CAS || !MDBX_64BIT_ATOMIC /* || MDBX_WORDBITS < 64 */
   __anonymous_struct_extension__ struct {
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     mdbx_atomic_uint32_t low, high;
@@ -2474,7 +2508,8 @@ typedef union {
 #error "FIXME: Unsupported byte order"
 #endif /* __BYTE_ORDER__ */
   };
-#endif
+#endif /* !MDBX_64BIT_CAS || !MDBX_64BIT_ATOMIC */
+#endif /* __cplusplus */
 } mdbx_atomic_uint64_t;
 
 #ifdef MDBX_HAVE_C11ATOMICS
@@ -2758,12 +2793,13 @@ typedef enum node_flags {
 
 #pragma pack(pop)
 
-MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint8_t page_type(const page_t *mp) { return mp->flags; }
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint8_t page_type(const page_t *mp) {
+  return (uint8_t)mp->flags;
+}
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint8_t page_type_compat(const page_t *mp) {
-  /* Drop legacy P_DIRTY flag for sub-pages for compatibility,
-   * for assertions only. */
-  return unlikely(mp->flags & P_SUBP) ? mp->flags & ~(P_SUBP | P_LEGACY_DIRTY) : mp->flags;
+  /* Drop legacy P_DIRTY flag for sub-pages for compatibility, for assertions only. */
+  return unlikely(mp->flags & P_SUBP) ? (uint8_t)(mp->flags & ~(P_SUBP | P_LEGACY_DIRTY)) : (uint8_t)mp->flags;
 }
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool is_leaf(const page_t *mp) {
@@ -3280,16 +3316,20 @@ __extern_C MDBX_NORETURN void panic_at_fmt(const struct MDBX_panic_point *const 
       ENSURE_OBJ(obj, expr);                                                                                           \
   } while (0)
 
+MDBX_MAYBE_UNUSED static inline const void *txn2obj(const MDBX_txn *txn) { return txn; }
+MDBX_MAYBE_UNUSED static inline const void *cursor2obj(const MDBX_cursor *mc) { return mc; }
+MDBX_MAYBE_UNUSED static inline const void *env2obj(const MDBX_env *env) { return env; }
+
 #define ASSERT(expr) CHECK0(expr)
-#define eASSERT0(env, expr) CHECK0_OBJ(env, expr)
-#define eASSERT1(env, expr) CHECK1_OBJ(env, expr)
-#define eASSERT2(env, expr) CHECK2_OBJ(env, expr)
-#define tASSERT0(txn, expr) CHECK0_OBJ(txn, expr)
-#define tASSERT1(txn, expr) CHECK1_OBJ(txn, expr)
-#define tASSERT2(txn, expr) CHECK2_OBJ(txn, expr)
-#define cASSERT0(mc, expr) CHECK0_OBJ(mc, expr)
-#define cASSERT1(mc, expr) CHECK1_OBJ(mc, expr)
-#define cASSERT2(mc, expr) CHECK2_OBJ(mc, expr)
+#define eASSERT0(env, expr) CHECK0_OBJ(env2obj(env), expr)
+#define eASSERT1(env, expr) CHECK1_OBJ(env2obj(env), expr)
+#define eASSERT2(env, expr) CHECK2_OBJ(env2obj(env), expr)
+#define tASSERT0(txn, expr) CHECK0_OBJ(txn2obj(txn), expr)
+#define tASSERT1(txn, expr) CHECK1_OBJ(txn2obj(txn), expr)
+#define tASSERT2(txn, expr) CHECK2_OBJ(txn2obj(txn), expr)
+#define cASSERT0(mc, expr) CHECK0_OBJ(cursor2obj(mc), expr)
+#define cASSERT1(mc, expr) CHECK1_OBJ(cursor2obj(mc), expr)
+#define cASSERT2(mc, expr) CHECK2_OBJ(cursor2obj(mc), expr)
 
 /* --------------------------------------------------------------------------------------------------------------- */
 
