@@ -99,8 +99,9 @@ const (
 //
 // See MDB_cursor.
 type Cursor struct {
-	txn *Txn
-	_c  *C.MDBX_cursor
+	noCopy noCopy
+	txn    *Txn
+	_c     *C.MDBX_cursor
 }
 
 // Open binds an unopened Cursor to the table in place. Unlike Txn.OpenCursor it

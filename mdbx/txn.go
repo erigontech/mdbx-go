@@ -60,6 +60,11 @@ const (
 //
 // See MDBX_txn.
 type Txn struct {
+	// noCopy: a Txn owns a raw libmdbx transaction, so a copy would give two
+	// values one underlying txn — Abort or Commit on either leaves the other
+	// pointing at freed memory. Env is already covered by its closeLock.
+	noCopy noCopy
+
 	env  *Env
 	_txn *C.MDBX_txn
 	// val is scratch space for Txn.Get and the PutReserve paths: passing the
