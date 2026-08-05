@@ -260,3 +260,13 @@ func TestCursor_OpenInPlace_RejectsReopen(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+// A nil *Cursor is the state callers used to represent "closed" before Open
+// existed, so the lifecycle predicates must tolerate it.
+func TestCursorNilReceiver(t *testing.T) {
+	var c *Cursor
+	if !c.IsClosed() {
+		t.Fatal("a nil *Cursor must report closed")
+	}
+	c.Close() // must not panic
+}
