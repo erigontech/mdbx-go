@@ -98,16 +98,6 @@ const (
 // database.
 //
 // See MDB_cursor.
-// noCopy makes `go vet -copylocks` reject copies of a Cursor. A Cursor owns a
-// raw libmdbx cursor, so a copy would give two values one underlying cursor:
-// Close on either frees it while the other still points at it. Zero-sized and
-// first in the struct, so it costs no space. Not embedded — that would export
-// Lock/Unlock on Cursor.
-type noCopy struct{}
-
-func (*noCopy) Lock()   {}
-func (*noCopy) Unlock() {}
-
 type Cursor struct {
 	noCopy noCopy
 	txn    *Txn
