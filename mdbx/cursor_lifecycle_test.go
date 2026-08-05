@@ -287,3 +287,15 @@ func TestCursorOpenNilArgs(t *testing.T) {
 		t.Fatal("a failed Open must leave the cursor closed")
 	}
 }
+
+// Embedding a Cursor by value is the pattern Open exists for, so noCopy must
+// not stand in its way — it bars copying the Cursor, not holding one.
+func TestCursorEmbedByValue(t *testing.T) {
+	type holder struct{ c Cursor }
+
+	h := &holder{}
+	if !h.c.IsClosed() {
+		t.Fatal("a zero embedded Cursor must report closed")
+	}
+	h.c.Close() // no-op on a never-opened cursor
+}
