@@ -109,6 +109,12 @@ type Cursor struct {
 //
 //nolint:gocritic // reason: false positive on dupSubExpr
 func (c *Cursor) Open(txn *Txn, db DBI) error {
+	if c == nil {
+		return errors.New("mdbx.Cursor.Open: nil cursor: Open initializes in place, so it needs an addressable Cursor")
+	}
+	if txn == nil || txn._txn == nil {
+		return errors.New("mdbx.Cursor.Open: nil transaction")
+	}
 	if c._c != nil {
 		return errors.New("mdbx.Cursor.Open: cursor is already open")
 	}

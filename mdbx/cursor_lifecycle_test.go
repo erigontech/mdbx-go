@@ -270,3 +270,20 @@ func TestCursorNilReceiver(t *testing.T) {
 	}
 	c.Close() // must not panic
 }
+
+// Open initializes in place, so the degenerate receivers it can be handed must
+// come back as errors rather than a cgo-level nil dereference.
+func TestCursorOpenNilArgs(t *testing.T) {
+	var nilCursor *Cursor
+	if err := nilCursor.Open(nil, 0); err == nil {
+		t.Fatal("Open on a nil *Cursor must return an error")
+	}
+
+	var c Cursor
+	if err := c.Open(nil, 0); err == nil {
+		t.Fatal("Open with a nil *Txn must return an error")
+	}
+	if !c.IsClosed() {
+		t.Fatal("a failed Open must leave the cursor closed")
+	}
+}
