@@ -74,6 +74,20 @@ mdbxgo_val_result        mdbxgo_cursor_get_empty(MDBX_cursor *cur, MDBX_cursor_o
 mdbxgo_val_result        mdbxgo_cursor_get_val(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_cursor_op op);
 mdbxgo_val_result        mdbxgo_cursor_put_reserve(MDBX_cursor *cur, char *kdata, size_t kn, size_t vn, MDBX_put_flags_t flags);
 
+/* mdbxgo_cursor_get_batch fills pairs[0..2*max_pairs) with (key, value)
+ * result pairs: the first mdbx_cursor_get step uses op_first, the rest
+ * op_next. Both are passed an empty key/value, so the caller must restrict
+ * them to ops that need no input — the start_op/turn_op sets of
+ * mdbx_cursor_scan; Cursor.GetBatch enforces that on the Go side.
+ * r.val holds the filled pair count. r.err is MDBX_SUCCESS (or
+ * MDBX_RESULT_TRUE, e.g. a bound reposition) when the buffer filled,
+ * MDBX_NOTFOUND when iteration was exhausted first, or the failing code of a
+ * mid-batch error (in which case r.val still counts the pairs stored before
+ * it). Amortizes cgo call overhead: one Go->C call retrieves max_pairs
+ * records.
+ * */
+mdbxgo_size_result       mdbxgo_cursor_get_batch(MDBX_cursor *cur, MDBX_val *pairs, size_t max_pairs, MDBX_cursor_op op_first, MDBX_cursor_op op_next);
+
 typedef struct {
     int err;
     uint64_t pages_allocated;
