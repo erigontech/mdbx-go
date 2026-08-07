@@ -99,16 +99,43 @@ const (
 //
 // See MDB_cursor.
 type Cursor struct {
-	txn *Txn
-	_c  *C.MDBX_cursor
+	noCopy noCopy
+	txn    *Txn
+	_c     *C.MDBX_cursor
 }
 
+// Open binds an unopened Cursor to the table in place. Unlike Txn.OpenCursor it
+// does not allocate the Cursor, so callers may embed Cursor by value. Close is
+// still required.
+//
 //nolint:gocritic // reason: false positive on dupSubExpr
-func openCursor(txn *Txn, db DBI) (*Cursor, error) {
-	c := &Cursor{txn: txn}
+func (c *Cursor) Open(txn *Txn, db DBI) error {
+	if c == nil {
+		return errors.New("mdbx.Cursor.Open: nil cursor: Open initializes in place, so it needs an addressable Cursor")
+	}
+	if txn == nil || txn._txn == nil {
+		return errors.New("mdbx.Cursor.Open: nil transaction")
+	}
+	if c._c != nil {
+		return errors.New("mdbx.Cursor.Open: cursor is already open")
+	}
 	ret := C.mdbx_cursor_open(txn._txn, C.MDBX_dbi(db), &c._c)
 	if ret != success {
-		return nil, operrno("mdbx_cursor_open", ret)
+		return operrno("mdbx_cursor_open", ret)
+	}
+	c.txn = txn
+	return nil
+}
+
+// IsClosed reports whether the cursor holds no libmdbx cursor, i.e. it is nil,
+// was never opened, or has already been closed. Nil-safe so it fully replaces
+// the nil-*Cursor checks callers used before Open existed.
+func (c *Cursor) IsClosed() bool { return c == nil || c._c == nil }
+
+func openCursor(txn *Txn, db DBI) (*Cursor, error) {
+	c := &Cursor{}
+	if err := c.Open(txn, db); err != nil {
+		return nil, err
 	}
 	return c, nil
 }
@@ -157,6 +184,9 @@ func (c *Cursor) Unbind() error {
 //
 // See mdbx_cursor_close.
 func (c *Cursor) Close() {
+	if c == nil {
+		return
+	}
 	if c._c != nil {
 		C.mdbx_cursor_close(c._c)
 		c.txn = nil
