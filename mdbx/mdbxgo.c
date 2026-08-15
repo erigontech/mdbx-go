@@ -275,7 +275,10 @@ mdbxgo_commit_result mdbxgo_txn_commit_embark_read(MDBX_txn **ptxn) {
 }
 
 int mdbxgo_env_copy2fd(MDBX_env *env, uintptr_t fd, MDBX_copy_flags_t flags) {
-    return mdbx_env_copy2fd(env, (mdbx_filehandle_t)(intptr_t)fd, flags);
+    /* Cast straight from the unsigned uintptr_t. Routing through the signed
+     * intptr_t would be implementation-defined for a Windows HANDLE with the
+     * high bit set, and buys nothing on POSIX where the target is an int. */
+    return mdbx_env_copy2fd(env, (mdbx_filehandle_t)fd, flags);
 }
 
 mdbxgo_defrag_result mdbxgo_env_defrag(MDBX_env *env,
