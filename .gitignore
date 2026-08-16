@@ -3,6 +3,9 @@
 /bin/
 /build
 
+# staging dir of `make cp`, left behind only if a re-vendor is interrupted
+/libmdbx.staging/
+
 # Test databases and benchmark data
 testdata/
 
