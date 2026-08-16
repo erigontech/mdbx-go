@@ -7,9 +7,10 @@ Donations are welcome to ETH `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`,
 BTC `bc1qzvl9uegf2ea6cwlytnanrscyv8snwsvrc0xfsu`, SOL `FTCTgbHajoLVZGr8aEFWMzx3NDMyS5wXJgfeMTmJznRi`.
 Всё будет хорошо!
 
-## v0.14.3 is re-scheduled for 2026-08-08.
+## v0.14.3 "Китов" (Kitov) at 2026-08-09.
 
-The supporting release of a stable branch with bug fixes.
+The supporting release with a lot of bug fixes,
+in memory of [Anatoly Kitov](https://en.wikipedia.org/wiki/Anatoly_Kitov), a pioneer of cybernetics and the one of inventors of M-100, which was a most powerful computer of the World in 1958.
 
 ### Important:
 
@@ -83,11 +84,15 @@ The supporting release of a stable branch with bug fixes.
 
  - On Windows provided `mdbx_env_deleteA()` and define `mdbx_env_deleteT()` depend on the `UNICODE`.
 
+ - Added `/experimental:c11atomics` workaround for MSVC compiler weakness to enable C11 atomics.
+
 ### Fixes:
 
  - Fixed the [issue](https://github.com/Mithril-mine/libmdbx/issues/361) of losing a table content after abortion the nested transaction where such table was dropped.
 
  - Fixed `ERROR_LOCK_VIOLATION` during defrag on Windows in operation modes using overlapped I/O.
+
+ - Fixed the regression/bug in the copy-without-compaction code, which leads to produce a copy without a payload.
 
  - Fixed `env_owned_wrtxn()` to avoid by-pass locking in the `MDBX_NOSTICKYTHREADS` mode.
 
@@ -96,6 +101,8 @@ The supporting release of a stable branch with bug fixes.
  - Fixed loss of `mincore()` cache due erase/overwrite on insert.
 
  - Fixed a lot of typos and a few bugs detected by CodeQL.
+
+ - Fixed loosing of global init and thread-local-storage destructors in static library build by MinGW toolchain in particular cases.
 
  - Rare or specific conditions:
     - Fixed major typo in condition inside `latch_maindb_locked()`.
@@ -120,9 +127,9 @@ The supporting release of a stable branch with bug fixes.
     - Fixed a leak of spilled pages list on a nested transaction abort.
     - Reworked internal cursors cloning to be compatible with subsequent pages tracking before spilling.
     - Introduced the internal `TXN_NIPPED` flag to suspend spilling during GC processing.
-    - Fixed tracking and invalidation of the inner part of the sibling cursors inside `cursor_del()`.
-    - Fixed sibling cursors tracking/invalidation in `cutoff_zikkurat()`.
-    - Fixed cursors tracking in `node_move()`.
+    - Fixed tracking and invalidation of the inner part of the sibling cursors.
+    - Reworked cursor's stack with introducing the `stash` of pages.
+    - Fixed spilling/accounting for `MDBX_AVOID_MSYNC=ON`.
 
  - C++ API:
     - Fixed ODR violations warnings from modern GCC while both LTO and UBSAN are enabled.
@@ -147,6 +154,8 @@ The supporting release of a stable branch with bug fixes.
     - Fixed running `ctest -T memcheck` by adding workaround of CTest/CMake bugs for Valgrind parameters.
     - Fixed/removed leftover usage of float point in `mdbx_stat` utility.
     - Fixed `mdbx_defrag` for `-f` option handling.
+    - Fixed MSVC warnings of implicit narrow type-casting.
+    - Added compile-time guard for C11 atomics to avoid wrong code generation on non-x86 platforms by MSVC.
     - etc...
 
 --------------------------------------------------------------------------------

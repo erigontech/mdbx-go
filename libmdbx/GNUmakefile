@@ -264,7 +264,8 @@ strip: all
 clean:
 	@echo '  CLEANING...'
 	$(QUIET)rm -rf $(MDBX_TOOLS) mdbx_test @* *.[ao] *.[ls]o *.$(SO_SUFFIX) *.dSYM *~ tmp.db/* \
-		*.gcov *.log *.err src/*.o tests/*.o mdbx_legacy_example mdbx_modern_example dist @dist-check \
+		*.gcov *.log *.err src/*.o tests/*.o tests/framework/*.o tests/ut/*.o tests/issues/*.o \
+		mdbx_legacy_example mdbx_modern_example dist @dist-check \
 		config-gnumake.h src/config-gnumake.h *.tar* @buildflags.tag @dist-checked.tag \
 		mdbx_*.static mdbx_*.static-lto CMakeFiles
 
@@ -435,7 +436,7 @@ IOARENA := $(shell \
   (test -x ../ioarena/@BUILD/src/ioarena && echo ../ioarena/@BUILD/src/ioarena) || \
   (test -x ../../@BUILD/src/ioarena && echo ../../@BUILD/src/ioarena) || \
   (test -x ../../src/ioarena && echo ../../src/ioarena) || which ioarena 2>&- || \
-  (echo false && echo '$(TIP) Clone and build the https://abf.io/erthink/ioarena.git within a neighbouring directory for availability of benchmarking.' >&2))
+  (echo false && echo '$(TIP) Clone and build the https://sourcecraft.dev/dqdkfa/ioarena within a neighbouring directory for availability of benchmarking.' >&2))
 endif
 NN	?= 25000000
 BENCH_CRUD_MODE ?= nosync

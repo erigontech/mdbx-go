@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.2-492-g4ca45169 at 2026-07-31T22:58:19+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.3-0-g251562b2 at 2026-08-09T13:18:46+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -176,7 +176,7 @@ static int defrag_notify(void *ctx, const MDBX_defrag_result_t *progress) {
     }
 
     if (ctx && tick) {
-      last_report_spenttime = progress->spent_time_dot16;
+      last_report_spenttime = (uint32_t)progress->spent_time_dot16;
       defrag_report_progress(progress, progress_dots++);
     }
     last_progress = *progress;

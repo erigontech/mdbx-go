@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.2-492-g4ca45169 at 2026-07-31T22:58:19+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.3-0-g251562b2 at 2026-08-09T13:18:46+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -24,7 +24,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY d5bc6bf54108e5711f513b2776ee6543bac4d50ed69b4c1566edbd3fe7639c1b_v0_14_2_492_g4ca45169
+#define MDBX_BUILD_SOURCERY 14e885fd80871dd24641b192913291f81248a2c85c10388a4700a97e68e90f41_v0_14_3_0_g251562b2
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -920,9 +920,13 @@ __extern_C key_t ftok(const char *, int);
 #ifdef __SANITIZE_ADDRESS__
 #define RUNNING_ON_ASAN (1)
 #include <sanitizer/asan_interface.h>
+#define ASAN_REGISON_IS_POISONED(addr, size) __asan_region_is_poisoned((void *)(addr), size)
+#define ASAN_DESCRIBE_ADDRESS(addr) __asan_describe_address((void *)(addr))
 #elif !defined(ASAN_POISON_MEMORY_REGION)
 #define ASAN_POISON_MEMORY_REGION(addr, size) ((void)(addr), (void)(size))
 #define ASAN_UNPOISON_MEMORY_REGION(addr, size) ((void)(addr), (void)(size))
+#define ASAN_REGISON_IS_POISONED(addr, size) ((void)(addr), (void)(size), 0)
+#define ASAN_DESCRIBE_ADDRESS(addr) ((void)addr)
 #endif /* __SANITIZE_ADDRESS__ */
 
 #ifndef RUNNING_ON_ASAN
@@ -2386,6 +2390,21 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 #error "Please use one of MDBX_CHECKING either MDBX_FORCE_ASSERTIONS build options, but not both"
 #endif
 
+/********************************************************************************
+ * Internal debugging options */
+
+#ifndef MDBX_DEBUG_SPILLING
+#define MDBX_DEBUG_SPILLING 0
+#endif /* MDBX_DEBUG_SPILLING */
+
+#ifndef MDBX_DEBUG_SEARCH_DISPATCHING
+#define MDBX_DEBUG_SEARCH_DISPATCHING MDBX_DEBUG
+#endif /* MDBX_DEBUG_SEARCH_DISPATCHING */
+
+#ifndef MDBX_DEBUG_SEARCH_BRANCHLESS
+#define MDBX_DEBUG_SEARCH_BRANCHLESS 0
+#endif /* MDBX_DEBUG_SEARCH_BRANCHLESS */
+
 /* Since 2026-04-01 alternatives to MDBX_PNL_ASCENDING = 0 are no longer supported. */
 #define MDBX_PNL_ASCENDING 0
 
@@ -3431,6 +3450,20 @@ MDBX_MAYBE_UNUSED static inline int log_if_error(const int err, const char *func
 #define LOG_IFERR(err) log_if_error((err), __func__, __LINE__)
 
 #endif /* !__cplusplus */
+
+/* --------------------------------------------------------------------------------------------------------------- */
+
+MDBX_MAYBE_UNUSED static inline char sanitizer_kind_of_poison(const void *addr, size_t size) {
+  if (ASAN_REGISON_IS_POISONED(addr, size))
+    return 'P';
+  if (mdbx_running_on_Valgrind()) {
+    if (VALGRIND_CHECK_MEM_IS_ADDRESSABLE(addr, size))
+      return 'N';
+    if (VALGRIND_CHECK_MEM_IS_DEFINED(addr, size))
+      return 'U';
+  }
+  return 0;
+}
 
 /* Test if the flags f are set in a flag word w. */
 #define F_ISSET(w, f) (((w) & (f)) == (f))
