@@ -429,7 +429,7 @@ func castEnvInfo(_info C.MDBX_envinfo) *EnvInfo {
 }
 
 // Sync flushes buffers to disk.  If force is true a synchronous flush occurs
-// and ignores any UtterlyNoSync or MapAsync flag on the environment.
+// and ignores any NoMetaSync/SafeNoSync/UtterlyNoSync flag on the environment.
 //
 // See mdbx_env_sync.
 func (env *Env) Sync(force bool, nonblock bool) error {
