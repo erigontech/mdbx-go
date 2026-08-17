@@ -201,6 +201,22 @@ func TestEnv_SetMaxReader(t *testing.T) {
 	}
 }
 
+func TestEnv_PresyncThreshold(t *testing.T) {
+	env, _ := setup(t)
+
+	const threshold = uint64(8 * 1024 * 1024)
+	if err := env.SetOption(OptPresyncThreshold, threshold); err != nil {
+		t.Fatal(err)
+	}
+	got, err := env.GetOption(OptPresyncThreshold)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != threshold {
+		t.Errorf("presync threshold: %v (!= %v)", got, threshold)
+	}
+}
+
 func TestEnv_SetDebug(t *testing.T) {
 	env, err := NewEnv(Default)
 	if err != nil {

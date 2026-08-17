@@ -120,6 +120,13 @@ const (
 	// the database is much larger than RAM; when the working set fits in RAM it is pure
 	// overhead. Set to 0 to disable, 1 to force-enable, or use the env default when unset.
 	OptPrefaultWriteEnable = C.MDBX_opt_prefault_write_enable
+	// OptPresyncThreshold sets how many bytes of not-yet-synced data may accumulate before
+	// SyncPoll/Sync performs a preliminary flush without holding the transaction lock
+	// (MDBX_opt_presync_threshold, new in libmdbx 0.14.3). Pushing the bulk of the data out
+	// early shortens the locked final stage of the sync. A too large threshold lengthens the
+	// latency spikes it is meant to smooth; a too small one multiplies sync calls and their
+	// overhead. Value in bytes: minimum 1, maximum 2 GiB, default 256 KiB.
+	OptPresyncThreshold = C.MDBX_opt_presync_threshold
 )
 
 var (
