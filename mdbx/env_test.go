@@ -1,7 +1,11 @@
 package mdbx
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -385,111 +389,254 @@ func TestEnv_ReaderCheck(t *testing.T) {
 	}
 }
 
-// func TestEnv_Copy(t *testing.T) {
-//	testEnvCopy(t, 0, false, false)
-// }
-//
-// func TestEnv_CopyFlags(t *testing.T) {
-//	 testEnvCopy(t, CopyCompact, true, false)
-// }
-//
-// func TestEnv_CopyFlags_zero(t *testing.T) {
-//	 testEnvCopy(t, 0, true, false)
-// }
-//
-// func TestEnv_CopyFD(t *testing.T) {
-//	 testEnvCopy(t, 0, false, true)
-// }
-//
-// func TestEnv_CopyFDFlags(t *testing.T) {
-//	 testEnvCopy(t, CopyCompact, true, true)
-// }
-//
-// func TestEnv_CopyFDFlags_zero(t *testing.T) {
-//	 testEnvCopy(t, 0, true, true)
-// }
-//
-// func testEnvCopy(t *testing.T, flags uint, useflags bool, usefd bool) {
-//	dircp, err := ioutil.TempDir("", "test-env-copy-")
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//	defer os.RemoveAll(dircp)
-//
-//	var fd uintptr
-//	if usefd {
-//		path := filepath.Join(dircp, "data.mdb")
-//		f, err := os.Create(path)
-//		if err != nil {
-//			t.Error(err)
-//			return
-//		}
-//		fd = f.Fd()
-//		defer f.Close()
-//	}
-//
-//	env := setup(t)
-//
-//
-//	item := struct{ k, v []byte }{
-//		[]byte("k0"),
-//		[]byte("v0"),
-//	}
-//
-//	err = env.Update(func(txn *Txn) (err error) {
-//		db, err := txn.OpenRoot(0)
-//		if err != nil {
-//			return err
-//		}
-//		return txn.Put(db, item.k, item.v, 0)
-//	})
-//	if err != nil {
-//		t.Error(err)
-//	}
-//
-//	switch {
-//	case usefd && useflags:
-//		err = env.CopyFDFlag(fd, flags)
-//	case usefd && !useflags:
-//		err = env.CopyFD(fd)
-//	case !usefd && useflags:
-//		err = env.CopyFlag(dircp, flags)
-//	case !usefd && !useflags:
-//		err = env.Copy(dircp)
-//	}
-//	if err != nil {
-//		t.Error(err)
-//	}
-//
-//	envcp, err := NewEnv()
-//	if err != nil {
-//		t.Error(err)
-//	}
-//	err = envcp.Open(dircp, 0, 0644)
-//	defer envcp.Close()
-//	if err != nil {
-//		t.Error(err)
-//		return
-//	}
-//
-//	err = envcp.View(func(txn *Txn) (err error) {
-//		db, err := txn.OpenRoot(0)
-//		if err != nil {
-//			return err
-//		}
-//		v, err := txn.Get(db, item.k)
-//		if err != nil {
-//			return err
-//		}
-//		if !bytes.Equal(v, item.v) {
-//			return fmt.Errorf("unexpected value: %q (!= %q)", v, "v0")
-//		}
-//		return nil
-//	})
-//	if err != nil {
-//		t.Error(err)
-//	}
-// }
+// TestEnv_CopyFlag_Compact exercises Env.CopyFlag (path target) with the
+// CopyCompact flag, which produces a self-contained snapshot the test can
+// re-open and verify.
+func TestEnv_CopyFlag_Compact(t *testing.T) {
+	testEnvCopy(t, CopyCompact, true, false)
+}
+
+// TestEnv_CopyFDFlag_Compact exercises Env.CopyFDFlag (file-descriptor target)
+// with the CopyCompact flag.
+func TestEnv_CopyFDFlag_Compact(t *testing.T) {
+	testEnvCopy(t, CopyCompact, true, true)
+}
+
+// Copy and CopyFD take no flags and compact on their own.
+func TestEnv_Copy(t *testing.T) {
+	testEnvCopy(t, 0, false, false)
+}
+
+func TestEnv_CopyFD(t *testing.T) {
+	testEnvCopy(t, 0, false, true)
+}
+
+// A copy without CopyCompact is refused up front: libmdbx's as-is copy path
+// writes pristine meta-pages, so the target would open as an empty database
+// rather than a copy of env. See ErrCopyNotCompacting.
+func TestEnv_Copy_RejectsNonCompacting(t *testing.T) {
+	env, _ := setup(t)
+
+	dst := filepath.Join(t.TempDir(), "copy.mdbx")
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"CopyFlag(CopyDefaults)", env.CopyFlag(dst, CopyDefaults)},
+		{"CopyFlag(CopyOverwrite)", env.CopyFlag(dst, CopyOverwrite)},
+		{"CopyFDFlag(CopyDefaults)", env.CopyFDFlag(0, CopyDefaults)},
+	} {
+		if !errors.Is(tc.err, ErrCopyNotCompacting) {
+			t.Errorf("%s: err = %v, want ErrCopyNotCompacting", tc.name, tc.err)
+		}
+	}
+	if _, err := os.Stat(dst); !os.IsNotExist(err) {
+		t.Errorf("a rejected copy must not touch the target: stat = %v", err)
+	}
+}
+
+// TestEnv_CopyFlag_Overwrite ensures Copy refuses to clobber an existing target
+// while CopyFlag(...|CopyOverwrite) replaces it.
+func TestEnv_CopyFlag_Overwrite(t *testing.T) {
+	env, _ := setup(t)
+
+	item := struct{ k, v []byte }{[]byte("k0"), []byte("v0")}
+	if err := env.Update(func(txn *Txn) error {
+		db, err := txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		return txn.Put(db, item.k, item.v, 0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	dst := filepath.Join(t.TempDir(), "copy.mdbx")
+
+	if err := env.CopyFlag(dst, CopyCompact); err != nil {
+		t.Fatalf("first copy: %v", err)
+	}
+
+	if err := env.CopyFlag(dst, CopyCompact); err == nil {
+		t.Fatal("expected error when destination already exists, got nil")
+	}
+
+	if err := env.CopyFlag(dst, CopyCompact|CopyOverwrite); err != nil {
+		t.Fatalf("copy with overwrite: %v", err)
+	}
+
+	envcp, err := NewEnv(Default)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer envcp.Close()
+	if err := envcp.Open(dst, Readonly, 0644); err != nil {
+		t.Fatalf("open copy: %v", err)
+	}
+	if err := envcp.View(func(txn *Txn) error {
+		db, err := txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		v, err := txn.Get(db, item.k)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(v, item.v) {
+			return fmt.Errorf("unexpected value: %q (!= %q)", v, item.v)
+		}
+		return nil
+	}); err != nil {
+		t.Errorf("verify: %v", err)
+	}
+}
+
+func testEnvCopy(t *testing.T, flags uint, useflags bool, usefd bool) {
+	t.Helper()
+	tmp := t.TempDir()
+
+	var (
+		fd  uintptr
+		dst string
+		f   *os.File
+	)
+	if usefd {
+		dst = filepath.Join(tmp, "data.mdb")
+		var err error
+		f, err = os.Create(dst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fd = f.Fd()
+		defer f.Close() // safety net for error paths; happy path closes early below
+	} else {
+		dst = filepath.Join(tmp, "dst")
+	}
+
+	env, _ := setup(t)
+
+	item := struct{ k, v []byte }{[]byte("k0"), []byte("v0")}
+	if err := env.Update(func(txn *Txn) error {
+		db, err := txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		return txn.Put(db, item.k, item.v, 0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var err error
+	switch {
+	case usefd && useflags:
+		err = env.CopyFDFlag(fd, flags)
+	case usefd && !useflags:
+		err = env.CopyFD(fd)
+	case !usefd && useflags:
+		err = env.CopyFlag(dst, flags)
+	case !usefd && !useflags:
+		err = env.Copy(dst)
+	}
+	if usefd {
+		// Release our handle on the copy target before re-opening it as an
+		// env below, so the two handles don't overlap.
+		f.Close()
+	}
+	if err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+
+	envcp, err := NewEnv(Default)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer envcp.Close()
+	if err := envcp.Open(dst, Readonly, 0644); err != nil {
+		t.Fatalf("open copy: %v", err)
+	}
+
+	if err := envcp.View(func(txn *Txn) error {
+		db, err := txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		v, err := txn.Get(db, item.k)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(v, item.v) {
+			return fmt.Errorf("unexpected value: %q (!= %q)", v, item.v)
+		}
+		return nil
+	}); err != nil {
+		t.Errorf("verify: %v", err)
+	}
+}
+
+func TestEnv_Defrag(t *testing.T) {
+	// Exclusive, like libmdbx's own mdbx_defrag tool opens the environment
+	// (MDBX_ENV_DEFAULTS|MDBX_EXCLUSIVE, falling back to MDBX_ACCEDE): shrinking
+	// the datafile needs the whole-file lock, and taking it per-transaction
+	// instead fails on Windows with ERROR_LOCK_VIOLATION.
+	env, _ := setupFlags(t, Exclusive, Default)
+
+	// Make some pages by writing and then deleting data so there's
+	// something for the defragmenter to look at.
+	if err := env.Update(func(txn *Txn) error {
+		db, err := txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for i := range 256 {
+			k := fmt.Appendf(nil, "k%04d", i)
+			v := bytes.Repeat([]byte("x"), 1024)
+			if err := txn.Put(db, k, v, 0); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.Update(func(txn *Txn) error {
+		db, err := txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for i := range 128 {
+			k := fmt.Appendf(nil, "k%04d", i)
+			if err := txn.Del(db, k, nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := env.Defrag(DefragOptions{AcceptableBacklash: -1})
+	if err != nil {
+		t.Fatalf("defrag: %v", err)
+	}
+	if res == nil {
+		t.Fatal("defrag: nil result")
+	}
+	if res.PagesWhole == 0 {
+		t.Errorf("defrag: PagesWhole = 0, expected > 0")
+	}
+	// The write-then-delete setup leaves reclaimable pages near the end of the
+	// file, so defrag must actually run and relocate at least one page. A zero
+	// here means defrag was effectively a no-op and the binding is not wired to
+	// the underlying work.
+	if res.Cycles == 0 {
+		t.Errorf("defrag: Cycles = 0, expected defrag to run at least one cycle")
+	}
+	if res.PagesMoved == 0 {
+		t.Errorf("defrag: PagesMoved = 0, expected defrag to relocate pages")
+	}
+	t.Logf("defrag: cycles=%d shrunk=%d moved=%d whole=%d stopping_reasons=0x%x spent=%s",
+		res.Cycles, res.PagesShrunk, res.PagesMoved, res.PagesWhole, res.StoppingReasons, res.SpentTime)
+}
 
 func TestEnv_Sync(t *testing.T) {
 	env, _ := setupFlags(t, SafeNoSync, "NoSync")
