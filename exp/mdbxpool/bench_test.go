@@ -175,6 +175,7 @@ func BenchmarkStrategies(b *testing.B) {
 }
 
 func benchSerial(b *testing.B, s strategy) {
+	b.Helper()
 	env, dbi := setup(b)
 	var cur *mdbx.Txn
 	b.ReportAllocs()
@@ -204,13 +205,12 @@ func benchSerial(b *testing.B, s strategy) {
 // recycling transactions while a writer keeps superseding pages, so parked
 // readers actually get ousted.
 func benchParallelWithWriter(b *testing.B, s strategy) {
+	b.Helper()
 	env, dbi := setup(b)
 
 	stop := make(chan struct{})
 	var writer sync.WaitGroup
-	writer.Add(1)
-	go func() {
-		defer writer.Done()
+	writer.Go(func() {
 		value := make([]byte, seedValue)
 		for {
 			select {
@@ -225,7 +225,7 @@ func benchParallelWithWriter(b *testing.B, s strategy) {
 				return
 			}
 		}
-	}()
+	})
 
 	// A plain mutex-guarded stack, so the benchmark measures the recycling
 	// strategy rather than a particular free-list design.

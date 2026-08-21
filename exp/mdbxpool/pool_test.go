@@ -355,9 +355,7 @@ func TestPoolConcurrentViews(t *testing.T) {
 	)
 	stop := make(chan struct{})
 	var writer sync.WaitGroup
-	writer.Add(1)
-	go func() {
-		defer writer.Done()
+	writer.Go(func() {
 		value := make([]byte, seedValue)
 		for {
 			select {
@@ -372,13 +370,11 @@ func TestPoolConcurrentViews(t *testing.T) {
 				return
 			}
 		}
-	}()
+	})
 
 	var readers sync.WaitGroup
 	for range goroutines {
-		readers.Add(1)
-		go func() {
-			defer readers.Done()
+		readers.Go(func() {
 			for range iterations {
 				if err := p.View(func(txn *mdbx.Txn) error {
 					_, err := txn.Get(dbi, firstKey())
@@ -388,7 +384,7 @@ func TestPoolConcurrentViews(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	readers.Wait()
 	close(stop)
@@ -417,9 +413,7 @@ func TestPoolCloseDuringConcurrentUse(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 32 {
 				txn, err := p.Get()
 				if errors.Is(err, ErrClosed) {
@@ -437,7 +431,7 @@ func TestPoolCloseDuringConcurrentUse(t *testing.T) {
 				_ = p.Stats()
 				p.Put(txn)
 			}
-		}()
+		})
 	}
 	if err := p.Close(); err != nil {
 		t.Fatalf("close: %v", err)

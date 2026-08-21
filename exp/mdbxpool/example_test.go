@@ -68,7 +68,8 @@ func ExamplePool_View() {
 			return nil
 		})
 		if err != nil {
-			log.Fatal(err)
+			// panic, not log.Fatal: os.Exit would skip the deferred Close.
+			panic(err)
 		}
 	}
 
@@ -95,13 +96,13 @@ func ExamplePool_Get() {
 
 	txn, err := p.Get()
 	if err != nil {
-		log.Fatal(err)
+		panic(err) // not log.Fatal: os.Exit would skip the deferred Close.
 	}
 	defer p.Put(txn)
 
 	v, err := txn.Get(dbi, []byte("greeting"))
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	fmt.Printf("%s\n", v)
 
@@ -122,9 +123,7 @@ func ExampleWithMaxIdle() {
 	// will keep.
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			err := p.View(func(txn *mdbx.Txn) error {
 				_, err := txn.Get(dbi, []byte("greeting"))
 				return err
@@ -132,7 +131,7 @@ func ExampleWithMaxIdle() {
 			if err != nil {
 				log.Print(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
