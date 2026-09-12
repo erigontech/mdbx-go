@@ -544,7 +544,13 @@ func setupFlags(tb testing.TB, flags uint, label Label) (env *Env, path string) 
 		tb.Fatalf("open: %s", err)
 	}
 	tb.Cleanup(func() {
-		env.Close()
+		// Report the error: MDBX_BUSY here means the test leaked a write txn
+		// (typically by starting one without runtime.LockOSThread), which
+		// leaves the datafile open and only shows up as a TempDir cleanup
+		// failure on Windows.
+		if err := env.Close(); err != nil {
+			tb.Errorf("env close: %v", err)
+		}
 	})
 	return env, path
 }
