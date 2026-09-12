@@ -740,10 +740,8 @@ type DefragOptions struct {
 //
 // See MDBX_defrag_result_t.
 type DefragResult struct {
-	// PagesShrunk is how many pages the file shrank by. Upstream documents
-	// it as possibly negative, but computes it as an unsigned 32-bit
-	// subtraction of two pgno_t, so a "negative" result arrives here as a
-	// value near 1<<32. Do not test it for < 0.
+	// PagesShrunk is how many pages the file shrank by. Negative if defrag
+	// was stopped or the database structure prevented shrinking.
 	PagesShrunk     int64
 	PagesMoved      uint64 // Total pages moved during defragmentation.
 	PagesScheduled  uint64 // Pages scheduled to move at the next stage of the current cycle.
@@ -794,7 +792,7 @@ func (env *Env) Defrag(opts DefragOptions) (*DefragResult, error) {
 		C.intptr_t(opts.PreferredBatch),
 	)
 	res := &DefragResult{
-		PagesShrunk:     int64(r.pages_shrunk),
+		PagesShrunk:     int64(r.pages_shrinked),
 		PagesMoved:      uint64(r.pages_moved),
 		PagesScheduled:  uint64(r.pages_scheduled),
 		PagesRetained:   uint64(r.pages_retained),

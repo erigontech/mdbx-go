@@ -293,7 +293,13 @@ mdbxgo_defrag_result mdbxgo_env_defrag(MDBX_env *env,
     r.err = mdbx_env_defrag(env, defrag_atleast, time_atleast_dot16, defrag_enough,
                             time_limit_dot16, acceptable_backlash, preferred_batch,
                             NULL, NULL, &res);
-    r.pages_shrunk     = (int64_t)res.pages_shrinked;
+    /* libmdbx computes pages_shrinked as an unsigned 32-bit subtraction of two
+     * pgno_t and stores the wrapped result in a wider intptr_t, so a shrink
+     * that went backwards arrives zero-extended as a value near 1<<32. Every
+     * legal page number is <= MAX_PAGENO (0x7FFFffff), so the true difference
+     * always fits in int32 and reinterpreting the low half recovers its sign,
+     * which is what mdbx.h documents this field to carry. */
+    r.pages_shrinked   = (int32_t)(uint32_t)res.pages_shrinked;
     r.pages_moved      = (uint64_t)res.pages_moved;
     r.pages_scheduled  = (uint64_t)res.pages_scheduled;
     r.pages_retained   = (uint64_t)res.pages_retained;
