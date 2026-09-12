@@ -73,18 +73,19 @@ const (
 )
 
 // Stopping reasons for Env.Defrag. The DefragResult.StoppingReasons field is a
-// mask OR'ing together any subset of these flags.
+// mask OR'ing together any subset of these flags; zero means no obstacles.
+//
+// MDBX_defrag_discontinued and MDBX_defrag_aborted are omitted: both are only
+// ever raised by the progress callback, which Env.Defrag always passes as
+// NULL. Add them when the callback is bound.
 //
 // See MDBX_defrag_stopping_reasons_t.
 const (
-	DefragNoObstacles     = C.MDBX_defrag_noobstacles      // No obstacles
 	DefragStepSize        = C.MDBX_defrag_step_size        // Step transaction size limit reached
 	DefragLargeChunk      = C.MDBX_defrag_large_chunk      // Preliminary movement is necessary
-	DefragDiscontinued    = C.MDBX_defrag_discontinued     // Discontinued by user
 	DefragLaggardReader   = C.MDBX_defrag_laggard_reader   // A reader is preventing further defragmentation
 	DefragEnoughThreshold = C.MDBX_defrag_enough_threshold // User-set goal achieved
 	DefragTimeLimit       = C.MDBX_defrag_time_limit       // Specified time limit reached
-	DefragAborted         = C.MDBX_defrag_aborted          // Aborted by user
 	DefragError           = C.MDBX_defrag_error            // An error occurred during defragmentation
 )
 
