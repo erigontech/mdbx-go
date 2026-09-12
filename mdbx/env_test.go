@@ -2,7 +2,6 @@ package mdbx
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -389,51 +388,14 @@ func TestEnv_ReaderCheck(t *testing.T) {
 	}
 }
 
-// TestEnv_CopyFlag_Compact exercises Env.CopyFlag (path target) with the
-// CopyCompact flag, which produces a self-contained snapshot the test can
-// re-open and verify.
-func TestEnv_CopyFlag_Compact(t *testing.T) {
-	testEnvCopy(t, CopyCompact, true, false)
-}
-
-// TestEnv_CopyFDFlag_Compact exercises Env.CopyFDFlag (file-descriptor target)
-// with the CopyCompact flag.
-func TestEnv_CopyFDFlag_Compact(t *testing.T) {
-	testEnvCopy(t, CopyCompact, true, true)
-}
-
-// Copy and CopyFD take no flags and compact on their own.
-func TestEnv_Copy(t *testing.T) {
-	testEnvCopy(t, 0, false, false)
-}
-
-func TestEnv_CopyFD(t *testing.T) {
-	testEnvCopy(t, 0, false, true)
-}
-
-// A copy without CopyCompact is refused up front: libmdbx's as-is copy path
-// writes pristine meta-pages, so the target would open as an empty database
-// rather than a copy of env. See ErrCopyNotCompacting.
-func TestEnv_Copy_RejectsNonCompacting(t *testing.T) {
-	env, _ := setup(t)
-
-	dst := filepath.Join(t.TempDir(), "copy.mdbx")
-	for _, tc := range []struct {
-		name string
-		err  error
-	}{
-		{"CopyFlag(CopyDefaults)", env.CopyFlag(dst, CopyDefaults)},
-		{"CopyFlag(CopyOverwrite)", env.CopyFlag(dst, CopyOverwrite)},
-		{"CopyFDFlag(CopyDefaults)", env.CopyFDFlag(0, CopyDefaults)},
-	} {
-		if !errors.Is(tc.err, ErrCopyNotCompacting) {
-			t.Errorf("%s: err = %v, want ErrCopyNotCompacting", tc.name, tc.err)
-		}
-	}
-	if _, err := os.Stat(dst); !os.IsNotExist(err) {
-		t.Errorf("a rejected copy must not touch the target: stat = %v", err)
-	}
-}
+// Copy / CopyFD default to an as-is copy; CopyFlag / CopyFDFlag take the
+// flags verbatim. Both modes must round-trip the data.
+func TestEnv_Copy(t *testing.T)               { testEnvCopy(t, 0, false, false) }
+func TestEnv_CopyFD(t *testing.T)             { testEnvCopy(t, 0, false, true) }
+func TestEnv_CopyFlag_AsIs(t *testing.T)      { testEnvCopy(t, CopyDefaults, true, false) }
+func TestEnv_CopyFDFlag_AsIs(t *testing.T)    { testEnvCopy(t, CopyDefaults, true, true) }
+func TestEnv_CopyFlag_Compact(t *testing.T)   { testEnvCopy(t, CopyCompact, true, false) }
+func TestEnv_CopyFDFlag_Compact(t *testing.T) { testEnvCopy(t, CopyCompact, true, true) }
 
 // TestEnv_CopyFlag_Overwrite ensures Copy refuses to clobber an existing target
 // while CopyFlag(...|CopyOverwrite) replaces it.
