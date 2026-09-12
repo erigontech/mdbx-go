@@ -92,7 +92,7 @@ mdbxgo_gc_info_result    mdbxgo_gc_info(MDBX_txn *txn);
  * int64/uint64 to avoid cgo size mismatches across platforms. */
 typedef struct {
     int err;
-    int64_t  pages_shrinked;
+    int64_t  pages_shrunk;
     uint64_t pages_moved;
     uint64_t pages_scheduled;
     uint64_t pages_retained;

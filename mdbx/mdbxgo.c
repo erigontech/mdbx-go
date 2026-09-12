@@ -299,7 +299,7 @@ mdbxgo_defrag_result mdbxgo_env_defrag(MDBX_env *env,
      * legal page number is <= MAX_PAGENO (0x7FFFffff), so the true difference
      * always fits in int32 and reinterpreting the low half recovers its sign,
      * which is what mdbx.h documents this field to carry. */
-    r.pages_shrinked   = (int32_t)(uint32_t)res.pages_shrinked;
+    r.pages_shrunk     = (int32_t)(uint32_t)res.pages_shrinked;
     r.pages_moved      = (uint64_t)res.pages_moved;
     r.pages_scheduled  = (uint64_t)res.pages_scheduled;
     r.pages_retained   = (uint64_t)res.pages_retained;

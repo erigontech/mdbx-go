@@ -792,7 +792,7 @@ func (env *Env) Defrag(opts DefragOptions) (*DefragResult, error) {
 		C.intptr_t(opts.PreferredBatch),
 	)
 	res := &DefragResult{
-		PagesShrunk:     int64(r.pages_shrinked),
+		PagesShrunk:     int64(r.pages_shrunk),
 		PagesMoved:      uint64(r.pages_moved),
 		PagesScheduled:  uint64(r.pages_scheduled),
 		PagesRetained:   uint64(r.pages_retained),
