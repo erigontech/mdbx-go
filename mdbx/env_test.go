@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestEnv_Path_notOpen(t *testing.T) {
@@ -590,6 +591,68 @@ func TestEnv_Defrag(t *testing.T) {
 	}
 	t.Logf("defrag: cycles=%d shrunk=%d moved=%d whole=%d stopping_reasons=0x%x spent=%s",
 		res.Cycles, res.PagesShrunk, res.PagesMoved, res.PagesWhole, res.StoppingReasons, res.SpentTime)
+}
+
+// TestEnv_Defrag_TimeLimit covers DefragOptions.TimeLimit: libmdbx takes the
+// bound in 1/65536-second units, so a Go time.Duration that survives the
+// conversion is the thing worth testing.
+func TestEnv_Defrag_TimeLimit(t *testing.T) {
+	env, _ := setupFlags(t, Exclusive, Default)
+
+	// 20k records of 2 KiB, then delete every other one. Unbounded defrag of
+	// this takes tens of milliseconds, which leaves plenty of room under the
+	// millisecond limit below.
+	const records = 20000
+	value := bytes.Repeat([]byte("x"), 2048)
+	if err := env.Update(func(txn *Txn) error {
+		db, err := txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for i := range records {
+			if err := txn.Put(db, fmt.Appendf(nil, "k%08d", i), value, 0); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.Update(func(txn *Txn) error {
+		db, err := txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for i := range records / 2 {
+			if err := txn.Del(db, fmt.Appendf(nil, "k%08d", i*2), nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// TimeLimit below TimeAtLeast is rejected up front. This is what proves
+	// both durations arrive at libmdbx in its own units rather than being
+	// dropped: the rejection compares them after the conversion.
+	if _, err := env.Defrag(DefragOptions{TimeAtLeast: time.Second, TimeLimit: time.Millisecond}); err == nil {
+		t.Error("TimeLimit < TimeAtLeast: expected an error, got nil")
+	}
+
+	res, err := env.Defrag(DefragOptions{TimeLimit: time.Millisecond, AcceptableBacklash: -1})
+	if err != nil {
+		t.Fatalf("defrag: %v", err)
+	}
+	if res.StoppingReasons&DefragTimeLimit == 0 {
+		t.Errorf("StoppingReasons = 0x%x, want DefragTimeLimit (0x%x) set; spent=%s cycles=%d moved=%d",
+			res.StoppingReasons, DefragTimeLimit, res.SpentTime, res.Cycles, res.PagesMoved)
+	}
+	// The limit stops defrag scheduling more work, it does not abort the batch
+	// already in flight, so SpentTime may overshoot it. Only the fact that it
+	// stopped early is assertable.
+	t.Logf("defrag: cycles=%d moved=%d whole=%d reasons=0x%x spent=%s",
+		res.Cycles, res.PagesMoved, res.PagesWhole, res.StoppingReasons, res.SpentTime)
 }
 
 func TestEnv_Sync(t *testing.T) {
