@@ -740,7 +740,11 @@ type DefragOptions struct {
 //
 // See MDBX_defrag_result_t.
 type DefragResult struct {
-	PagesShrunk     int64  // Negative if defrag was stopped or db structure prevents shrinking.
+	// PagesShrunk is how many pages the file shrank by. Upstream documents
+	// it as possibly negative, but computes it as an unsigned 32-bit
+	// subtraction of two pgno_t, so a "negative" result arrives here as a
+	// value near 1<<32. Do not test it for < 0.
+	PagesShrunk     int64
 	PagesMoved      uint64 // Total pages moved during defragmentation.
 	PagesScheduled  uint64 // Pages scheduled to move at the next stage of the current cycle.
 	PagesRetained   uint64 // Pages held by other processes via MVCC-snapshots.
@@ -763,11 +767,14 @@ type DefragResult struct {
 // operation is ACID and may run in several internal cycles.
 //
 // Defrag returns the metrics gathered during the run. A non-nil result is
-// returned regardless of error. err is nil if defragmentation completed; it
-// may carry MDBX-specific errors such as MDBX_LAGGARD_READER when readers
-// prevented completion. When defragmentation could not fully achieve the
-// requested goals, libmdbx returns MDBX_RESULT_TRUE which is treated as
+// returned regardless of error. When defragmentation could not fully achieve
+// the requested goals, libmdbx returns MDBX_RESULT_TRUE, which is treated as
 // non-error here; inspect result.StoppingReasons to learn why.
+//
+// err can be LaggardReader, which means defragmentation stopped early rather
+// than failed, and which does not imply a reader was involved: libmdbx also
+// returns it when defrag stalls on the same page four times over and the GC
+// is not empty. Read result.StoppingReasons to tell the cases apart.
 //
 // Cutting off the trailing pages needs the whole-file lock, so open the
 // environment with Exclusive when defragmenting — that is what libmdbx's own

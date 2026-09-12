@@ -2,6 +2,7 @@ package mdbx
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -396,137 +397,45 @@ func TestEnv_CopyFD(t *testing.T)             { testEnvCopy(t, 0, false, true) }
 func TestEnv_CopyFlag_Compact(t *testing.T)   { testEnvCopy(t, CopyCompact, true, false) }
 func TestEnv_CopyFDFlag_Compact(t *testing.T) { testEnvCopy(t, CopyCompact, true, true) }
 
-// TestEnv_CopyFlag_Overwrite ensures Copy refuses to clobber an existing target
-// while CopyFlag(...|CopyOverwrite) replaces it.
-func TestEnv_CopyFlag_Overwrite(t *testing.T) {
-	env, _ := setup(t)
+// copyItem is the single record the copy tests round-trip.
+var copyItem = struct{ k, v []byte }{[]byte("k0"), []byte("v0")}
 
-	item := struct{ k, v []byte }{[]byte("k0"), []byte("v0")}
-	if err := env.Update(func(txn *Txn) error {
-		db, err := txn.OpenRoot(0)
-		if err != nil {
-			return err
-		}
-		return txn.Put(db, item.k, item.v, 0)
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	dst := filepath.Join(t.TempDir(), "copy.mdbx")
-
-	if err := env.CopyFlag(dst, CopyCompact); err != nil {
-		t.Fatalf("first copy: %v", err)
-	}
-
-	if err := env.CopyFlag(dst, CopyCompact); err == nil {
-		t.Fatal("expected error when destination already exists, got nil")
-	}
-
-	if err := env.CopyFlag(dst, CopyCompact|CopyOverwrite); err != nil {
-		t.Fatalf("copy with overwrite: %v", err)
-	}
-
-	envcp, err := NewEnv(Default)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer envcp.Close()
-	if err := envcp.Open(dst, Readonly, 0644); err != nil {
-		t.Fatalf("open copy: %v", err)
-	}
-	if err := envcp.View(func(txn *Txn) error {
-		db, err := txn.OpenRoot(0)
-		if err != nil {
-			return err
-		}
-		v, err := txn.Get(db, item.k)
-		if err != nil {
-			return err
-		}
-		if !bytes.Equal(v, item.v) {
-			return fmt.Errorf("unexpected value: %q (!= %q)", v, item.v)
-		}
-		return nil
-	}); err != nil {
-		t.Errorf("verify: %v", err)
-	}
-}
-
-func testEnvCopy(t *testing.T, flags uint, useflags bool, usefd bool) {
+// seedCopyItem writes copyItem into env's root database.
+func seedCopyItem(t *testing.T, env *Env) {
 	t.Helper()
-	tmp := t.TempDir()
-
-	var (
-		fd  uintptr
-		dst string
-		f   *os.File
-	)
-	if usefd {
-		dst = filepath.Join(tmp, "data.mdb")
-		var err error
-		f, err = os.Create(dst)
-		if err != nil {
-			t.Fatal(err)
-		}
-		fd = f.Fd()
-		defer f.Close() // safety net for error paths; happy path closes early below
-	} else {
-		dst = filepath.Join(tmp, "dst")
-	}
-
-	env, _ := setup(t)
-
-	item := struct{ k, v []byte }{[]byte("k0"), []byte("v0")}
 	if err := env.Update(func(txn *Txn) error {
 		db, err := txn.OpenRoot(0)
 		if err != nil {
 			return err
 		}
-		return txn.Put(db, item.k, item.v, 0)
+		return txn.Put(db, copyItem.k, copyItem.v, 0)
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
 
-	var err error
-	switch {
-	case usefd && useflags:
-		err = env.CopyFDFlag(fd, flags)
-	case usefd:
-		err = env.CopyFD(fd)
-	case useflags:
-		err = env.CopyFlag(dst, flags)
-	default:
-		err = env.Copy(dst)
-	}
-	if usefd {
-		// Release our handle on the copy target before re-opening it as an
-		// env below, so the two handles don't overlap.
-		f.Close()
-	}
-	if err != nil {
-		t.Fatalf("copy: %v", err)
-	}
-
+// verifyCopyItem opens the copy at path read-only and checks copyItem survived.
+func verifyCopyItem(t *testing.T, path string) {
+	t.Helper()
 	envcp, err := NewEnv(Default)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer envcp.Close()
-	if err := envcp.Open(dst, Readonly, 0644); err != nil {
+	if err := envcp.Open(path, Readonly, 0644); err != nil {
 		t.Fatalf("open copy: %v", err)
 	}
-
 	if err := envcp.View(func(txn *Txn) error {
 		db, err := txn.OpenRoot(0)
 		if err != nil {
 			return err
 		}
-		v, err := txn.Get(db, item.k)
+		v, err := txn.Get(db, copyItem.k)
 		if err != nil {
 			return err
 		}
-		if !bytes.Equal(v, item.v) {
-			return fmt.Errorf("unexpected value: %q (!= %q)", v, item.v)
+		if !bytes.Equal(v, copyItem.v) {
+			return fmt.Errorf("unexpected value: %q (!= %q)", v, copyItem.v)
 		}
 		return nil
 	}); err != nil {
@@ -534,76 +443,11 @@ func testEnvCopy(t *testing.T, flags uint, useflags bool, usefd bool) {
 	}
 }
 
-func TestEnv_Defrag(t *testing.T) {
-	// Exclusive, like libmdbx's own mdbx_defrag tool opens the environment
-	// (MDBX_ENV_DEFAULTS|MDBX_EXCLUSIVE, falling back to MDBX_ACCEDE): shrinking
-	// the datafile needs the whole-file lock, and taking it per-transaction
-	// instead fails on Windows with ERROR_LOCK_VIOLATION.
-	env, _ := setupFlags(t, Exclusive, Default)
-
-	// Make some pages by writing and then deleting data so there's
-	// something for the defragmenter to look at.
-	if err := env.Update(func(txn *Txn) error {
-		db, err := txn.OpenRoot(0)
-		if err != nil {
-			return err
-		}
-		for i := range 256 {
-			k := fmt.Appendf(nil, "k%04d", i)
-			v := bytes.Repeat([]byte("x"), 1024)
-			if err := txn.Put(db, k, v, 0); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := env.Update(func(txn *Txn) error {
-		db, err := txn.OpenRoot(0)
-		if err != nil {
-			return err
-		}
-		for i := range 128 {
-			k := fmt.Appendf(nil, "k%04d", i)
-			if err := txn.Del(db, k, nil); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	res, err := env.Defrag(DefragOptions{AcceptableBacklash: -1})
-	if err != nil {
-		t.Fatalf("defrag: %v", err)
-	}
-	// The write-then-delete setup leaves reclaimable pages near the end of the
-	// file, so defrag must actually run and relocate at least one page. A zero
-	// here means defrag was effectively a no-op and the binding is not wired to
-	// the underlying work.
-	if res.Cycles == 0 {
-		t.Errorf("defrag: Cycles = 0, expected defrag to run at least one cycle")
-	}
-	if res.PagesMoved == 0 {
-		t.Errorf("defrag: PagesMoved = 0, expected defrag to relocate pages")
-	}
-	t.Logf("defrag: cycles=%d shrunk=%d moved=%d whole=%d stopping_reasons=0x%x spent=%s",
-		res.Cycles, res.PagesShrunk, res.PagesMoved, res.PagesWhole, res.StoppingReasons, res.SpentTime)
-}
-
-// TestEnv_Defrag_TimeLimit covers DefragOptions.TimeLimit: libmdbx takes the
-// bound in 1/65536-second units, so a Go time.Duration that survives the
-// conversion is the thing worth testing.
-func TestEnv_Defrag_TimeLimit(t *testing.T) {
-	env, _ := setupFlags(t, Exclusive, Default)
-
-	// 20k records of 2 KiB, then delete every other one. Unbounded defrag of
-	// this takes tens of milliseconds, which leaves plenty of room under the
-	// millisecond limit below.
-	const records = 20000
-	value := bytes.Repeat([]byte("x"), 2048)
+// seedDefrag writes records values of valueSize bytes and then deletes every
+// other one, leaving reclaimable pages for the defragmenter to move.
+func seedDefrag(t *testing.T, env *Env, records, valueSize int) {
+	t.Helper()
+	value := bytes.Repeat([]byte("x"), valueSize)
 	if err := env.Update(func(txn *Txn) error {
 		db, err := txn.OpenRoot(0)
 		if err != nil {
@@ -632,6 +476,119 @@ func TestEnv_Defrag_TimeLimit(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// TestEnv_CopyFlag_Overwrite ensures a copy refuses to clobber an existing
+// target while CopyFlag(...|CopyOverwrite) replaces it.
+func TestEnv_CopyFlag_Overwrite(t *testing.T) {
+	env, _ := setup(t)
+	seedCopyItem(t, env)
+
+	dst := filepath.Join(t.TempDir(), "copy.mdbx")
+
+	if err := env.CopyFlag(dst, CopyCompact); err != nil {
+		t.Fatalf("first copy: %v", err)
+	}
+
+	// libmdbx opens the target O_EXCL without CopyOverwrite, so the second
+	// copy must fail specifically because the file is there. Asserting the
+	// errno keeps an unrelated breakage from passing as this behaviour.
+	err := env.CopyFlag(dst, CopyCompact)
+	if !errors.Is(err, os.ErrExist) {
+		t.Fatalf("copy onto an existing target: err = %v, want os.ErrExist", err)
+	}
+
+	if err := env.CopyFlag(dst, CopyCompact|CopyOverwrite); err != nil {
+		t.Fatalf("copy with overwrite: %v", err)
+	}
+	verifyCopyItem(t, dst)
+}
+
+func testEnvCopy(t *testing.T, flags uint, useflags bool, usefd bool) {
+	t.Helper()
+	tmp := t.TempDir()
+
+	var (
+		fd  uintptr
+		dst string
+		f   *os.File
+	)
+	if usefd {
+		dst = filepath.Join(tmp, "data.mdb")
+		var err error
+		f, err = os.Create(dst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fd = f.Fd()
+		defer f.Close() // safety net for error paths; happy path closes early below
+	} else {
+		dst = filepath.Join(tmp, "dst")
+	}
+
+	env, _ := setup(t)
+	seedCopyItem(t, env)
+
+	var err error
+	switch {
+	case usefd && useflags:
+		err = env.CopyFDFlag(fd, flags)
+	case usefd:
+		err = env.CopyFD(fd)
+	case useflags:
+		err = env.CopyFlag(dst, flags)
+	default:
+		err = env.Copy(dst)
+	}
+	if usefd {
+		// Release our handle on the copy target before re-opening it as an
+		// env below, so the two handles don't overlap.
+		f.Close()
+	}
+	if err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+	verifyCopyItem(t, dst)
+}
+
+func TestEnv_Defrag(t *testing.T) {
+	// Exclusive, like libmdbx's own mdbx_defrag tool opens the environment
+	// (MDBX_ENV_DEFAULTS|MDBX_EXCLUSIVE, falling back to MDBX_ACCEDE): shrinking
+	// the datafile needs the whole-file lock, and taking it per-transaction
+	// instead fails on Windows with ERROR_LOCK_VIOLATION.
+	env, _ := setupFlags(t, Exclusive, Default)
+	seedDefrag(t, env, 256, 1024)
+
+	res, err := env.Defrag(DefragOptions{AcceptableBacklash: -1})
+	// LaggardReader means defrag stopped early, not that it failed, and it
+	// needs no reader: libmdbx returns it whenever defrag stalls on one page
+	// four times over and the GC is not empty. Exclusive rules out an actual
+	// reader here, so anything else is a real failure.
+	if err != nil && !IsErrno(err, LaggardReader) {
+		t.Fatalf("defrag: %v", err)
+	}
+	// The write-then-delete setup leaves reclaimable pages near the end of the
+	// file, so defrag must actually run and relocate at least one page. A zero
+	// here means defrag was effectively a no-op and the binding is not wired to
+	// the underlying work.
+	if res.Cycles == 0 {
+		t.Errorf("defrag: Cycles = 0, expected defrag to run at least one cycle")
+	}
+	if res.PagesMoved == 0 {
+		t.Errorf("defrag: PagesMoved = 0, expected defrag to relocate pages")
+	}
+	t.Logf("defrag: cycles=%d shrunk=%d moved=%d whole=%d stopping_reasons=0x%x spent=%s",
+		res.Cycles, res.PagesShrunk, res.PagesMoved, res.PagesWhole, res.StoppingReasons, res.SpentTime)
+}
+
+// TestEnv_Defrag_TimeLimit covers DefragOptions.TimeLimit: libmdbx takes the
+// bound in 1/65536-second units, so a Go time.Duration that survives the
+// conversion is the thing worth testing.
+func TestEnv_Defrag_TimeLimit(t *testing.T) {
+	env, _ := setupFlags(t, Exclusive, Default)
+	// Unbounded defrag of this measures around 60ms, well clear of the
+	// millisecond limit below.
+	seedDefrag(t, env, 20000, 2048)
 
 	// TimeLimit below TimeAtLeast is rejected up front. This is what proves
 	// both durations arrive at libmdbx in its own units rather than being
@@ -641,7 +598,7 @@ func TestEnv_Defrag_TimeLimit(t *testing.T) {
 	}
 
 	res, err := env.Defrag(DefragOptions{TimeLimit: time.Millisecond, AcceptableBacklash: -1})
-	if err != nil {
+	if err != nil && !IsErrno(err, LaggardReader) {
 		t.Fatalf("defrag: %v", err)
 	}
 	if res.StoppingReasons&DefragTimeLimit == 0 {
