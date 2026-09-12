@@ -390,17 +390,14 @@ func TestEnv_ReaderCheck(t *testing.T) {
 	}
 }
 
-// Copy / CopyFD default to an as-is copy; CopyFlag / CopyFDFlag take the
-// flags verbatim. Both modes must round-trip the data.
+// Copy / CopyFD are as-is; the *Flag forms take the flags verbatim.
 func TestEnv_Copy(t *testing.T)               { testEnvCopy(t, 0, false, false) }
 func TestEnv_CopyFD(t *testing.T)             { testEnvCopy(t, 0, false, true) }
 func TestEnv_CopyFlag_Compact(t *testing.T)   { testEnvCopy(t, CopyCompact, true, false) }
 func TestEnv_CopyFDFlag_Compact(t *testing.T) { testEnvCopy(t, CopyCompact, true, true) }
 
-// copyItem is the single record the copy tests round-trip.
 var copyItem = struct{ k, v []byte }{[]byte("k0"), []byte("v0")}
 
-// seedCopyItem writes copyItem into env's root database.
 func seedCopyItem(t *testing.T, env *Env) {
 	t.Helper()
 	if err := env.Update(func(txn *Txn) error {
@@ -414,7 +411,7 @@ func seedCopyItem(t *testing.T, env *Env) {
 	}
 }
 
-// verifyCopyItem opens the copy at path read-only and checks copyItem survived.
+// verifyCopyItem reopens the copy read-only and checks copyItem survived.
 func verifyCopyItem(t *testing.T, path string) {
 	t.Helper()
 	envcp, err := NewEnv(Default)
@@ -443,8 +440,9 @@ func verifyCopyItem(t *testing.T, path string) {
 	}
 }
 
-// seedDefrag writes records values of valueSize bytes and then deletes every
-// other one, leaving reclaimable pages for the defragmenter to move.
+// seedDefrag leaves reclaimable pages for the defragmenter. The delete must
+// be a second transaction; done in one, the pages never reach the GC and
+// defrag finds nothing to do.
 func seedDefrag(t *testing.T, env *Env, records, valueSize int) {
 	t.Helper()
 	value := bytes.Repeat([]byte("x"), valueSize)
@@ -478,8 +476,6 @@ func seedDefrag(t *testing.T, env *Env, records, valueSize int) {
 	}
 }
 
-// TestEnv_CopyFlag_Overwrite ensures a copy refuses to clobber an existing
-// target while CopyFlag(...|CopyOverwrite) replaces it.
 func TestEnv_CopyFlag_Overwrite(t *testing.T) {
 	env, _ := setup(t)
 	seedCopyItem(t, env)
@@ -490,9 +486,8 @@ func TestEnv_CopyFlag_Overwrite(t *testing.T) {
 		t.Fatalf("first copy: %v", err)
 	}
 
-	// libmdbx opens the target O_EXCL without CopyOverwrite, so the second
-	// copy must fail specifically because the file is there. Asserting the
-	// errno keeps an unrelated breakage from passing as this behaviour.
+	// O_EXCL without CopyOverwrite: assert the errno so an unrelated
+	// breakage cannot pass as this behaviour.
 	err := env.CopyFlag(dst, CopyCompact)
 	if !errors.Is(err, os.ErrExist) {
 		t.Fatalf("copy onto an existing target: err = %v, want os.ErrExist", err)
@@ -552,25 +547,16 @@ func testEnvCopy(t *testing.T, flags uint, useflags bool, usefd bool) {
 }
 
 func TestEnv_Defrag(t *testing.T) {
-	// Exclusive, like libmdbx's own mdbx_defrag tool opens the environment
-	// (MDBX_ENV_DEFAULTS|MDBX_EXCLUSIVE, falling back to MDBX_ACCEDE): shrinking
-	// the datafile needs the whole-file lock, and taking it per-transaction
-	// instead fails on Windows with ERROR_LOCK_VIOLATION.
+	// Exclusive: the shrink needs the whole-file lock, as mdbx_defrag does.
 	env, _ := setupFlags(t, Exclusive, Default)
 	seedDefrag(t, env, 256, 1024)
 
 	res, err := env.Defrag(DefragOptions{AcceptableBacklash: -1})
-	// LaggardReader means defrag stopped early, not that it failed, and it
-	// needs no reader: libmdbx returns it whenever defrag stalls on one page
-	// four times over and the GC is not empty. Exclusive rules out an actual
-	// reader here, so anything else is a real failure.
+	// LaggardReader means stopped early, and needs no reader. See Env.Defrag.
 	if err != nil && !IsErrno(err, LaggardReader) {
 		t.Fatalf("defrag: %v", err)
 	}
-	// The write-then-delete setup leaves reclaimable pages near the end of the
-	// file, so defrag must actually run and relocate at least one page. A zero
-	// here means defrag was effectively a no-op and the binding is not wired to
-	// the underlying work.
+	// Zero here means the binding is not wired to any real work.
 	if res.Cycles == 0 {
 		t.Errorf("defrag: Cycles = 0, expected defrag to run at least one cycle")
 	}
@@ -581,18 +567,14 @@ func TestEnv_Defrag(t *testing.T) {
 		res.Cycles, res.PagesShrunk, res.PagesMoved, res.PagesWhole, res.StoppingReasons, res.SpentTime)
 }
 
-// TestEnv_Defrag_TimeLimit covers DefragOptions.TimeLimit: libmdbx takes the
-// bound in 1/65536-second units, so a Go time.Duration that survives the
-// conversion is the thing worth testing.
+// TestEnv_Defrag_TimeLimit covers DefragOptions.TimeLimit, which reaches
+// libmdbx as a count of 1/65536-second units.
 func TestEnv_Defrag_TimeLimit(t *testing.T) {
 	env, _ := setupFlags(t, Exclusive, Default)
-	// Unbounded defrag of this measures around 60ms, well clear of the
-	// millisecond limit below.
+	// Unbounded defrag of this measures ~60ms, well clear of the limit below.
 	seedDefrag(t, env, 20000, 2048)
 
-	// TimeLimit below TimeAtLeast is rejected up front. This is what proves
-	// both durations arrive at libmdbx in its own units rather than being
-	// dropped: the rejection compares them after the conversion.
+	// Rejected up front, which proves both durations survive the conversion.
 	if _, err := env.Defrag(DefragOptions{TimeAtLeast: time.Second, TimeLimit: time.Millisecond}); err == nil {
 		t.Error("TimeLimit < TimeAtLeast: expected an error, got nil")
 	}
@@ -605,9 +587,7 @@ func TestEnv_Defrag_TimeLimit(t *testing.T) {
 		t.Errorf("StoppingReasons = 0x%x, want DefragTimeLimit (0x%x) set; spent=%s cycles=%d moved=%d",
 			res.StoppingReasons, DefragTimeLimit, res.SpentTime, res.Cycles, res.PagesMoved)
 	}
-	// The limit stops defrag scheduling more work, it does not abort the batch
-	// already in flight, so SpentTime may overshoot it. Only the fact that it
-	// stopped early is assertable.
+	// SpentTime may overshoot: the in-flight batch still completes.
 	t.Logf("defrag: cycles=%d moved=%d whole=%d reasons=0x%x spent=%s",
 		res.Cycles, res.PagesMoved, res.PagesWhole, res.StoppingReasons, res.SpentTime)
 }
@@ -665,10 +645,8 @@ func setupFlags(tb testing.TB, flags uint, label Label) (env *Env, path string) 
 		tb.Fatalf("open: %s", err)
 	}
 	tb.Cleanup(func() {
-		// Report the error: MDBX_BUSY here means the test leaked a write txn
-		// (typically by starting one without runtime.LockOSThread), which
-		// leaves the datafile open and only shows up as a TempDir cleanup
-		// failure on Windows.
+		// MDBX_BUSY here means a leaked write txn, which otherwise shows up
+		// only as a Windows TempDir cleanup failure.
 		if err := env.Close(); err != nil {
 			tb.Errorf("env close: %v", err)
 		}

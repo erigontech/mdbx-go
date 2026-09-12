@@ -38,9 +38,8 @@ func TestDurationWith16dot16(t *testing.T) {
 	}
 }
 
-// TestNewDuration16dot16_Saturates covers the conversions that used to wrap.
-// libmdbx narrows every 16.16 duration to 32 bits and reads 0 as "no bound",
-// so a value that survives neither must not silently become a different bound.
+// Conversions that used to wrap: libmdbx narrows to 32 bits and reads 0 as
+// "no bound", so neither may happen by accident.
 func TestNewDuration16dot16_Saturates(t *testing.T) {
 	const unit = time.Second / 65536 // 15.258us
 

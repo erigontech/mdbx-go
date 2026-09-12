@@ -275,9 +275,8 @@ mdbxgo_commit_result mdbxgo_txn_commit_embark_read(MDBX_txn **ptxn) {
 }
 
 int mdbxgo_env_copy2fd(MDBX_env *env, uintptr_t fd, MDBX_copy_flags_t flags) {
-    /* Cast straight from the unsigned uintptr_t. Routing through the signed
-     * intptr_t would be implementation-defined for a Windows HANDLE with the
-     * high bit set, and buys nothing on POSIX where the target is an int. */
+    /* Straight from the unsigned uintptr_t: going via intptr_t would be
+     * implementation-defined for a Windows HANDLE with the high bit set. */
     return mdbx_env_copy2fd(env, (mdbx_filehandle_t)fd, flags);
 }
 
@@ -293,12 +292,9 @@ mdbxgo_defrag_result mdbxgo_env_defrag(MDBX_env *env,
     r.err = mdbx_env_defrag(env, defrag_atleast, time_atleast_dot16, defrag_enough,
                             time_limit_dot16, acceptable_backlash, preferred_batch,
                             NULL, NULL, &res);
-    /* libmdbx computes pages_shrinked as an unsigned 32-bit subtraction of two
-     * pgno_t and stores the wrapped result in a wider intptr_t, so a shrink
-     * that went backwards arrives zero-extended as a value near 1<<32. Every
-     * legal page number is <= MAX_PAGENO (0x7FFFffff), so the true difference
-     * always fits in int32 and reinterpreting the low half recovers its sign,
-     * which is what mdbx.h documents this field to carry. */
+    /* libmdbx subtracts two pgno_t and zero-extends the wrapped result, so a
+     * backwards shrink arrives near 1<<32. MAX_PAGENO is 0x7FFFffff, so the
+     * true difference fits in int32 and the low half recovers its sign. */
     r.pages_shrunk     = (int32_t)(uint32_t)res.pages_shrinked;
     r.pages_moved      = (uint64_t)res.pages_moved;
     r.pages_scheduled  = (uint64_t)res.pages_scheduled;

@@ -72,12 +72,9 @@ const (
 	CopyOverwrite        = C.MDBX_CP_OVERWRITE          // Silently overwrite the target file if it exists
 )
 
-// Stopping reasons for Env.Defrag. The DefragResult.StoppingReasons field is a
-// mask OR'ing together any subset of these flags; zero means no obstacles.
-//
-// MDBX_defrag_discontinued and MDBX_defrag_aborted are omitted: both are only
-// ever raised by the progress callback, which Env.Defrag always passes as
-// NULL. Add them when the callback is bound.
+// DefragResult.StoppingReasons is an OR'ed mask of these; zero means no
+// obstacles. MDBX_defrag_discontinued and MDBX_defrag_aborted are omitted,
+// being reachable only through the progress callback Env.Defrag passes as NULL.
 //
 // See MDBX_defrag_stopping_reasons_t.
 const (
@@ -708,41 +705,28 @@ func (env *Env) CHandle() unsafe.Pointer {
 	return unsafe.Pointer(env._env)
 }
 
-// DefragOptions controls the behavior of Env.Defrag. Zero values mean "no
-// bound" except for AcceptableBacklash where -1 selects autopilot.
+// DefragOptions controls Env.Defrag. Counts are pages, not bytes. Zero means
+// "no bound" for every field.
 //
 // See mdbx_env_defrag.
 type DefragOptions struct {
-	// DefragAtLeast is the minimum number of pages by which the database
-	// must shrink before defragmentation is considered done. 0 = no lower
-	// bound. Must be <= DefragEnough.
-	DefragAtLeast uint64
-	// TimeAtLeast is the minimum wall-clock time to spend defragmenting,
-	// even after other goals are reached. 0 = no lower bound. Must be <=
-	// TimeLimit.
-	TimeAtLeast time.Duration
-	// DefragEnough is the page-shrink target at which defragmentation may
-	// stop. 0 = no limit. Must be >= DefragAtLeast.
-	DefragEnough uint64
-	// TimeLimit caps total wall-clock time spent defragmenting. 0 = no
-	// limit. Must be >= TimeAtLeast.
-	TimeLimit time.Duration
-	// AcceptableBacklash stops defragmentation once the next cycle is
-	// unable to shrink the database by more than this many pages. -1 means
-	// autopilot.
+	DefragAtLeast uint64        // shrink by at least this many pages; must be <= DefragEnough
+	TimeAtLeast   time.Duration // keep going at least this long; must be <= TimeLimit
+	DefragEnough  uint64        // stop once shrunk by this many pages
+	TimeLimit     time.Duration // stop after this long
+	// AcceptableBacklash stops defrag once a further cycle would gain no more
+	// than this many pages. -1 selects autopilot. libmdbx silently clamps it
+	// to one GC overflow page of page numbers, ~1018 at a 4KiB page size, so
+	// larger values all behave alike.
 	AcceptableBacklash int64
-	// PreferredBatch is the preferred maximum number of pages moved per
-	// defragmentation cycle. 0 = no limit.
-	PreferredBatch int64
+	PreferredBatch     int64 // preferred max pages moved per cycle
 }
 
 // DefragResult holds the metrics returned by Env.Defrag.
 //
 // See MDBX_defrag_result_t.
 type DefragResult struct {
-	// PagesShrunk is how many pages the file shrank by. Negative if defrag
-	// was stopped or the database structure prevented shrinking.
-	PagesShrunk     int64
+	PagesShrunk     int64  // Pages the file shrank by; negative if it could not shrink.
 	PagesMoved      uint64 // Total pages moved during defragmentation.
 	PagesScheduled  uint64 // Pages scheduled to move at the next stage of the current cycle.
 	PagesRetained   uint64 // Pages held by other processes via MVCC-snapshots.
@@ -759,27 +743,16 @@ type DefragResult struct {
 	SpentTime       time.Duration
 }
 
-// Defrag performs an in-place database defragmentation: data from pages near
-// the end of the file is moved to free pages closer to the beginning, after
-// which trailing free pages can be cut off, reducing the file size. The
-// operation is ACID and may run in several internal cycles.
+// Defrag defragments the database in place: pages near the end of the file
+// are moved into free pages nearer the beginning, then the trailing free
+// pages are cut off. It is ACID and runs in several committed cycles.
 //
-// Defrag returns the metrics gathered during the run. A non-nil result is
-// returned regardless of error. When defragmentation could not fully achieve
-// the requested goals, libmdbx returns MDBX_RESULT_TRUE, which is treated as
-// non-error here; inspect result.StoppingReasons to learn why.
+// Open the environment with Exclusive: cutting the tail needs the whole-file
+// lock, and without it Windows fails the shrink with ERROR_LOCK_VIOLATION.
 //
-// err can be LaggardReader, which means defragmentation stopped early rather
-// than failed, and which does not imply a reader was involved: libmdbx also
-// returns it when defrag stalls on the same page four times over and the GC
-// is not empty. Read result.StoppingReasons to tell the cases apart.
-//
-// Cutting off the trailing pages needs the whole-file lock, so open the
-// environment with Exclusive when defragmenting — that is what libmdbx's own
-// mdbx_defrag tool does (MDBX_ENV_DEFAULTS|MDBX_EXCLUSIVE, falling back to
-// MDBX_ACCEDE when the database is busy). Without it Windows fails the shrink
-// with ERROR_LOCK_VIOLATION. Parallel readers do not prevent defragmentation
-// but limit it to a single cycle.
+// The result is non-nil even on error. Reaching the requested goals only
+// partly is not an error; read result.StoppingReasons for the reason. err can
+// be LaggardReader, which also means "stopped early" rather than "failed".
 //
 // See mdbx_env_defrag.
 func (env *Env) Defrag(opts DefragOptions) (*DefragResult, error) {
