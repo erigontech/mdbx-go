@@ -232,14 +232,23 @@ On FreeBSD 10, you must explicitly set `CC` (otherwise it will fail with a crypt
 
 ## Update C code
 
-In `libmdbx` repo: `make dist && cp -R ./dist/* ./../mdbx-go/libmdbx/`. Then in mdbx-go repo: `make cp`
+`make cp` re-vendors `libmdbx/` from a local upstream clone — `../libmdbx` at `HEAD` by default:
 
-On mac (`--default-names` was removed from Homebrew long ago — install plain `gnu-sed` and prepend its `gnubin` to `PATH`):
 ```
-brew install gnu-sed
-# Intel macs:        /usr/local/opt/gnu-sed/libexec/gnubin
-# Apple Silicon:     /opt/homebrew/opt/gnu-sed/libexec/gnubin
-PATH="$(brew --prefix gnu-sed)/libexec/gnubin:$PATH" make cp
+git -C ../libmdbx fetch --tags && git -C ../libmdbx checkout v0.14.3
+make cp
+
+make cp LIBMDBX_REF=v0.14.3            # or name the ref instead of checking it out
+make cp LIBMDBX_SRC=/path/to/libmdbx   # clone lives elsewhere
+```
+
+Only the files tracked at that ref are vendored, so build artifacts sitting in the clone's
+working tree stay out, and files deleted upstream are dropped instead of lingering. Upstream's
+`.github/` and `.sourcecraft/` CI configs are skipped — they cannot run from a vendored
+subdirectory — and `libmdbx/keep.go` is preserved. Then rebuild and test:
+
+```
+go build ./... && make test
 ```
 
 ## Build binaries

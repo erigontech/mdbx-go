@@ -423,6 +423,8 @@ func TestTxn_OpenDBI_emptyName(t *testing.T) {
 }
 
 func TestTxn_OpenDBI_zero(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	env, _ := setup(t)
 
 	txn, err := env.BeginTxn(nil, 0)
@@ -1413,6 +1415,8 @@ func BenchmarkTxn_Get_Random(b *testing.B) {
 }
 
 func TestTxnEnvWarmup(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	env, _ := setup(t)
 
 	txn, err := env.BeginTxn(nil, EnvDefaults)

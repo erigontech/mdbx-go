@@ -293,6 +293,45 @@ mdbxgo_commit_result mdbxgo_txn_commit_embark_read(MDBX_txn **ptxn) {
     return r;
 }
 
+int mdbxgo_env_copy2fd(MDBX_env *env, uintptr_t fd, MDBX_copy_flags_t flags) {
+    /* Straight from the unsigned uintptr_t: going via intptr_t would be
+     * implementation-defined for a Windows HANDLE with the high bit set. */
+    return mdbx_env_copy2fd(env, (mdbx_filehandle_t)fd, flags);
+}
+
+mdbxgo_defrag_result mdbxgo_env_defrag(MDBX_env *env,
+                                       size_t defrag_atleast,
+                                       size_t time_atleast_dot16,
+                                       size_t defrag_enough,
+                                       size_t time_limit_dot16,
+                                       intptr_t acceptable_backlash,
+                                       intptr_t preferred_batch) {
+    mdbxgo_defrag_result r = {0};
+    MDBX_defrag_result_t res = {0};
+    r.err = mdbx_env_defrag(env, defrag_atleast, time_atleast_dot16, defrag_enough,
+                            time_limit_dot16, acceptable_backlash, preferred_batch,
+                            NULL, NULL, &res);
+    /* libmdbx subtracts two pgno_t and zero-extends the wrapped result, so a
+     * backwards shrink arrives near 1<<32. MAX_PAGENO is 0x7FFFffff, so the
+     * true difference fits in int32 and the low half recovers its sign. */
+    r.pages_shrunk     = (int32_t)(uint32_t)res.pages_shrinked;
+    r.pages_moved      = (uint64_t)res.pages_moved;
+    r.pages_scheduled  = (uint64_t)res.pages_scheduled;
+    r.pages_retained   = (uint64_t)res.pages_retained;
+    r.pages_left       = (uint64_t)res.pages_left;
+    r.pages_whole      = (uint64_t)res.pages_whole;
+    r.obstructed_pgno  = (uint64_t)res.obstructed_pgno;
+    r.obstructed_span  = (uint64_t)res.obstructed_span;
+    r.obstructed_txnid = res.obstructed_txnid;
+    r.obstructor_tid   = mdbxgo_tid_to_u64(res.obstructor_tid);
+    r.obstructor_pid   = (int64_t)res.obstructor_pid;
+    r.rough_estimation_cycle_progress_permille = res.rough_estimation_cycle_progress_permille;
+    r.cycles           = res.cycles;
+    r.stopping_reasons = res.stopping_reasons;
+    r.spent_time_dot16 = (uint64_t)res.spent_time_dot16;
+    return r;
+}
+
 mdbxgo_gc_info_result mdbxgo_gc_info(MDBX_txn *txn) {
     mdbxgo_gc_info_result r = {0};
     MDBX_gc_info_t info = {0};

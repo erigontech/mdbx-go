@@ -1,10 +1,15 @@
 package mdbx
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestEnv_Path_notOpen(t *testing.T) {
@@ -201,6 +206,22 @@ func TestEnv_SetMaxReader(t *testing.T) {
 	}
 }
 
+func TestEnv_PresyncThreshold(t *testing.T) {
+	env, _ := setup(t)
+
+	const threshold = uint64(8 * 1024 * 1024)
+	if err := env.SetOption(OptPresyncThreshold, threshold); err != nil {
+		t.Fatal(err)
+	}
+	got, err := env.GetOption(OptPresyncThreshold)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != threshold {
+		t.Errorf("presync threshold: %v (!= %v)", got, threshold)
+	}
+}
+
 func TestEnv_SetDebug(t *testing.T) {
 	env, err := NewEnv(Default)
 	if err != nil {
@@ -369,111 +390,207 @@ func TestEnv_ReaderCheck(t *testing.T) {
 	}
 }
 
-// func TestEnv_Copy(t *testing.T) {
-//	testEnvCopy(t, 0, false, false)
-// }
-//
-// func TestEnv_CopyFlags(t *testing.T) {
-//	 testEnvCopy(t, CopyCompact, true, false)
-// }
-//
-// func TestEnv_CopyFlags_zero(t *testing.T) {
-//	 testEnvCopy(t, 0, true, false)
-// }
-//
-// func TestEnv_CopyFD(t *testing.T) {
-//	 testEnvCopy(t, 0, false, true)
-// }
-//
-// func TestEnv_CopyFDFlags(t *testing.T) {
-//	 testEnvCopy(t, CopyCompact, true, true)
-// }
-//
-// func TestEnv_CopyFDFlags_zero(t *testing.T) {
-//	 testEnvCopy(t, 0, true, true)
-// }
-//
-// func testEnvCopy(t *testing.T, flags uint, useflags bool, usefd bool) {
-//	dircp, err := ioutil.TempDir("", "test-env-copy-")
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//	defer os.RemoveAll(dircp)
-//
-//	var fd uintptr
-//	if usefd {
-//		path := filepath.Join(dircp, "data.mdb")
-//		f, err := os.Create(path)
-//		if err != nil {
-//			t.Error(err)
-//			return
-//		}
-//		fd = f.Fd()
-//		defer f.Close()
-//	}
-//
-//	env := setup(t)
-//
-//
-//	item := struct{ k, v []byte }{
-//		[]byte("k0"),
-//		[]byte("v0"),
-//	}
-//
-//	err = env.Update(func(txn *Txn) (err error) {
-//		db, err := txn.OpenRoot(0)
-//		if err != nil {
-//			return err
-//		}
-//		return txn.Put(db, item.k, item.v, 0)
-//	})
-//	if err != nil {
-//		t.Error(err)
-//	}
-//
-//	switch {
-//	case usefd && useflags:
-//		err = env.CopyFDFlag(fd, flags)
-//	case usefd && !useflags:
-//		err = env.CopyFD(fd)
-//	case !usefd && useflags:
-//		err = env.CopyFlag(dircp, flags)
-//	case !usefd && !useflags:
-//		err = env.Copy(dircp)
-//	}
-//	if err != nil {
-//		t.Error(err)
-//	}
-//
-//	envcp, err := NewEnv()
-//	if err != nil {
-//		t.Error(err)
-//	}
-//	err = envcp.Open(dircp, 0, 0644)
-//	defer envcp.Close()
-//	if err != nil {
-//		t.Error(err)
-//		return
-//	}
-//
-//	err = envcp.View(func(txn *Txn) (err error) {
-//		db, err := txn.OpenRoot(0)
-//		if err != nil {
-//			return err
-//		}
-//		v, err := txn.Get(db, item.k)
-//		if err != nil {
-//			return err
-//		}
-//		if !bytes.Equal(v, item.v) {
-//			return fmt.Errorf("unexpected value: %q (!= %q)", v, "v0")
-//		}
-//		return nil
-//	})
-//	if err != nil {
-//		t.Error(err)
-//	}
-// }
+// Copy / CopyFD are as-is; the *Flag forms take the flags verbatim.
+func TestEnv_Copy(t *testing.T)               { testEnvCopy(t, 0, false, false) }
+func TestEnv_CopyFD(t *testing.T)             { testEnvCopy(t, 0, false, true) }
+func TestEnv_CopyFlag_Compact(t *testing.T)   { testEnvCopy(t, CopyCompact, true, false) }
+func TestEnv_CopyFDFlag_Compact(t *testing.T) { testEnvCopy(t, CopyCompact, true, true) }
+
+var copyItem = struct{ k, v []byte }{[]byte("k0"), []byte("v0")}
+
+func seedCopyItem(t *testing.T, env *Env) {
+	t.Helper()
+	if err := env.Update(func(txn *Txn) error {
+		db, err := txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		return txn.Put(db, copyItem.k, copyItem.v, 0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// verifyCopyItem reopens the copy read-only and checks copyItem survived.
+func verifyCopyItem(t *testing.T, path string) {
+	t.Helper()
+	envcp, err := NewEnv(Default)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer envcp.Close()
+	if err := envcp.Open(path, Readonly, 0644); err != nil {
+		t.Fatalf("open copy: %v", err)
+	}
+	if err := envcp.View(func(txn *Txn) error {
+		db, err := txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		v, err := txn.Get(db, copyItem.k)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(v, copyItem.v) {
+			return fmt.Errorf("unexpected value: %q (!= %q)", v, copyItem.v)
+		}
+		return nil
+	}); err != nil {
+		t.Errorf("verify: %v", err)
+	}
+}
+
+// seedDefrag leaves reclaimable pages for the defragmenter. The delete must
+// be a second transaction; done in one, the pages never reach the GC and
+// defrag finds nothing to do.
+func seedDefrag(t *testing.T, env *Env, records, valueSize int) {
+	t.Helper()
+	value := bytes.Repeat([]byte("x"), valueSize)
+	if err := env.Update(func(txn *Txn) error {
+		db, err := txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for i := range records {
+			if err := txn.Put(db, fmt.Appendf(nil, "k%08d", i), value, 0); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.Update(func(txn *Txn) error {
+		db, err := txn.OpenRoot(0)
+		if err != nil {
+			return err
+		}
+		for i := range records / 2 {
+			if err := txn.Del(db, fmt.Appendf(nil, "k%08d", i*2), nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnv_CopyFlag_Overwrite(t *testing.T) {
+	env, _ := setup(t)
+	seedCopyItem(t, env)
+
+	dst := filepath.Join(t.TempDir(), "copy.mdbx")
+
+	if err := env.CopyFlag(dst, CopyCompact); err != nil {
+		t.Fatalf("first copy: %v", err)
+	}
+
+	// O_EXCL without CopyOverwrite: assert the errno so an unrelated
+	// breakage cannot pass as this behaviour.
+	err := env.CopyFlag(dst, CopyCompact)
+	if !errors.Is(err, os.ErrExist) {
+		t.Fatalf("copy onto an existing target: err = %v, want os.ErrExist", err)
+	}
+
+	if err := env.CopyFlag(dst, CopyCompact|CopyOverwrite); err != nil {
+		t.Fatalf("copy with overwrite: %v", err)
+	}
+	verifyCopyItem(t, dst)
+}
+
+func testEnvCopy(t *testing.T, flags uint, useflags bool, usefd bool) {
+	t.Helper()
+	tmp := t.TempDir()
+
+	var (
+		fd  uintptr
+		dst string
+		f   *os.File
+	)
+	if usefd {
+		dst = filepath.Join(tmp, "data.mdb")
+		var err error
+		f, err = os.Create(dst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fd = f.Fd()
+		defer f.Close() // safety net for error paths; happy path closes early below
+	} else {
+		dst = filepath.Join(tmp, "dst")
+	}
+
+	env, _ := setup(t)
+	seedCopyItem(t, env)
+
+	var err error
+	switch {
+	case usefd && useflags:
+		err = env.CopyFDFlag(fd, flags)
+	case usefd:
+		err = env.CopyFD(fd)
+	case useflags:
+		err = env.CopyFlag(dst, flags)
+	default:
+		err = env.Copy(dst)
+	}
+	if usefd {
+		// Release our handle on the copy target before re-opening it as an
+		// env below, so the two handles don't overlap.
+		f.Close()
+	}
+	if err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+	verifyCopyItem(t, dst)
+}
+
+func TestEnv_Defrag(t *testing.T) {
+	// Exclusive: the shrink needs the whole-file lock, as mdbx_defrag does.
+	env, _ := setupFlags(t, Exclusive, Default)
+	seedDefrag(t, env, 256, 1024)
+
+	res, err := env.Defrag(DefragOptions{AcceptableBacklash: -1})
+	// LaggardReader means stopped early, and needs no reader. See Env.Defrag.
+	if err != nil && !IsErrno(err, LaggardReader) {
+		t.Fatalf("defrag: %v", err)
+	}
+	// Zero here means the binding is not wired to any real work.
+	if res.Cycles == 0 {
+		t.Errorf("defrag: Cycles = 0, expected defrag to run at least one cycle")
+	}
+	if res.PagesMoved == 0 {
+		t.Errorf("defrag: PagesMoved = 0, expected defrag to relocate pages")
+	}
+	t.Logf("defrag: cycles=%d shrunk=%d moved=%d whole=%d stopping_reasons=0x%x spent=%s",
+		res.Cycles, res.PagesShrunk, res.PagesMoved, res.PagesWhole, res.StoppingReasons, res.SpentTime)
+}
+
+// TestEnv_Defrag_TimeLimit covers DefragOptions.TimeLimit, which reaches
+// libmdbx as a count of 1/65536-second units.
+func TestEnv_Defrag_TimeLimit(t *testing.T) {
+	env, _ := setupFlags(t, Exclusive, Default)
+	// Unbounded defrag of this measures ~60ms, well clear of the limit below.
+	seedDefrag(t, env, 20000, 2048)
+
+	// Rejected up front, which proves both durations survive the conversion.
+	if _, err := env.Defrag(DefragOptions{TimeAtLeast: time.Second, TimeLimit: time.Millisecond}); err == nil {
+		t.Error("TimeLimit < TimeAtLeast: expected an error, got nil")
+	}
+
+	res, err := env.Defrag(DefragOptions{TimeLimit: time.Millisecond, AcceptableBacklash: -1})
+	if err != nil && !IsErrno(err, LaggardReader) {
+		t.Fatalf("defrag: %v", err)
+	}
+	if res.StoppingReasons&DefragTimeLimit == 0 {
+		t.Errorf("StoppingReasons = 0x%x, want DefragTimeLimit (0x%x) set; spent=%s cycles=%d moved=%d",
+			res.StoppingReasons, DefragTimeLimit, res.SpentTime, res.Cycles, res.PagesMoved)
+	}
+	// SpentTime may overshoot: the in-flight batch still completes.
+	t.Logf("defrag: cycles=%d moved=%d whole=%d reasons=0x%x spent=%s",
+		res.Cycles, res.PagesMoved, res.PagesWhole, res.StoppingReasons, res.SpentTime)
+}
 
 func TestEnv_Sync(t *testing.T) {
 	env, _ := setupFlags(t, SafeNoSync, "NoSync")
@@ -528,7 +645,11 @@ func setupFlags(tb testing.TB, flags uint, label Label) (env *Env, path string) 
 		tb.Fatalf("open: %s", err)
 	}
 	tb.Cleanup(func() {
-		env.Close()
+		// MDBX_BUSY here means a leaked write txn, which otherwise shows up
+		// only as a Windows TempDir cleanup failure.
+		if err := env.Close(); err != nil {
+			tb.Errorf("env close: %v", err)
+		}
 	})
 	return env, path
 }
