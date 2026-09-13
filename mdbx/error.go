@@ -78,6 +78,10 @@ const (
 	// recycle old MVCC snapshots (returned e.g. by Txn.Unpark with
 	// restartIfOusted=false, or by reads in a parked-and-ousted txn).
 	Ousted Errno = C.MDBX_OUSTED
+	// LaggardReader means defrag stopped early. Upstream's name misleads: it
+	// also fires with no reader, when defrag stalls on one page and the GC is
+	// not empty.
+	LaggardReader Errno = C.MDBX_LAGGARD_READER
 	// TLSFull       Errno = C.MDBX_TLS_FULL
 	// MapResized    Errno = C.MDBX_MAP_RESIZED
 )

@@ -344,14 +344,18 @@ func (txn *Txn) abort() {
 
 	// Get a read-lock on the environment so we can abort txn if needed.
 	// txn.env **should** terminate all readers otherwise when it closes.
+	//
+	// Released with defer because strictThreadCheck panics by design: an
+	// unguarded RUnlock would be skipped on that path, leaving the read lock
+	// held forever and deadlocking every later Env.Close.
 	txn.env.closeLock.RLock()
+	defer txn.env.closeLock.RUnlock()
 	if txn.env.strictThreadCheck {
 		txn.strictThreadCheck()
 	}
 	if txn.env._env != nil {
 		C.mdbx_txn_abort(txn._txn)
 	}
-	txn.env.closeLock.RUnlock()
 
 	txn.clearTxn()
 }
