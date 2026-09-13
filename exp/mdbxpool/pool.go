@@ -60,9 +60,9 @@ func New(env *mdbx.Env, opts ...Option) *Pool {
 	for _, opt := range opts {
 		opt(p)
 	}
-	// Allocated once at full capacity: Put never grows the free list past
-	// maxIdle, so this is the only allocation it will ever need.
-	p.idle = make([]*mdbx.Txn, 0, p.maxIdle)
+	// p.idle is left nil for append to grow: maxIdle is a caller-supplied
+	// bound, and sizing the free list to it up front turns WithMaxIdle(1<<32)
+	// into a 32 GB allocation for slots libmdbx's max_readers can never fill.
 	return p
 }
 
@@ -92,8 +92,8 @@ func (p *Pool) Get() (*mdbx.Txn, error) {
 		return p.env.BeginTxn(nil, mdbx.Readonly)
 	}
 
-	// Renew re-acquires a reader lock on the current snapshot, which is what
-	// releases the pages the previous use held.
+	// Renew re-registers the reader on the latest committed snapshot. The
+	// previous one was already released by the Reset in Put.
 	if err := txn.Renew(); err != nil {
 		// The handle is unusable, and Renew leaves nothing to salvage.
 		// Discard it and begin a fresh transaction rather than failing the

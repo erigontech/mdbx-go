@@ -107,8 +107,11 @@ returned, exactly as if that goroutine had called Env.BeginTxn itself.
 The pool moves read-only transactions between goroutines and OS threads by
 design, which is incompatible with Env.SetStrictThreadMode(true). Under that
 mode Txn.Abort panics when it runs on a thread other than the one that began
-the transaction, so Pool.Close panics as soon as it drains a transaction
-begun elsewhere. Strict thread mode is a debugging aid and is off by default;
+the transaction, and every Abort the pool issues can hit that: Put discarding
+a transaction because the free list is full, because the pool is closed, or
+because Reset failed; Get falling back after a failed Renew; and Close
+draining. The Put paths run during normal reads, not just at shutdown, so the
+panics are intermittent. Strict thread mode is a debugging aid and is off by default;
 libmdbx itself permits read-only transactions to move between threads.
 */
 package mdbxpool

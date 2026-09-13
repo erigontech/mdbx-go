@@ -3,6 +3,7 @@ package mdbxpool
 import (
 	"bytes"
 	"errors"
+	"math"
 	"runtime"
 	"sync"
 	"testing"
@@ -194,6 +195,27 @@ func TestPoolMaxIdleNegativeClampsToZero(t *testing.T) {
 
 	if got := p.Stats().MaxIdle; got != 0 {
 		t.Errorf("MaxIdle = %d, want 0", got)
+	}
+}
+
+// New must not size the free list to MaxIdle: a caller saying "no limit" with
+// a huge value would otherwise allocate slots libmdbx's max_readers can never
+// fill, or panic outright on make.
+func TestPoolHugeMaxIdleDoesNotAllocate(t *testing.T) {
+	env, _ := setup(t)
+	p := New(env, WithMaxIdle(math.MaxInt))
+	t.Cleanup(func() { p.Close() })
+
+	if got := p.Stats().MaxIdle; got != math.MaxInt {
+		t.Errorf("MaxIdle = %d, want %d", got, math.MaxInt)
+	}
+	txn, err := p.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Put(txn)
+	if got := p.Stats().Idle; got != 1 {
+		t.Errorf("Idle = %d, want 1", got)
 	}
 }
 
