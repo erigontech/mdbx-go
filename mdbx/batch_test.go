@@ -319,6 +319,99 @@ func TestCursor_GetBatch_RejectsInputOps(t *testing.T) {
 }
 
 // Reverse scans use the same machinery via (Last, Prev).
+// TestCursor_GetBatch_Ranged exercises the ranged-scan recipe the GetBatch doc
+// tells callers to use: position with Get, then batch with (GetCurrent, Next).
+// Without this, dropping GetCurrent from batchFirstOpOK would break the
+// documented recipe with every existing test still passing.
+func TestCursor_GetBatch_Ranged(t *testing.T) {
+	env, _ := setup(t)
+	const numItems = 1000
+	const startAt = 400
+	db := fillBatchDB(t, env, "testranged", numItems)
+
+	buf := NewGetBatchBuffer(64)
+	defer buf.Close()
+
+	err := env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		from := fmt.Appendf(nil, "key-%08d", startAt)
+		k, _, err := cur.Get(from, nil, SetRange)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(k, from) {
+			t.Errorf("SetRange positioned at %q, want %q", k, from)
+		}
+
+		seen := 0
+		for opFirst := uint(GetCurrent); ; opFirst = Next {
+			n, eof, err := cur.GetBatch(buf, opFirst, Next)
+			if err != nil {
+				return err
+			}
+			for i := range n {
+				want := fmt.Appendf(nil, "key-%08d", startAt+seen)
+				if got := buf.Key(i); !bytes.Equal(got, want) {
+					t.Fatalf("key %d = %q, want %q", seen, got, want)
+				}
+				seen++
+			}
+			if eof {
+				break
+			}
+		}
+		if want := numItems - startAt; seen != want {
+			t.Errorf("scanned %d records, want %d", seen, want)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The turn ops the doc lists must all be accepted; dropping one would only
+// show up as an EINVAL in a caller's scan.
+func TestCursor_GetBatch_AcceptsAllTurnOps(t *testing.T) {
+	env, _ := setup(t)
+	db := fillBatchDB(t, env, "testturnops", 8)
+
+	buf := NewGetBatchBuffer(4)
+	defer buf.Close()
+
+	err := env.View(func(txn *Txn) error {
+		cur, err := txn.OpenCursor(db)
+		if err != nil {
+			return err
+		}
+		defer cur.Close()
+
+		for _, op := range []struct {
+			name  string
+			first uint
+			next  uint
+		}{
+			{"First/Next", First, Next},
+			{"First/NextNoDup", First, NextNoDup},
+			{"Last/Prev", Last, Prev},
+			{"Last/PrevNoDup", Last, PrevNoDup},
+		} {
+			if _, _, err := cur.GetBatch(buf, op.first, op.next); err != nil {
+				t.Errorf("%s: %v", op.name, err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCursor_GetBatch_Reverse(t *testing.T) {
 	env, _ := setup(t)
 	const numItems = 100

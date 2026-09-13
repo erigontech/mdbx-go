@@ -114,8 +114,9 @@ mdbxgo_size_result mdbxgo_cursor_get_batch(MDBX_cursor *cur, MDBX_val *pairs, si
     while (r.val < max_pairs) {
         MDBX_val key = {0}, val = {0};
         r.err = mdbx_cursor_get(cur, &key, &val, op);
-        /* MDBX_RESULT_TRUE (e.g. a lower/upper-bound reposition) is success
-         * with a valid pair, not a stop condition: store it and continue. */
+        /* MDBX_RESULT_TRUE is success with a valid pair, not a stop
+         * condition: store it and continue. Defensive only -- the ops that
+         * return it are the bound seeks, which the Go side rejects. */
         if (r.err != MDBX_SUCCESS && r.err != MDBX_RESULT_TRUE)
             break;
         pairs[2 * r.val] = key;

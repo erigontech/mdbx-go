@@ -10,8 +10,11 @@ import "unsafe"
 // GetBatchBuffer is a reusable buffer of MDBX_val (key, value) pairs for
 // Cursor.GetBatch. It lives in C memory so cgo does not scan it for Go
 // pointers on every call. Reusable across cursors and transactions; not safe
-// for concurrent use. Close releases the C allocation.
+// for concurrent use. Close releases the C allocation. Must not be copied
+// after first use: both copies would free the same allocation.
 type GetBatchBuffer struct {
+	noCopy noCopy
+
 	ptr  *C.MDBX_val
 	size int
 	n    int // pairs filled by the most recent GetBatch
@@ -37,8 +40,9 @@ func NewGetBatchBuffer(numPairs int) *GetBatchBuffer {
 	return &GetBatchBuffer{ptr: (*C.MDBX_val)(p), size: numPairs}
 }
 
-// Close releases the C allocation. No-op if already closed. Slices handed out
-// by Key/Val point into that allocation's contents and must not be used after.
+// Close releases the C allocation. No-op if already closed. It invalidates
+// later Key/Val calls, not slices already returned: those view libmdbx's own
+// pages, not this buffer, and keep the lifetime described on Key.
 func (b *GetBatchBuffer) Close() {
 	if b.ptr != nil {
 		C.free(unsafe.Pointer(b.ptr))
@@ -64,13 +68,15 @@ func (b *GetBatchBuffer) at(i int) *C.MDBX_val {
 }
 
 // Key returns the i-th key of the most recent GetBatch (i < its pair count).
-// Zero-copy view: read-only, invalid once the txn ends, the buffer is
-// refilled or Closed, or (in a write txn) a later Put/Del moves the page.
+// Zero-copy view into libmdbx's page, read-only and valid until the txn ends
+// or (in a write txn) a later Put/Del moves the page. Treating it as invalid
+// once the buffer is refilled or Closed is a deliberately conservative
+// contract, not a lifetime libmdbx imposes.
 //
-// For dup-only ops (FirstDup, LastDup, NextDup, PrevDup) mdbx_cursor_get
+// For FirstDup, LastDup, NextDup, PrevDup and PrevMultiple, mdbx_cursor_get
 // promises the value only, so treat the key as unspecified — the caller
-// already knows it from the Get that positioned the cursor. Cursor.Get
-// reports nil for it.
+// already knows it from the Get that positioned the cursor. PrevMultiple in
+// particular leaves it empty for every pair.
 func (b *GetBatchBuffer) Key(i int) []byte { return castToBytes(b.at(2 * i)) }
 
 // Val returns the i-th value of the most recent GetBatch. See Key.
@@ -113,14 +119,16 @@ func batchNextOpOK(op uint) bool {
 //	         opNext value, which is how a scan continues past the first batch
 //	opNext:  Next, NextDup, NextNoDup, NextMultiple, Prev, PrevDup, PrevNoDup, PrevMultiple
 //
-// Anything else (Set, SetKey, SetRange, GetBoth, GetBothRange, the bound and
-// KeyTo/PairTo seeks) is rejected with EINVAL rather than searched for with an
+// Anything else (Set, SetKey, SetRange, GetBoth, GetBothRange, SetLowerBound,
+// SetUpperBound and the Key*/ExactKeyValue*/Pair* seeks) is rejected with
+// EINVAL (ERROR_INVALID_PARAMETER on Windows) rather than searched for with an
 // empty key, which reads as a plausible wrong answer: Set matches nothing and
 // looks like a clean EOF, SetRange silently rewinds to the first key. For a
 // ranged scan, position the cursor with Get and batch with (GetCurrent, Next).
 //
-// The *_MULTIPLE ops work but have page granularity: each stored pair is
-// (key, packed page of fixed-size values), so n counts pages, not records.
+// The *_MULTIPLE ops work but have page granularity: each stored value is a
+// packed page of fixed-size values, so n counts pages, not records. Only
+// GetMultiple and NextMultiple set a key; PrevMultiple leaves it empty.
 //
 // n is the number of pairs stored (read via buf.Key/Val). The first n pairs
 // are valid even when err != nil (the error came from the step after them).
@@ -161,8 +169,9 @@ func (c *Cursor) GetBatch(buf *GetBatchBuffer, opFirst, opNext uint) (n int, eof
 	buf.n = n
 	switch r.err {
 	case success, C.MDBX_RESULT_TRUE:
-		// RESULT_TRUE (e.g. a lower/upper-bound reposition) is success with a
-		// valid last pair, same as SUCCESS: buffer filled, not at EOF.
+		// RESULT_TRUE is success-with-data, same as SUCCESS: buffer filled,
+		// not at EOF. Accepted defensively only — the ops that produce it are
+		// the bound seeks, which batchFirstOpOK/batchNextOpOK already reject.
 		return n, false, nil
 	case C.MDBX_NOTFOUND:
 		return n, true, nil
