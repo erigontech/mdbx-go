@@ -833,6 +833,8 @@ func TestTxn_UpdateLocked(t *testing.T) {
 }
 
 func TestTxn_RunTxn(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	env, _ := setup(t)
 
 	var dbi DBI
