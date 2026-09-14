@@ -318,7 +318,6 @@ func TestCursor_GetBatch_RejectsInputOps(t *testing.T) {
 	}
 }
 
-// Reverse scans use the same machinery via (Last, Prev).
 // TestCursor_GetBatch_Ranged exercises the ranged-scan recipe the GetBatch doc
 // tells callers to use: position with Get, then batch with (GetCurrent, Next).
 // Without this, dropping GetCurrent from batchFirstOpOK would break the
@@ -375,34 +374,31 @@ func TestCursor_GetBatch_Ranged(t *testing.T) {
 	}
 }
 
-// The turn ops the doc lists must all be accepted; dropping one would only
-// show up as an EINVAL in a caller's scan.
-func TestCursor_GetBatch_AcceptsAllTurnOps(t *testing.T) {
+// TestCursor_GetBatch_AcceptsAllScanOps drives every start and turn op the
+// GetBatch doc lists and requires none to be rejected. Dropping one from
+// batchFirstOpOK or batchNextOpOK would otherwise surface only as an EINVAL
+// in a caller's scan. GetCurrent as a start op is covered by the Ranged test.
+func TestCursor_GetBatch_AcceptsAllScanOps(t *testing.T) {
 	env, _ := setup(t)
-	db := fillBatchDB(t, env, "testturnops", 8)
-
-	buf := NewGetBatchBuffer(4)
-	defer buf.Close()
-
-	err := env.View(func(txn *Txn) error {
-		cur, err := txn.OpenCursor(db)
-		if err != nil {
+	plain := fillBatchDB(t, env, "testscanops", 8)
+	var dup, dupFixed DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		if dup, err = txn.OpenDBISimple("testscanopsdup", Create|DupSort); err != nil {
 			return err
 		}
-		defer cur.Close()
-
-		for _, op := range []struct {
-			name  string
-			first uint
-			next  uint
-		}{
-			{"First/Next", First, Next},
-			{"First/NextNoDup", First, NextNoDup},
-			{"Last/Prev", Last, Prev},
-			{"Last/PrevNoDup", Last, PrevNoDup},
-		} {
-			if _, _, err := cur.GetBatch(buf, op.first, op.next); err != nil {
-				t.Errorf("%s: %v", op.name, err)
+		if dupFixed, err = txn.OpenDBISimple("testscanopsdupfixed", Create|DupSort|DupFixed); err != nil {
+			return err
+		}
+		for i := range 3 {
+			for j := range 20 {
+				k := fmt.Appendf(nil, "key-%d", i)
+				v := fmt.Appendf(nil, "val-%d-%02d", i, j)
+				if err := txn.Put(dup, k, v, 0); err != nil {
+					return err
+				}
+				if err := txn.Put(dupFixed, k, v, 0); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -410,8 +406,46 @@ func TestCursor_GetBatch_AcceptsAllTurnOps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	buf := NewGetBatchBuffer(4)
+	defer buf.Close()
+
+	for _, tc := range []struct {
+		name        string
+		db          DBI
+		positioned  bool // Set on key-1 first, for the dup-scoped ops
+		first, next uint
+	}{
+		{"First/Next", plain, false, First, Next},
+		{"First/NextNoDup", plain, false, First, NextNoDup},
+		{"Last/Prev", plain, false, Last, Prev},
+		{"Last/PrevNoDup", plain, false, Last, PrevNoDup},
+		{"FirstDup/NextDup", dup, true, FirstDup, NextDup},
+		{"LastDup/PrevDup", dup, true, LastDup, PrevDup},
+		{"GetMultiple/NextMultiple", dupFixed, true, GetMultiple, NextMultiple},
+		{"GetMultiple/PrevMultiple", dupFixed, true, GetMultiple, PrevMultiple},
+	} {
+		err := env.View(func(txn *Txn) error {
+			cur, err := txn.OpenCursor(tc.db)
+			if err != nil {
+				return err
+			}
+			defer cur.Close()
+			if tc.positioned {
+				if _, _, err := cur.Get([]byte("key-1"), nil, Set); err != nil {
+					return err
+				}
+			}
+			_, _, err = cur.GetBatch(buf, tc.first, tc.next)
+			return err
+		})
+		if err != nil {
+			t.Errorf("%s: %v", tc.name, err)
+		}
+	}
 }
 
+// Reverse scans use the same machinery via (Last, Prev).
 func TestCursor_GetBatch_Reverse(t *testing.T) {
 	env, _ := setup(t)
 	const numItems = 100

@@ -40,9 +40,8 @@ func NewGetBatchBuffer(numPairs int) *GetBatchBuffer {
 	return &GetBatchBuffer{ptr: (*C.MDBX_val)(p), size: numPairs}
 }
 
-// Close releases the C allocation. No-op if already closed. It invalidates
-// later Key/Val calls, not slices already returned: those view libmdbx's own
-// pages, not this buffer, and keep the lifetime described on Key.
+// Close releases the C allocation. No-op if already closed. Later Key/Val
+// calls panic; slices already returned are unaffected, see Key.
 func (b *GetBatchBuffer) Close() {
 	if b.ptr != nil {
 		C.free(unsafe.Pointer(b.ptr))
@@ -68,10 +67,10 @@ func (b *GetBatchBuffer) at(i int) *C.MDBX_val {
 }
 
 // Key returns the i-th key of the most recent GetBatch (i < its pair count).
-// Zero-copy view into libmdbx's page, read-only and valid until the txn ends
-// or (in a write txn) a later Put/Del moves the page. Treating it as invalid
-// once the buffer is refilled or Closed is a deliberately conservative
-// contract, not a lifetime libmdbx imposes.
+// Zero-copy view into libmdbx's page, not into this buffer: read-only and
+// valid until the txn ends or (in a write txn) a later Put/Del moves the
+// page. Refilling or closing the buffer does not affect slices already
+// returned.
 //
 // For FirstDup, LastDup, NextDup, PrevDup and PrevMultiple, mdbx_cursor_get
 // promises the value only, so treat the key as unspecified — the caller
