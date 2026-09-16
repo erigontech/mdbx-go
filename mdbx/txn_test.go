@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestTxn_ID(t *testing.T) {
@@ -2236,4 +2237,36 @@ func TestTxn_ResetRenewAfterEnvCloseReportNotOpen(t *testing.T) {
 	if err := txn.Reset(); !errors.Is(err, errNotOpen) {
 		t.Fatalf("Reset after Env.Close = %v, want %v", err, errNotOpen)
 	}
+}
+
+// Reset and Renew must wait on closeLock rather than only observing a nil _env once
+// Close has finished: without the read lock they would run into C while Env.Close is
+// still freeing the env. Holding the lock for writing has to block them.
+func TestTxn_ResetRenewWaitForCloseLock(t *testing.T) {
+	env, _ := setup(t)
+	txn, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer txn.Abort()
+
+	blocks := func(name string, call func() error) {
+		t.Helper()
+		env.closeLock.Lock()
+		done := make(chan error, 1)
+		go func() { done <- call() }()
+		select {
+		case err := <-done:
+			env.closeLock.Unlock()
+			t.Fatalf("%s did not wait for closeLock (err=%v)", name, err)
+		case <-time.After(200 * time.Millisecond):
+		}
+		env.closeLock.Unlock()
+		if err := <-done; err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+
+	blocks("Reset", txn.Reset)
+	blocks("Renew", txn.Renew)
 }
