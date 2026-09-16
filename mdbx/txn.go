@@ -514,9 +514,7 @@ func (txn *Txn) renew() error {
 		return errNotOpen
 	}
 
-	// Hold the close guard like abort(), so Env.Close cannot free the env mid-call.
-	// Deliberately no strictThreadCheck: a read-only txn may be renewed on a different
-	// thread than the one that started it.
+	// Close guard as in reset(), and no strictThreadCheck for the same reason.
 	txn.env.closeLock.RLock()
 	defer txn.env.closeLock.RUnlock()
 	if txn.env._env == nil {
