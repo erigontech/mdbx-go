@@ -479,7 +479,8 @@ func (txn *Txn) Reset() error {
 
 func (txn *Txn) reset() error {
 	if txn._txn == nil {
-		return nil
+		// Not nil: callers pool on `Reset() == nil`, and a terminated txn must not qualify.
+		return errNotOpen
 	}
 
 	// Hold the close guard like abort(), so Env.Close cannot free the env mid-call.
