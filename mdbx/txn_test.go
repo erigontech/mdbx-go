@@ -2223,7 +2223,9 @@ func TestTxn_ResetRenewAfterEnvCloseReportNotOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	// A reset read txn holds no snapshot, so Close does not report MDBX_BUSY.
+	defer txn.Abort()
+	// Reset only so the Renew below is meaningful; a read txn never blocks Close,
+	// which reports MDBX_BUSY for a foreign-owned write txn alone.
 	if err := txn.Reset(); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
@@ -2253,8 +2255,10 @@ func TestTxn_ResetRenewWaitForCloseLock(t *testing.T) {
 	blocks := func(name string, call func() error) {
 		t.Helper()
 		env.closeLock.Lock()
+		started := make(chan struct{})
 		done := make(chan error, 1)
-		go func() { done <- call() }()
+		go func() { close(started); done <- call() }()
+		<-started
 		select {
 		case err := <-done:
 			env.closeLock.Unlock()
