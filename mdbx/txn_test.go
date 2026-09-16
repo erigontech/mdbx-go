@@ -2200,3 +2200,40 @@ func TestTxn_Reset_ReturnsError(t *testing.T) {
 		t.Errorf("Renew after Reset: %v", err)
 	}
 }
+
+// Reset and Renew must not call into an env that Env.Close has already freed.
+// Close nils _env under closeLock, so both report errNotOpen instead.
+func TestTxn_ResetRenewAfterEnvCloseReportNotOpen(t *testing.T) {
+	env, err := NewEnv(Default)
+	if err != nil {
+		t.Fatalf("env: %v", err)
+	}
+	// Deliberately not setup(), which registers Close as a Cleanup: this test
+	// has to close the env itself, while a read txn is still alive.
+	const pageSize = 4096
+	if err := env.SetGeometry(-1, -1, 64*1024*pageSize, -1, -1, pageSize); err != nil {
+		t.Fatalf("geometry: %v", err)
+	}
+	if err := env.Open(t.TempDir(), 0, 0664); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+
+	txn, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	// A reset read txn holds no snapshot, so Close does not report MDBX_BUSY.
+	if err := txn.Reset(); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if err := env.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	if err := txn.Renew(); !errors.Is(err, errNotOpen) {
+		t.Fatalf("Renew after Env.Close = %v, want %v", err, errNotOpen)
+	}
+	if err := txn.Reset(); !errors.Is(err, errNotOpen) {
+		t.Fatalf("Reset after Env.Close = %v, want %v", err, errNotOpen)
+	}
+}

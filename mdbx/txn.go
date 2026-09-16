@@ -478,6 +478,19 @@ func (txn *Txn) Reset() error {
 }
 
 func (txn *Txn) reset() error {
+	if txn._txn == nil {
+		return nil
+	}
+
+	// Hold the close guard like abort(), so Env.Close cannot free the env mid-call.
+	// Deliberately no strictThreadCheck: a read-only txn may be reset on a different
+	// thread than the one that started it.
+	txn.env.closeLock.RLock()
+	defer txn.env.closeLock.RUnlock()
+	if txn.env._env == nil {
+		return errNotOpen
+	}
+
 	ret := C.mdbx_txn_reset(txn._txn)
 	txn.resetID()
 	txn.parked = false // a parked txn may be reset directly, which un-parks it
@@ -497,6 +510,19 @@ func (txn *Txn) Renew() error {
 }
 
 func (txn *Txn) renew() error {
+	if txn._txn == nil {
+		return errNotOpen
+	}
+
+	// Hold the close guard like abort(), so Env.Close cannot free the env mid-call.
+	// Deliberately no strictThreadCheck: a read-only txn may be renewed on a different
+	// thread than the one that started it.
+	txn.env.closeLock.RLock()
+	defer txn.env.closeLock.RUnlock()
+	if txn.env._env == nil {
+		return errNotOpen
+	}
+
 	ret := C.mdbx_txn_renew(txn._txn)
 
 	// mdbx_txn_renew causes txn._txn to pick up a new transaction ID.  It's
