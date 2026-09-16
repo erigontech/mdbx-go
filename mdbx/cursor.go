@@ -188,7 +188,16 @@ func (c *Cursor) Close() {
 		return
 	}
 	if c._c != nil {
-		C.mdbx_cursor_close(c._c)
+		// Close guard as in Txn.abort: a deferred cursor Close can outlive Env.Close,
+		// and the handles are freed with the env either way.
+		if c.txn != nil && c.txn.env != nil {
+			env := c.txn.env
+			env.closeLock.RLock()
+			if env._env != nil {
+				C.mdbx_cursor_close(c._c)
+			}
+			env.closeLock.RUnlock()
+		}
 		c.txn = nil
 		c._c = nil
 	}

@@ -270,6 +270,14 @@ type CommitLatencyGC struct {
 }
 
 func (txn *Txn) commit() (CommitLatency, error) {
+	// Close guard as in abort(), taken before strictThreadCheck so a panic there
+	// cannot leak the read lock.
+	txn.env.closeLock.RLock()
+	defer txn.env.closeLock.RUnlock()
+	if txn.env._env == nil {
+		return CommitLatency{}, ErrEnvClosed
+	}
+
 	txn.strictThreadCheck()
 	r := C.mdbxgo_txn_commit_ex(txn._txn)
 	txn.clearTxn()
@@ -384,7 +392,7 @@ func (txn *Txn) Park(autounpark bool) error {
 	txn.env.closeLock.RLock()
 	defer txn.env.closeLock.RUnlock()
 	if txn.env._env == nil {
-		return errNotOpen
+		return ErrEnvClosed
 	}
 	txn.strictThreadCheck()
 	ret := C.mdbx_txn_park(txn._txn, C.bool(autounpark))
@@ -417,7 +425,7 @@ func (txn *Txn) Unpark(restartIfOusted bool) (restarted bool, err error) {
 	if txn.env._env == nil {
 		// Reporting success here would invite dereferencing views whose
 		// mmap Env.Close already unmapped.
-		return false, errNotOpen
+		return false, ErrEnvClosed
 	}
 	txn.strictThreadCheck()
 	ret := C.mdbx_txn_unpark(txn._txn, C.bool(restartIfOusted))
@@ -478,18 +486,13 @@ func (txn *Txn) Reset() error {
 }
 
 func (txn *Txn) reset() error {
-	if txn._txn == nil {
-		// Not nil: callers pool on `Reset() == nil`, and a terminated txn must not qualify.
-		return errNotOpen
-	}
-
 	// Hold the close guard like abort(), so Env.Close cannot free the env mid-call.
 	// Deliberately no strictThreadCheck: a read-only txn may be reset on a different
 	// thread than the one that started it.
 	txn.env.closeLock.RLock()
 	defer txn.env.closeLock.RUnlock()
 	if txn.env._env == nil {
-		return errNotOpen
+		return ErrEnvClosed
 	}
 
 	ret := C.mdbx_txn_reset(txn._txn)
@@ -511,15 +514,11 @@ func (txn *Txn) Renew() error {
 }
 
 func (txn *Txn) renew() error {
-	if txn._txn == nil {
-		return errNotOpen
-	}
-
 	// Close guard as in reset(), and no strictThreadCheck for the same reason.
 	txn.env.closeLock.RLock()
 	defer txn.env.closeLock.RUnlock()
 	if txn.env._env == nil {
-		return errNotOpen
+		return ErrEnvClosed
 	}
 
 	ret := C.mdbx_txn_renew(txn._txn)
@@ -689,6 +688,14 @@ func (txn *Txn) Rollback() error {
 	if txn.readonly {
 		return &OpError{Op: "mdbx_txn_rollback", Errno: BadTxn}
 	}
+	// Close guard as in abort(), taken before strictThreadCheck so a panic there
+	// cannot leak the read lock.
+	txn.env.closeLock.RLock()
+	defer txn.env.closeLock.RUnlock()
+	if txn.env._env == nil {
+		return ErrEnvClosed
+	}
+
 	txn.strictThreadCheck()
 	ret := C.mdbx_txn_rollback(txn._txn)
 	txn.resetID()

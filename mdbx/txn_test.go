@@ -2200,10 +2200,21 @@ func TestTxn_Reset_ReturnsError(t *testing.T) {
 	if err := rtxn.Renew(); err != nil {
 		t.Errorf("Renew after Reset: %v", err)
 	}
+
+	// A terminated txn must not report success: both pools in this repo decide
+	// whether a txn may be reused by testing `Reset() == nil`.
+	atxn, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	atxn.Abort()
+	if err := atxn.Reset(); err == nil {
+		t.Error("Reset on an aborted txn: expected error, got nil")
+	}
 }
 
 // Reset and Renew must not call into an env that Env.Close has already freed.
-// Close nils _env under closeLock, so both report errNotOpen instead.
+// Close nils _env under closeLock, so both report ErrEnvClosed instead.
 func TestTxn_ResetRenewAfterEnvCloseReportNotOpen(t *testing.T) {
 	env, err := NewEnv(Default)
 	if err != nil {
@@ -2233,11 +2244,11 @@ func TestTxn_ResetRenewAfterEnvCloseReportNotOpen(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	if err := txn.Renew(); !errors.Is(err, errNotOpen) {
-		t.Fatalf("Renew after Env.Close = %v, want %v", err, errNotOpen)
+	if err := txn.Renew(); !errors.Is(err, ErrEnvClosed) {
+		t.Fatalf("Renew after Env.Close = %v, want %v", err, ErrEnvClosed)
 	}
-	if err := txn.Reset(); !errors.Is(err, errNotOpen) {
-		t.Fatalf("Reset after Env.Close = %v, want %v", err, errNotOpen)
+	if err := txn.Reset(); !errors.Is(err, ErrEnvClosed) {
+		t.Fatalf("Reset after Env.Close = %v, want %v", err, ErrEnvClosed)
 	}
 }
 

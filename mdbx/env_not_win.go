@@ -20,7 +20,7 @@ func (env *Env) Path() (string, error) {
 		return "", operrno("mdbx_env_get_path", ret)
 	}
 	if cpath == nil {
-		return "", errNotOpen
+		return "", ErrEnvClosed
 	}
 	return C.GoString(cpath), nil
 }
@@ -42,7 +42,7 @@ func (env *Env) FD() (uintptr, error) {
 	}
 	fd := uintptr(r.val)
 	if fd == fdInvalid {
-		return 0, errNotOpen
+		return 0, ErrEnvClosed
 	}
 	return fd, nil
 }
