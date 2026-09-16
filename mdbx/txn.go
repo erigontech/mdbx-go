@@ -270,14 +270,6 @@ type CommitLatencyGC struct {
 }
 
 func (txn *Txn) commit() (CommitLatency, error) {
-	// Close guard as in abort(), taken before strictThreadCheck so a panic there
-	// cannot leak the read lock.
-	txn.env.closeLock.RLock()
-	defer txn.env.closeLock.RUnlock()
-	if txn.env._env == nil {
-		return CommitLatency{}, ErrEnvClosed
-	}
-
 	txn.strictThreadCheck()
 	r := C.mdbxgo_txn_commit_ex(txn._txn)
 	txn.clearTxn()
@@ -688,14 +680,6 @@ func (txn *Txn) Rollback() error {
 	if txn.readonly {
 		return &OpError{Op: "mdbx_txn_rollback", Errno: BadTxn}
 	}
-	// Close guard as in abort(), taken before strictThreadCheck so a panic there
-	// cannot leak the read lock.
-	txn.env.closeLock.RLock()
-	defer txn.env.closeLock.RUnlock()
-	if txn.env._env == nil {
-		return ErrEnvClosed
-	}
-
 	txn.strictThreadCheck()
 	ret := C.mdbx_txn_rollback(txn._txn)
 	txn.resetID()
