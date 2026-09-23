@@ -245,10 +245,12 @@ make cp LIBMDBX_SRC=/path/to/libmdbx   # clone lives elsewhere
 Only the files tracked at that ref are vendored, so build artifacts sitting in the clone's
 working tree stay out, and files deleted upstream are dropped instead of lingering. Upstream's
 `.github/` and `.sourcecraft/` CI configs are skipped — they cannot run from a vendored
-subdirectory — and `libmdbx/keep.go` is preserved. Then rebuild and test:
+subdirectory — and `libmdbx/keep.go` is preserved. Local fixes carried on top of upstream are
+wiped by the re-vendor: `git log -S'mdbx-go local fix' -- libmdbx/` lists them, re-apply the ones
+upstream has not taken yet. Then rebuild and test:
 
 ```
-go build ./... && make test
+go build -a ./... && make test
 ```
 
 ## Build binaries
