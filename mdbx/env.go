@@ -217,7 +217,8 @@ func (env *Env) SetStrictThreadMode(mode bool) {
 	env.strictThreadCheck = mode
 }
 
-var errNotOpen = errors.New("environment is not open")
+// ErrEnvClosed is returned by a Txn or Cursor operation whose Env has been closed.
+var ErrEnvClosed = errors.New("environment is not open")
 
 // ReaderCheck clears stale entries from the reader lock table and returns the
 // number of entries cleared.

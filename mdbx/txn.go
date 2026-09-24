@@ -384,7 +384,7 @@ func (txn *Txn) Park(autounpark bool) error {
 	txn.env.closeLock.RLock()
 	defer txn.env.closeLock.RUnlock()
 	if txn.env._env == nil {
-		return errNotOpen
+		return ErrEnvClosed
 	}
 	txn.strictThreadCheck()
 	ret := C.mdbx_txn_park(txn._txn, C.bool(autounpark))
@@ -417,7 +417,7 @@ func (txn *Txn) Unpark(restartIfOusted bool) (restarted bool, err error) {
 	if txn.env._env == nil {
 		// Reporting success here would invite dereferencing views whose
 		// mmap Env.Close already unmapped.
-		return false, errNotOpen
+		return false, ErrEnvClosed
 	}
 	txn.strictThreadCheck()
 	ret := C.mdbx_txn_unpark(txn._txn, C.bool(restartIfOusted))
@@ -478,6 +478,15 @@ func (txn *Txn) Reset() error {
 }
 
 func (txn *Txn) reset() error {
+	// Hold the close guard like abort(), so Env.Close cannot free the env mid-call.
+	// Deliberately no strictThreadCheck: a read-only txn may be reset on a different
+	// thread than the one that started it.
+	txn.env.closeLock.RLock()
+	defer txn.env.closeLock.RUnlock()
+	if txn.env._env == nil {
+		return ErrEnvClosed
+	}
+
 	ret := C.mdbx_txn_reset(txn._txn)
 	txn.resetID()
 	txn.parked = false // a parked txn may be reset directly, which un-parks it
@@ -497,6 +506,13 @@ func (txn *Txn) Renew() error {
 }
 
 func (txn *Txn) renew() error {
+	// Close guard as in reset(), and no strictThreadCheck for the same reason.
+	txn.env.closeLock.RLock()
+	defer txn.env.closeLock.RUnlock()
+	if txn.env._env == nil {
+		return ErrEnvClosed
+	}
+
 	ret := C.mdbx_txn_renew(txn._txn)
 
 	// mdbx_txn_renew causes txn._txn to pick up a new transaction ID.  It's

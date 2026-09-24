@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestTxn_ID(t *testing.T) {
@@ -2199,4 +2200,88 @@ func TestTxn_Reset_ReturnsError(t *testing.T) {
 	if err := rtxn.Renew(); err != nil {
 		t.Errorf("Renew after Reset: %v", err)
 	}
+
+	// A terminated txn must not report success: both pools in this repo decide
+	// whether a txn may be reused by testing `Reset() == nil`.
+	atxn, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	atxn.Abort()
+	if err := atxn.Reset(); err == nil {
+		t.Error("Reset on an aborted txn: expected error, got nil")
+	}
+}
+
+// Reset and Renew must not call into an env that Env.Close has already freed.
+// Close nils _env under closeLock, so both report ErrEnvClosed instead.
+func TestTxn_ResetRenewAfterEnvCloseReportNotOpen(t *testing.T) {
+	env, err := NewEnv(Default)
+	if err != nil {
+		t.Fatalf("env: %v", err)
+	}
+	// Deliberately not setup(), which registers Close as a Cleanup: this test
+	// has to close the env itself, while a read txn is still alive.
+	const pageSize = 4096
+	if err := env.SetGeometry(-1, -1, 64*1024*pageSize, -1, -1, pageSize); err != nil {
+		t.Fatalf("geometry: %v", err)
+	}
+	if err := env.Open(t.TempDir(), 0, 0664); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+
+	txn, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer txn.Abort()
+	// Reset only so the Renew below is meaningful; a read txn never blocks Close,
+	// which reports MDBX_BUSY for a foreign-owned write txn alone.
+	if err := txn.Reset(); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if err := env.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	if err := txn.Renew(); !errors.Is(err, ErrEnvClosed) {
+		t.Fatalf("Renew after Env.Close = %v, want %v", err, ErrEnvClosed)
+	}
+	if err := txn.Reset(); !errors.Is(err, ErrEnvClosed) {
+		t.Fatalf("Reset after Env.Close = %v, want %v", err, ErrEnvClosed)
+	}
+}
+
+// Reset and Renew must wait on closeLock rather than only observing a nil _env once
+// Close has finished: without the read lock they would run into C while Env.Close is
+// still freeing the env. Holding the lock for writing has to block them.
+func TestTxn_ResetRenewWaitForCloseLock(t *testing.T) {
+	env, _ := setup(t)
+	txn, err := env.BeginTxn(nil, Readonly)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer txn.Abort()
+
+	blocks := func(name string, call func() error) {
+		t.Helper()
+		env.closeLock.Lock()
+		started := make(chan struct{})
+		done := make(chan error, 1)
+		go func() { close(started); done <- call() }()
+		<-started
+		select {
+		case err := <-done:
+			env.closeLock.Unlock()
+			t.Fatalf("%s did not wait for closeLock (err=%v)", name, err)
+		case <-time.After(200 * time.Millisecond):
+		}
+		env.closeLock.Unlock()
+		if err := <-done; err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+
+	blocks("Reset", txn.Reset)
+	blocks("Renew", txn.Renew)
 }
