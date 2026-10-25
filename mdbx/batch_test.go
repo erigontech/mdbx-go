@@ -375,12 +375,16 @@ func TestCursor_GetBatch_Ranged(t *testing.T) {
 }
 
 // TestCursor_GetBatch_AcceptsAllScanOps drives every start and turn op the
-// GetBatch doc lists and requires none to be rejected. Dropping one from
+// GetBatch doc lists to eof and requires none to error. Dropping one from
 // batchFirstOpOK or batchNextOpOK would otherwise surface only as an EINVAL
 // in a caller's scan. GetCurrent as a start op is covered by the Ranged test.
+// The DupFixed "many" key spans several pages so the *_MULTIPLE ops cross
+// page boundaries; "single" has one value, where PrevMultiple ends with
+// MDBX_ENODATA rather than MDBX_NOTFOUND.
 func TestCursor_GetBatch_AcceptsAllScanOps(t *testing.T) {
 	env, _ := setup(t)
 	plain := fillBatchDB(t, env, "testscanops", 8)
+	const manyVals = 20000 // 160KB of 8-byte values: several pages at any page size
 	var dup, dupFixed DBI
 	err := env.Update(func(txn *Txn) (err error) {
 		if dup, err = txn.OpenDBISimple("testscanopsdup", Create|DupSort); err != nil {
@@ -396,12 +400,14 @@ func TestCursor_GetBatch_AcceptsAllScanOps(t *testing.T) {
 				if err := txn.Put(dup, k, v, 0); err != nil {
 					return err
 				}
-				if err := txn.Put(dupFixed, k, v, 0); err != nil {
-					return err
-				}
 			}
 		}
-		return nil
+		for j := range manyVals {
+			if err := txn.Put(dupFixed, []byte("many"), fmt.Appendf(nil, "m-%06d", j), 0); err != nil {
+				return err
+			}
+		}
+		return txn.Put(dupFixed, []byte("single"), []byte("s-000000"), 0)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -413,34 +419,58 @@ func TestCursor_GetBatch_AcceptsAllScanOps(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		db          DBI
-		positioned  bool // Set on key-1 first, for the dup-scoped ops
+		setKey      string // Set on this key first, for the dup-scoped ops
+		lastDup     bool   // then move to its last value
 		first, next uint
+		minPairs    int
+		wantVals    int // DupFixed only: total 8-byte values read, 0 = unchecked
 	}{
-		{"First/Next", plain, false, First, Next},
-		{"First/NextNoDup", plain, false, First, NextNoDup},
-		{"Last/Prev", plain, false, Last, Prev},
-		{"Last/PrevNoDup", plain, false, Last, PrevNoDup},
-		{"FirstDup/NextDup", dup, true, FirstDup, NextDup},
-		{"LastDup/PrevDup", dup, true, LastDup, PrevDup},
-		{"GetMultiple/NextMultiple", dupFixed, true, GetMultiple, NextMultiple},
-		{"GetMultiple/PrevMultiple", dupFixed, true, GetMultiple, PrevMultiple},
+		{"First/Next", plain, "", false, First, Next, 8, 0},
+		{"First/NextNoDup", plain, "", false, First, NextNoDup, 8, 0},
+		{"Last/Prev", plain, "", false, Last, Prev, 8, 0},
+		{"Last/PrevNoDup", plain, "", false, Last, PrevNoDup, 8, 0},
+		{"FirstDup/NextDup", dup, "key-1", false, FirstDup, NextDup, 20, 0},
+		{"LastDup/PrevDup", dup, "key-1", false, LastDup, PrevDup, 20, 0},
+		{"GetMultiple/NextMultiple", dupFixed, "many", false, GetMultiple, NextMultiple, 2, manyVals},
+		{"GetMultiple/PrevMultiple", dupFixed, "many", true, GetMultiple, PrevMultiple, 2, 0},
+		{"GetMultiple/PrevMultiple single", dupFixed, "single", false, GetMultiple, PrevMultiple, 1, 1},
 	} {
+		var pairs, vals int
 		err := env.View(func(txn *Txn) error {
 			cur, err := txn.OpenCursor(tc.db)
 			if err != nil {
 				return err
 			}
 			defer cur.Close()
-			if tc.positioned {
-				if _, _, err := cur.Get([]byte("key-1"), nil, Set); err != nil {
+			if tc.setKey != "" {
+				if _, _, err := cur.Get([]byte(tc.setKey), nil, Set); err != nil {
 					return err
 				}
 			}
-			_, _, err = cur.GetBatch(buf, tc.first, tc.next)
-			return err
+			if tc.lastDup {
+				if _, _, err := cur.Get(nil, nil, LastDup); err != nil {
+					return err
+				}
+			}
+			for op := tc.first; ; op = tc.next {
+				n, eof, err := cur.GetBatch(buf, op, tc.next)
+				pairs += n
+				for i := range n {
+					vals += len(buf.Val(i)) / 8
+				}
+				if err != nil || eof {
+					return err
+				}
+			}
 		})
 		if err != nil {
 			t.Errorf("%s: %v", tc.name, err)
+		}
+		if pairs < tc.minPairs {
+			t.Errorf("%s: %d pairs, want >= %d", tc.name, pairs, tc.minPairs)
+		}
+		if tc.wantVals != 0 && vals != tc.wantVals {
+			t.Errorf("%s: %d values, want %d", tc.name, vals, tc.wantVals)
 		}
 	}
 }
@@ -592,6 +622,10 @@ func TestGetBatchBuffer_Closed(t *testing.T) {
 
 		n, eof, err = cur.GetBatch(nil, First, Next)
 		assertRejected(t, "GetBatch(nil)", n, eof, err)
+
+		var nilCur *Cursor
+		n, eof, err = nilCur.GetBatch(buf, First, Next)
+		assertRejected(t, "GetBatch on a nil cursor", n, eof, err)
 		return nil
 	})
 	if err != nil {
@@ -631,8 +665,8 @@ func TestGetBatchBuffer_IndexOutOfFill(t *testing.T) {
 	}
 }
 
-// assertRejected pins that GetBatch refused the call without moving the
-// cursor. The exact errno is platform-dependent (EINVAL on POSIX,
+// assertRejected pins that GetBatch refused the call (n=0, no eof). It does
+// not check the cursor position. The exact errno is platform-dependent (EINVAL on POSIX,
 // ERROR_INVALID_PARAMETER on Windows), so the code itself is not asserted.
 func assertRejected(t *testing.T, name string, n int, eof bool, err error) {
 	t.Helper()

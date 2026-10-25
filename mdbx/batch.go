@@ -59,7 +59,8 @@ func (b *GetBatchBuffer) at(i int) *C.MDBX_val {
 		panic("mdbx: GetBatchBuffer: use after Close")
 	}
 	// Bound by the last fill count, not the capacity: entries past b.n hold
-	// stale pointers from earlier fills (possibly of an already-ended txn).
+	// stale pointers from earlier fills. Entries within it are not checked
+	// against the txn: once that ends they dangle, see Key.
 	if i < 0 || i >= 2*b.n {
 		panic("mdbx: GetBatchBuffer: index out of range of the last GetBatch fill")
 	}
@@ -68,8 +69,10 @@ func (b *GetBatchBuffer) at(i int) *C.MDBX_val {
 
 // Key returns the i-th key of the most recent GetBatch (i < its pair count).
 // Zero-copy view into libmdbx's page, not into this buffer: read-only and
-// valid until the txn ends or (in a write txn) a later Put/Del moves the
-// page. Refilling or closing the buffer does not affect slices already
+// valid until the txn ends or, in a write txn, the next update operation
+// (any Put/Del can shift the page, so the batch's other views then point at
+// neighbouring records — copy them first to delete or rewrite a scanned
+// range). Refilling or closing the buffer does not affect slices already
 // returned.
 //
 // For FirstDup, LastDup, NextDup, PrevDup and PrevMultiple, mdbx_cursor_get
@@ -131,8 +134,14 @@ func batchNextOpOK(op uint) bool {
 //
 // n is the number of pairs stored (read via buf.Key/Val). The first n pairs
 // are valid even when err != nil (the error came from the step after them).
-// eof is true when iteration was exhausted before the buffer filled;
-// otherwise continue with c.GetBatch(buf, opNext, opNext).
+// eof is true when iteration was exhausted before the buffer filled
+// (MDBX_NOTFOUND, or MDBX_ENODATA, which PrevMultiple and GetCurrent return
+// when there is nothing at the cursor); otherwise continue with
+// c.GetBatch(buf, opNext, opNext).
+//
+// GetBatch leaves the cursor on the last stored pair, not on the one being
+// handled, so cursor ops in the handler (Del, PutCurrent, GetCurrent, any
+// reposition) act on the wrong record and break the continuation.
 //
 //	buf := mdbx.NewGetBatchBuffer(256)
 //	defer buf.Close()
@@ -154,7 +163,7 @@ func (c *Cursor) GetBatch(buf *GetBatchBuffer, opFirst, opNext uint) (n int, eof
 		// previous fill (possibly views of an already-ended transaction).
 		buf.n = 0
 	}
-	if c._c == nil || buf == nil || buf.ptr == nil || buf.size <= 0 {
+	if c == nil || c._c == nil || buf == nil || buf.ptr == nil {
 		return 0, false, operrno("mdbx_cursor_get", C.MDBX_EINVAL)
 	}
 	if !batchFirstOpOK(opFirst) || !batchNextOpOK(opNext) {
@@ -167,12 +176,9 @@ func (c *Cursor) GetBatch(buf *GetBatchBuffer, opFirst, opNext uint) (n int, eof
 	n = int(r.val)
 	buf.n = n
 	switch r.err {
-	case success, C.MDBX_RESULT_TRUE:
-		// RESULT_TRUE is success-with-data, same as SUCCESS: buffer filled,
-		// not at EOF. Accepted defensively only — the ops that produce it are
-		// the bound seeks, which batchFirstOpOK/batchNextOpOK already reject.
+	case success, C.MDBX_RESULT_TRUE: // RESULT_TRUE: defensive, the allow-lists exclude its ops
 		return n, false, nil
-	case C.MDBX_NOTFOUND:
+	case C.MDBX_NOTFOUND, C.MDBX_ENODATA:
 		return n, true, nil
 	default:
 		// A mid-batch error may still have produced the first n valid pairs.

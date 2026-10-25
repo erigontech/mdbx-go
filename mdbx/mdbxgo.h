@@ -74,7 +74,11 @@ mdbxgo_val_result        mdbxgo_cursor_get_empty(MDBX_cursor *cur, MDBX_cursor_o
 mdbxgo_val_result        mdbxgo_cursor_get_val(MDBX_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDBX_cursor_op op);
 mdbxgo_val_result        mdbxgo_cursor_put_reserve(MDBX_cursor *cur, char *kdata, size_t kn, size_t vn, MDBX_put_flags_t flags);
 
-/* mdbxgo_cursor_get_batch fills pairs[0..2*max_pairs) with (key, value)
+/* Not libmdbx's mdbx_cursor_get_batch: that one is FIRST/NEXT only on
+ * non-dupsort tables, counts its limit in MDBX_val items (not pairs), and its
+ * MDBX_RESULT_TRUE means "last chunk".
+ *
+ * mdbxgo_cursor_get_batch fills pairs[0..2*max_pairs) with (key, value)
  * result pairs: the first mdbx_cursor_get step uses op_first, the rest
  * op_next. Both are passed an empty key/value, so the caller must restrict
  * them to ops that need no input — the start_op/turn_op sets of
