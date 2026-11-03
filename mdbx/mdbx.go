@@ -139,6 +139,12 @@ package mdbx
 // process-wide.
 
 #define MDBX_BUILD_FLAGS "${CFLAGS}"
+// Pin the embedded build timestamp so the compiled object is reproducible.
+// Without this, mdbx.c bakes __DATE__ " " __TIME__ (wall-clock build time)
+// into .rodata, so independent rebuilds of identical source never byte-match.
+#ifndef MDBX_BUILD_TIMESTAMP
+#define MDBX_BUILD_TIMESTAMP "\"unknown\""
+#endif
 #include "../libmdbx/mdbx.c"
 */
 import "C"
