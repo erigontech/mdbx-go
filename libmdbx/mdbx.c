@@ -32811,18 +32811,19 @@ static intptr_t proc_meminfo_availpages(void) {
   while ((line = fgets(buf, sizeof(buf), proc_meminfo)) != nullptr) {
     if (strncmp("MemAvailable:", line, 13))
       continue;
-    size_t value = 0;
-    buf[0] = 0;
-    if (sscanf(line + 13, "%zu %s", &value, buf) < 1)
-      availpages = -1;
-    else {
-      if (!buf[0] || strcasecmp(buf, "b") == 0 || strcasecmp(buf, "bytes") == 0)
-        availpages = value >> globals.sys_pagesize_ln2;
-      else if (strcasecmp(buf, "kb") == 0 || strcasecmp(buf, "kbytes") == 0)
-        availpages = (value << 10) >> globals.sys_pagesize_ln2;
-      else if (strcasecmp(buf, "mb") == 0 || strcasecmp(buf, "mbytes") == 0)
-        availpages = (value << 20) >> globals.sys_pagesize_ln2;
-    }
+    const char *const field = line + 13;
+    char *unit = nullptr;
+    const long value = strtol(field, &unit, 10);
+    if (unit == field || value < 0 || value == LONG_MAX)
+      break;
+    unit += strspn(unit, " \t");
+    unit[strcspn(unit, " \t\n")] = 0;
+    if (!*unit || strcasecmp(unit, "b") == 0 || strcasecmp(unit, "bytes") == 0)
+      availpages = value >> globals.sys_pagesize_ln2;
+    else if (strcasecmp(unit, "kb") == 0 || strcasecmp(unit, "kbytes") == 0)
+      availpages = ((size_t)value << 10) >> globals.sys_pagesize_ln2;
+    else if (strcasecmp(unit, "mb") == 0 || strcasecmp(unit, "mbytes") == 0)
+      availpages = ((size_t)value << 20) >> globals.sys_pagesize_ln2;
     break;
   }
   fclose(proc_meminfo);
