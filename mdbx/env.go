@@ -149,7 +149,7 @@ const (
 )
 
 var (
-	LoggerDoNotChange = C.MDBX_LOGGER_DONTCHANGE
+	LoggerDoNotChange = C.mdbxgo_logger_dontchange().fn
 )
 
 // Label - will be added to error messages. For better understanding - which DB has problem.
@@ -518,7 +518,7 @@ func (env *Env) Flags() (uint, error) {
 }
 
 func (env *Env) SetDebug(logLvl LogLvl, dbg int, logger C.MDBX_debug_func) error {
-	_ = C.mdbx_setup_debug(logLvl, C.MDBX_debug_flags_t(dbg), logger)
+	_ = C.mdbxgo_setup_debug(logLvl, C.MDBX_debug_flags_t(dbg), C.mdbxgo_debug_logger{fn: logger})
 	return nil
 }
 

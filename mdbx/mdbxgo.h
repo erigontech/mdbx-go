@@ -7,6 +7,12 @@
 
 #include "../libmdbx/mdbx.h"
 
+/* Keep the callback typed inside a struct when crossing the cgo boundary.
+ * Passing it directly makes cgo generate function-pointer/void* conversions. */
+typedef struct { MDBX_debug_func fn; } mdbxgo_debug_logger;
+mdbxgo_debug_logger mdbxgo_logger_dontchange(void);
+int mdbxgo_setup_debug(MDBX_log_level_t level, MDBX_debug_flags_t flags, mdbxgo_debug_logger logger);
+
 /* Proxy functions for lmdb get/put operations. The functions are defined to
  * take char* values instead of void* to keep cgo from cheking their data for
  * nested pointers and causing a couple of allocations per argument.
