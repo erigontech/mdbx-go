@@ -356,3 +356,12 @@ int mdbxgo_dcmp(MDBX_txn *txn, MDBX_dbi dbi, char *adata, size_t an, char *bdata
     MDBXGO_SET_VAL(&b, bn, bdata);
     return mdbx_dcmp(txn, dbi, &a, &b);
 }
+
+mdbxgo_debug_logger mdbxgo_logger_dontchange(void) {
+    mdbxgo_debug_logger logger = {MDBX_LOGGER_DONTCHANGE};
+    return logger;
+}
+
+int mdbxgo_setup_debug(MDBX_log_level_t level, MDBX_debug_flags_t flags, mdbxgo_debug_logger logger) {
+    return mdbx_setup_debug(level, flags, logger.fn);
+}
