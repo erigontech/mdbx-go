@@ -140,6 +140,17 @@ package mdbx
 
 #define MDBX_BUILD_FLAGS "${CFLAGS}"
 #include "../libmdbx/mdbx.c"
+
+// With _GNU_SOURCE, glibc 2.38+ headers bind strtol and sscanf to their C23
+// versions, so the binary would not load on older glibc. libmdbx needs neither
+// the 0b prefix nor %b: alias them to the functions that older glibc headers
+// use. Unlike versioned .symver references, the aliases also link with -static.
+#if defined(__GLIBC__)
+#if __GLIBC_PREREQ(2, 38)
+__asm__(".set __isoc23_strtol, strtol");
+__asm__(".set __isoc23_sscanf, __isoc99_sscanf");
+#endif
+#endif
 */
 import "C"
 
