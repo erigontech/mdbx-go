@@ -54,17 +54,17 @@ func (b *GetBatchBuffer) Close() {
 // Cap returns the buffer capacity in key/value pairs.
 func (b *GetBatchBuffer) Cap() int { return b.size }
 
-func (b *GetBatchBuffer) at(i int) *C.MDBX_val {
+func (b *GetBatchBuffer) at(pair, slot int) *C.MDBX_val {
 	if b.ptr == nil {
 		panic("mdbx: GetBatchBuffer: use after Close")
 	}
 	// Bound by the last fill count, not the capacity: entries past b.n hold
 	// stale pointers from earlier fills. Entries within it are not checked
 	// against the txn: once that ends they dangle, see Key.
-	if i < 0 || i >= 2*b.n {
+	if pair < 0 || pair >= b.n {
 		panic("mdbx: GetBatchBuffer: index out of range of the last GetBatch fill")
 	}
-	return (*C.MDBX_val)(unsafe.Add(unsafe.Pointer(b.ptr), uintptr(i)*unsafe.Sizeof(C.MDBX_val{})))
+	return (*C.MDBX_val)(unsafe.Add(unsafe.Pointer(b.ptr), uintptr(2*pair+slot)*unsafe.Sizeof(C.MDBX_val{})))
 }
 
 // Key returns the i-th key of the most recent GetBatch (i < its pair count).
@@ -79,10 +79,10 @@ func (b *GetBatchBuffer) at(i int) *C.MDBX_val {
 // promises the value only, so treat the key as unspecified — the caller
 // already knows it from the Get that positioned the cursor. PrevMultiple in
 // particular leaves it empty for every pair.
-func (b *GetBatchBuffer) Key(i int) []byte { return castToBytes(b.at(2 * i)) }
+func (b *GetBatchBuffer) Key(i int) []byte { return castToBytes(b.at(i, 0)) }
 
 // Val returns the i-th value of the most recent GetBatch. See Key.
-func (b *GetBatchBuffer) Val(i int) []byte { return castToBytes(b.at(2*i + 1)) }
+func (b *GetBatchBuffer) Val(i int) []byte { return castToBytes(b.at(i, 1)) }
 
 // batchFirstOpOK and batchNextOpOK report whether an op can be driven without
 // an input key/value, mirroring the start_op/turn_op sets libmdbx accepts for

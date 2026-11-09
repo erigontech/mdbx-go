@@ -3,6 +3,7 @@ package mdbx
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"testing"
 )
 
@@ -658,6 +659,8 @@ func TestGetBatchBuffer_IndexOutOfFill(t *testing.T) {
 		assertPanics(t, "Key(n)", func() { _ = buf.Key(n) })
 		assertPanics(t, "Val(n)", func() { _ = buf.Val(n) })
 		assertPanics(t, "Key(-1)", func() { _ = buf.Key(-1) })
+		assertPanics(t, "Key(MinInt)", func() { _ = buf.Key(math.MinInt) })
+		assertPanics(t, "Val(MinInt)", func() { _ = buf.Val(math.MinInt) })
 		return nil
 	})
 	if err != nil {
