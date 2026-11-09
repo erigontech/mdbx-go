@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -733,5 +734,14 @@ func TestEnv_Info_NilTxn_Unopened(t *testing.T) {
 	}
 	if info == nil {
 		t.Fatal("Info(nil) on unopened env returned nil info")
+	}
+}
+
+// Run the callback check in a separate process: logger configuration is global,
+// and cgo cannot be imported directly by a _test.go file.
+func TestEnv_SetDebugCallback(t *testing.T) {
+	cmd := exec.CommandContext(t.Context(), "go", "run", "./testdata/debuglogger")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("debug logger: %v\n%s", err, out)
 	}
 }
