@@ -1,5 +1,5 @@
 
-.PHONY: deps all test race bin cp
+.PHONY: deps all test race cc-warnings bin cp
 
 MASTER_COMMIT=`git rev-parse --short origin/master`
 
@@ -13,6 +13,10 @@ test:
 
 race:
 	go test -race ./mdbx ./exp/mdbxpool
+
+# -a: a cached build does not run the C compiler, so it shows no warnings.
+cc-warnings:
+	@out=$$(go build -a ./mdbx 2>&1) || { echo "$$out"; exit 1; }; echo "$$out"; ! echo "$$out" | grep -q 'warning:'
 
 lint:
 	./build/bin/golangci-lint run ./...
