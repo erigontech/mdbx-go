@@ -75,24 +75,27 @@ func (b *GetBatchBuffer) at(pair, slot int) *C.MDBX_val {
 // range). Refilling or closing the buffer does not affect slices already
 // returned.
 //
-// For FirstDup, LastDup, NextDup, PrevDup and PrevMultiple, mdbx_cursor_get
-// promises the value only, so treat the key as unspecified — the caller
-// already knows it from the Get that positioned the cursor. PrevMultiple in
-// particular leaves it empty for every pair.
+// For FirstDup, LastDup, NextDup and PrevDup, mdbx_cursor_get promises the
+// value only, so treat the key as unspecified — the caller already knows it
+// from the Get that positioned the cursor.
 func (b *GetBatchBuffer) Key(i int) []byte { return castToBytes(b.at(i, 0)) }
 
 // Val returns the i-th value of the most recent GetBatch. See Key.
 func (b *GetBatchBuffer) Val(i int) []byte { return castToBytes(b.at(i, 1)) }
 
 // batchFirstOpOK and batchNextOpOK report whether an op can be driven without
-// an input key/value, mirroring the start_op/turn_op sets libmdbx accepts for
-// mdbx_cursor_scan (mdbx.h). Allow-lists, so an unknown or out-of-range op
-// value is rejected too. A positioning op is a start op only: GetCurrent as
-// opNext would restream the same record until the buffer filled, First would
-// rewind on every step.
+// an input key/value: the start_op/turn_op sets libmdbx accepts for
+// mdbx_cursor_scan (mdbx.h), minus the *_MULTIPLE ops. Allow-lists, so an
+// unknown or out-of-range op value is rejected too. A positioning op is a
+// start op only: GetCurrent as opNext would restream the same record until
+// the buffer filled, First would rewind on every step.
+//
+// *_MULTIPLE stay out because a page per cgo call needs no batching and
+// NEXT_MULTIPLE does not check its preconditions: it segfaults on a fresh
+// cursor over a single-value key and returns empty pages without DupFixed.
 func batchFirstOpOK(op uint) bool {
 	switch op {
-	case First, FirstDup, Last, LastDup, GetCurrent, GetMultiple:
+	case First, FirstDup, Last, LastDup, GetCurrent:
 		return true
 	default:
 		// Continuing a scan hands the previous call's opNext back as opFirst.
@@ -102,7 +105,7 @@ func batchFirstOpOK(op uint) bool {
 
 func batchNextOpOK(op uint) bool {
 	switch op {
-	case Next, NextDup, NextNoDup, NextMultiple, Prev, PrevDup, PrevNoDup, PrevMultiple:
+	case Next, NextDup, NextNoDup, Prev, PrevDup, PrevNoDup:
 		return true
 	default:
 		return false
@@ -114,12 +117,11 @@ func batchNextOpOK(op uint) bool {
 // large scans.
 //
 // There is no way to pass a search key or value, so opFirst and opNext are
-// restricted to the ops mdbx_cursor_get answers without one — the same
-// start_op/turn_op sets libmdbx documents for mdbx_cursor_scan:
+// restricted to the ops mdbx_cursor_get answers without one:
 //
-//	opFirst: First, FirstDup, Last, LastDup, GetCurrent, GetMultiple — or any
-//	         opNext value, which is how a scan continues past the first batch
-//	opNext:  Next, NextDup, NextNoDup, NextMultiple, Prev, PrevDup, PrevNoDup, PrevMultiple
+//	opFirst: First, FirstDup, Last, LastDup, GetCurrent — or any opNext value,
+//	         which is how a scan continues past the first batch
+//	opNext:  Next, NextDup, NextNoDup, Prev, PrevDup, PrevNoDup
 //
 // Anything else (Set, SetKey, SetRange, GetBoth, GetBothRange, SetLowerBound,
 // SetUpperBound and the Key*/ExactKeyValue*/Pair* seeks) is rejected with
@@ -128,15 +130,14 @@ func batchNextOpOK(op uint) bool {
 // looks like a clean EOF, SetRange silently rewinds to the first key. For a
 // ranged scan, position the cursor with Get and batch with (GetCurrent, Next).
 //
-// The *_MULTIPLE ops work but have page granularity: each stored value is a
-// packed page of fixed-size values, so n counts pages, not records. Only
-// GetMultiple and NextMultiple set a key; PrevMultiple leaves it empty.
+// The *_MULTIPLE ops are rejected too: one page per call needs no batching,
+// use Cursor.Get for them.
 //
 // n is the number of pairs stored (read via buf.Key/Val). The first n pairs
 // are valid even when err != nil (the error came from the step after them).
 // eof is true when iteration was exhausted before the buffer filled
-// (MDBX_NOTFOUND, or MDBX_ENODATA, which PrevMultiple and GetCurrent return
-// when there is nothing at the cursor); otherwise continue with
+// (MDBX_NOTFOUND, or MDBX_ENODATA, which GetCurrent returns when there is
+// nothing at the cursor); otherwise continue with
 // c.GetBatch(buf, opNext, opNext).
 //
 // GetBatch leaves the cursor on the last stored pair, not on the one being
@@ -169,6 +170,11 @@ func (c *Cursor) GetBatch(buf *GetBatchBuffer, opFirst, opNext uint) (n int, eof
 	if !batchFirstOpOK(opFirst) || !batchNextOpOK(opNext) {
 		return 0, false, operrno("mdbx_cursor_get", C.MDBX_EINVAL)
 	}
+	return c.getBatch(buf, opFirst, opNext)
+}
+
+// getBatch is GetBatch without the argument and op checks.
+func (c *Cursor) getBatch(buf *GetBatchBuffer, opFirst, opNext uint) (n int, eof bool, err error) {
 	r := C.mdbxgo_cursor_get_batch(
 		c._c, buf.ptr, C.size_t(buf.size),
 		C.MDBX_cursor_op(opFirst), C.MDBX_cursor_op(opNext),

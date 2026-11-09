@@ -97,6 +97,15 @@ func TestCursor_GetBatch_EmptyDB(t *testing.T) {
 		if n != 0 || !eof {
 			t.Errorf("GetBatch on empty table: n=%d eof=%v, want 0/true", n, eof)
 		}
+
+		// GetCurrent reports an empty table with MDBX_ENODATA, not MDBX_NOTFOUND.
+		n, eof, err = cur.GetBatch(buf, GetCurrent, Next)
+		if err != nil {
+			return err
+		}
+		if n != 0 || !eof {
+			t.Errorf("GetBatch(GetCurrent) on empty table: n=%d eof=%v, want 0/true", n, eof)
+		}
 		return nil
 	})
 	if err != nil {
@@ -242,11 +251,12 @@ func TestCursor_GetBatch_PartialOnError(t *testing.T) {
 		}
 		defer cur.Close()
 
-		// First succeeds; NextMultiple on a non-DupFixed table fails with
-		// MDBX_INCOMPATIBLE on the second step.
-		n, eof, err := cur.GetBatch(buf, First, NextMultiple)
+		// First succeeds; GetMultiple on a non-DupFixed table fails with
+		// MDBX_INCOMPATIBLE on the second step. No op GetBatch accepts fails
+		// mid-batch, so this goes through getBatch.
+		n, eof, err := cur.getBatch(buf, First, GetMultiple)
 		if err == nil {
-			t.Fatal("GetBatch(First, NextMultiple): expected error, got nil")
+			t.Fatal("getBatch(First, GetMultiple): expected error, got nil")
 		}
 		if eof {
 			t.Error("eof must be false on error")
@@ -261,6 +271,60 @@ func TestCursor_GetBatch_PartialOnError(t *testing.T) {
 	})
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+// The *_MULTIPLE ops must be rejected: NextMultiple segfaults on a fresh cursor
+// over a single-value key, and page ops paired with record ops lose values.
+func TestCursor_GetBatch_RejectsMultipleOps(t *testing.T) {
+	env, _ := setup(t)
+	var db DBI
+	err := env.Update(func(txn *Txn) (err error) {
+		if db, err = txn.OpenDBISimple("testbatchmultiple", Create|DupSort|DupFixed); err != nil {
+			return err
+		}
+		if err := txn.Put(db, []byte("a-single"), []byte("s-000000"), 0); err != nil {
+			return err
+		}
+		for j := range 20 {
+			if err := txn.Put(db, []byte("b-many"), fmt.Appendf(nil, "m-%06d", j), 0); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buf := NewGetBatchBuffer(8)
+	defer buf.Close()
+
+	for _, tc := range []struct {
+		name        string
+		first, next uint
+	}{
+		{"First/NextMultiple", First, NextMultiple},
+		{"Last/PrevMultiple", Last, PrevMultiple},
+		{"GetMultiple/Next", GetMultiple, Next},
+		{"GetMultiple/NextMultiple", GetMultiple, NextMultiple},
+		{"GetMultiple/PrevMultiple", GetMultiple, PrevMultiple},
+		{"PrevMultiple/PrevMultiple", PrevMultiple, PrevMultiple},
+		{"NextMultiple/NextMultiple", NextMultiple, NextMultiple},
+	} {
+		err := env.View(func(txn *Txn) error {
+			cur, err := txn.OpenCursor(db)
+			if err != nil {
+				return err
+			}
+			defer cur.Close()
+			n, eof, err := cur.GetBatch(buf, tc.first, tc.next)
+			assertRejected(t, tc.name, n, eof, err)
+			return nil
+		})
+		if err != nil {
+			t.Error(err)
+		}
 	}
 }
 
@@ -379,19 +443,12 @@ func TestCursor_GetBatch_Ranged(t *testing.T) {
 // GetBatch doc lists to eof and requires none to error. Dropping one from
 // batchFirstOpOK or batchNextOpOK would otherwise surface only as an EINVAL
 // in a caller's scan. GetCurrent as a start op is covered by the Ranged test.
-// The DupFixed "many" key spans several pages so the *_MULTIPLE ops cross
-// page boundaries; "single" has one value, where PrevMultiple ends with
-// MDBX_ENODATA rather than MDBX_NOTFOUND.
 func TestCursor_GetBatch_AcceptsAllScanOps(t *testing.T) {
 	env, _ := setup(t)
 	plain := fillBatchDB(t, env, "testscanops", 8)
-	const manyVals = 20000 // 160KB of 8-byte values: several pages at any page size
-	var dup, dupFixed DBI
+	var dup DBI
 	err := env.Update(func(txn *Txn) (err error) {
 		if dup, err = txn.OpenDBISimple("testscanopsdup", Create|DupSort); err != nil {
-			return err
-		}
-		if dupFixed, err = txn.OpenDBISimple("testscanopsdupfixed", Create|DupSort|DupFixed); err != nil {
 			return err
 		}
 		for i := range 3 {
@@ -403,12 +460,7 @@ func TestCursor_GetBatch_AcceptsAllScanOps(t *testing.T) {
 				}
 			}
 		}
-		for j := range manyVals {
-			if err := txn.Put(dupFixed, []byte("many"), fmt.Appendf(nil, "m-%06d", j), 0); err != nil {
-				return err
-			}
-		}
-		return txn.Put(dupFixed, []byte("single"), []byte("s-000000"), 0)
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -421,22 +473,17 @@ func TestCursor_GetBatch_AcceptsAllScanOps(t *testing.T) {
 		name        string
 		db          DBI
 		setKey      string // Set on this key first, for the dup-scoped ops
-		lastDup     bool   // then move to its last value
 		first, next uint
 		minPairs    int
-		wantVals    int // DupFixed only: total 8-byte values read, 0 = unchecked
 	}{
-		{"First/Next", plain, "", false, First, Next, 8, 0},
-		{"First/NextNoDup", plain, "", false, First, NextNoDup, 8, 0},
-		{"Last/Prev", plain, "", false, Last, Prev, 8, 0},
-		{"Last/PrevNoDup", plain, "", false, Last, PrevNoDup, 8, 0},
-		{"FirstDup/NextDup", dup, "key-1", false, FirstDup, NextDup, 20, 0},
-		{"LastDup/PrevDup", dup, "key-1", false, LastDup, PrevDup, 20, 0},
-		{"GetMultiple/NextMultiple", dupFixed, "many", false, GetMultiple, NextMultiple, 2, manyVals},
-		{"GetMultiple/PrevMultiple", dupFixed, "many", true, GetMultiple, PrevMultiple, 2, 0},
-		{"GetMultiple/PrevMultiple single", dupFixed, "single", false, GetMultiple, PrevMultiple, 1, 1},
+		{"First/Next", plain, "", First, Next, 8},
+		{"First/NextNoDup", plain, "", First, NextNoDup, 8},
+		{"Last/Prev", plain, "", Last, Prev, 8},
+		{"Last/PrevNoDup", plain, "", Last, PrevNoDup, 8},
+		{"FirstDup/NextDup", dup, "key-1", FirstDup, NextDup, 20},
+		{"LastDup/PrevDup", dup, "key-1", LastDup, PrevDup, 20},
 	} {
-		var pairs, vals int
+		var pairs int
 		err := env.View(func(txn *Txn) error {
 			cur, err := txn.OpenCursor(tc.db)
 			if err != nil {
@@ -448,17 +495,9 @@ func TestCursor_GetBatch_AcceptsAllScanOps(t *testing.T) {
 					return err
 				}
 			}
-			if tc.lastDup {
-				if _, _, err := cur.Get(nil, nil, LastDup); err != nil {
-					return err
-				}
-			}
 			for op := tc.first; ; op = tc.next {
 				n, eof, err := cur.GetBatch(buf, op, tc.next)
 				pairs += n
-				for i := range n {
-					vals += len(buf.Val(i)) / 8
-				}
 				if err != nil || eof {
 					return err
 				}
@@ -469,9 +508,6 @@ func TestCursor_GetBatch_AcceptsAllScanOps(t *testing.T) {
 		}
 		if pairs < tc.minPairs {
 			t.Errorf("%s: %d pairs, want >= %d", tc.name, pairs, tc.minPairs)
-		}
-		if tc.wantVals != 0 && vals != tc.wantVals {
-			t.Errorf("%s: %d values, want %d", tc.name, vals, tc.wantVals)
 		}
 	}
 }
