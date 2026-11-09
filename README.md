@@ -64,13 +64,30 @@ Core bindings allowing low-level access to MDBX.
 import "github.com/erigontech/mdbx-go/exp/mdbxpool"
 ```
 
-A utility package which facilitates reuse of mdbx.Txn objects using a sync.Pool. Naively storing mdbx.Txn objects in
-sync.Pool can be troublesome. And the mdbxpool.TxnPool type has been defined as a complete pooling solution and as
-reference for applications attempting to write their own pooling implementation.
+Reuses read-only `mdbx.Txn` objects across goroutines on a bounded free list, so a read costs a reset/renew pair
+instead of a reader-table registration:
 
-The mdbxpool package is relatively new. But it has a lot of potential utility. And once the mdbxpool API has been ironed
-out, and the implementation hardened through use by real applications it can be integrated directly into the mdbx
-package for more transparent integration. Please test this package and provide feedback to speed this process up.
+```go
+p := mdbxpool.New(env)
+defer p.Close()
+
+err := p.View(func(txn *mdbx.Txn) error {
+    v, err := txn.Get(dbi, key)
+    ...
+})
+```
+
+`Put` resets each transaction before pooling it, which releases its MVCC snapshot while keeping the reader slot, so
+idle pooled readers never hold pages back from recycling. `WithMaxIdle` bounds how many reader slots the pool
+occupies, and `Close` deterministically aborts every one of them — a `sync.Pool` cannot be drained, and since mdbx
+installs no `Txn` finalizers, whatever it drops leaks its reader slot for the lifetime of the `Env`.
+
+Worth using for serial or bursty readers, for reads alongside a busy writer (17% faster than begin/abort), and
+wherever the per-read allocation matters (88 B in 2 allocs → 8 B in 1). Roughly break-even for saturated read
+concurrency against an idle database. `BenchmarkStrategies` compares this against `mdbx_txn_park` and
+`mdbx_txn_refresh`; see the package documentation for the numbers and why neither is used.
+
+The pool moves transactions between goroutines by design, so it is incompatible with `Env.SetStrictThreadMode(true)`.
 
 ## Quickstart
 
