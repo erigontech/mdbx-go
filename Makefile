@@ -14,7 +14,7 @@ test:
 race:
 	go test -race ./mdbx ./exp/mdbxpool
 
-# -a: a cached build does not run the C compiler, so it shows no warnings.
+# -a: a cached build never runs the C compiler; it replays the stored output, so warnings are not re-checked.
 cc-warnings:
 	@out=$$(go build -a ./mdbx 2>&1) || { echo "$$out"; exit 1; }; echo "$$out"; ! echo "$$out" | grep -q 'warning:'
 
